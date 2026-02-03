@@ -1,0 +1,14 @@
+build/
+*.o
+*.so
+*.dylib
+*.a
+__pycache__/
+*.pyc
+.cache/
+.pytest_cache/
+compile_commands.json
+.DS_Store
+*.egg-info/
+dist/
+.claude/settings.local.json
