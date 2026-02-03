@@ -6,6 +6,8 @@ RL environment for training directional trading agents on /MES futures using Dat
 
 **Read first:** [PRD.md](PRD.md) (requirements), [TDS.md](TDS.md) (technical spec)
 
+**Before starting work:** Read [LAST_TOUCH.md](LAST_TOUCH.md) — it contains the current project state, what's been built, how to build/test, and your next task. Update it when you're done.
+
 ---
 
 ## Core Decisions (Do Not Deviate)
