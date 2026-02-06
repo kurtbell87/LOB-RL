@@ -1,20 +1,23 @@
 #include "lob/env.h"
 #include <algorithm>
 #include <cmath>
-#include "lob/feature_builder.h"
 
 static constexpr int INITIAL_BOOK_MESSAGES = 10;
 
 LOBEnv::LOBEnv(std::unique_ptr<IMessageSource> src, int steps_per_episode,
-               RewardMode mode, float lambda, bool execution_cost)
+               RewardMode mode, float lambda, bool execution_cost,
+               float participation_bonus)
     : src_(std::move(src)), steps_per_episode_(steps_per_episode),
-      reward_calc_(mode, lambda), execution_cost_enabled_(execution_cost) {}
+      reward_calc_(mode, lambda), execution_cost_enabled_(execution_cost),
+      participation_bonus_(participation_bonus) {}
 
 LOBEnv::LOBEnv(std::unique_ptr<IMessageSource> src, SessionConfig cfg, int steps_per_episode,
-               RewardMode mode, float lambda, bool execution_cost)
+               RewardMode mode, float lambda, bool execution_cost,
+               float participation_bonus)
     : src_(std::move(src)), steps_per_episode_(steps_per_episode),
       session_filter_(SessionFilter(cfg)), warmup_messages_(cfg.warmup_messages),
-      reward_calc_(mode, lambda), execution_cost_enabled_(execution_cost) {}
+      reward_calc_(mode, lambda), execution_cost_enabled_(execution_cost),
+      participation_bonus_(participation_bonus) {}
 
 StepResult LOBEnv::reset() {
     book_.reset();
@@ -123,6 +126,12 @@ StepResult LOBEnv::step(int action) {
         }
     }
     prev_position_ = position_;
+
+    // Apply participation bonus
+    if (participation_bonus_ != 0.0f) {
+        reward += static_cast<float>(
+            RewardCalculator::participation_bonus(position_, participation_bonus_));
+    }
 
     prev_mid_ = current_mid;
 

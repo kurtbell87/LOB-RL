@@ -19,10 +19,10 @@ class LOBEnv {
 public:
     explicit LOBEnv(std::unique_ptr<IMessageSource> src, int steps_per_episode = 50,
                     RewardMode mode = RewardMode::PnLDelta, float lambda = 0.0f,
-                    bool execution_cost = false);
+                    bool execution_cost = false, float participation_bonus = 0.0f);
     LOBEnv(std::unique_ptr<IMessageSource> src, SessionConfig cfg, int steps_per_episode,
            RewardMode mode = RewardMode::PnLDelta, float lambda = 0.0f,
-           bool execution_cost = false);
+           bool execution_cost = false, float participation_bonus = 0.0f);
 
     StepResult reset();
     StepResult step(int action);
@@ -57,5 +57,6 @@ private:
     // Reward calculation
     RewardCalculator reward_calc_;
     bool execution_cost_enabled_ = false;
+    float participation_bonus_ = 0.0f;
     float prev_position_ = 0.0f;
 };

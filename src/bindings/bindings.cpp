@@ -11,6 +11,28 @@
 
 namespace py = pybind11;
 
+// Copy a std::vector<double> into a 1-D numpy array of shape (N,).
+static py::array_t<double> to_numpy_1d(const std::vector<double>& vec, int N) {
+    py::array_t<double> arr(N);
+    if (N > 0) {
+        auto buf = arr.mutable_unchecked<1>();
+        for (int i = 0; i < N; ++i) buf(i) = vec[i];
+    }
+    return arr;
+}
+
+// Copy a flat std::vector<float> into a 2-D numpy array of shape (rows, cols).
+static py::array_t<float> to_numpy_2d(const std::vector<float>& vec, int rows, int cols) {
+    py::array_t<float> arr({rows, cols});
+    if (rows > 0) {
+        auto buf = arr.mutable_unchecked<2>();
+        for (int r = 0; r < rows; ++r)
+            for (int c = 0; c < cols; ++c)
+                buf(r, c) = vec[r * cols + c];
+    }
+    return arr;
+}
+
 static RewardMode parse_reward_mode(const std::string& mode_str) {
     if (mode_str.empty() || mode_str == "pnl_delta") return RewardMode::PnLDelta;
     if (mode_str == "pnl_delta_penalized") return RewardMode::PnLDeltaPenalized;
@@ -20,24 +42,27 @@ static RewardMode parse_reward_mode(const std::string& mode_str) {
 
 static LOBEnv make_synthetic_env(int steps_per_episode,
                                   const std::string& reward_mode, float lambda_,
-                                  bool execution_cost) {
+                                  bool execution_cost, float participation_bonus) {
     return LOBEnv(std::make_unique<SyntheticSource>(), steps_per_episode,
-                  parse_reward_mode(reward_mode), lambda_, execution_cost);
+                  parse_reward_mode(reward_mode), lambda_, execution_cost,
+                  participation_bonus);
 }
 
 static LOBEnv make_file_env(const std::string& path, int steps_per_episode,
                              const std::string& reward_mode, float lambda_,
-                             bool execution_cost) {
+                             bool execution_cost, float participation_bonus) {
     return LOBEnv(std::make_unique<BinaryFileSource>(path), steps_per_episode,
-                  parse_reward_mode(reward_mode), lambda_, execution_cost);
+                  parse_reward_mode(reward_mode), lambda_, execution_cost,
+                  participation_bonus);
 }
 
 static LOBEnv make_session_env(const std::string& path, const SessionConfig& cfg,
                                 int steps_per_episode,
                                 const std::string& reward_mode, float lambda_,
-                                bool execution_cost) {
+                                bool execution_cost, float participation_bonus) {
     return LOBEnv(std::make_unique<BinaryFileSource>(path), cfg, steps_per_episode,
-                  parse_reward_mode(reward_mode), lambda_, execution_cost);
+                  parse_reward_mode(reward_mode), lambda_, execution_cost,
+                  participation_bonus);
 }
 
 PYBIND11_MODULE(lob_rl_core, m) {
@@ -58,29 +83,31 @@ PYBIND11_MODULE(lob_rl_core, m) {
         .def(py::init(&make_session_env),
             py::arg("file_path"), py::arg("session_config"), py::arg("steps_per_episode"),
             py::arg("reward_mode") = "", py::arg("lambda_") = 0.0f,
-            py::arg("execution_cost") = false)
+            py::arg("execution_cost") = false, py::arg("participation_bonus") = 0.0f)
         // Constructor with file path + steps_per_episode
         .def(py::init(&make_file_env),
             py::arg("file_path"), py::arg("steps_per_episode"),
             py::arg("reward_mode") = "", py::arg("lambda_") = 0.0f,
-            py::arg("execution_cost") = false)
+            py::arg("execution_cost") = false, py::arg("participation_bonus") = 0.0f)
         // Constructor with file path only (default steps=50)
         .def(py::init([](const std::string& path, const std::string& reward_mode,
-                         float lambda_, bool execution_cost) {
-            return make_file_env(path, 50, reward_mode, lambda_, execution_cost);
+                         float lambda_, bool execution_cost, float participation_bonus) {
+            return make_file_env(path, 50, reward_mode, lambda_, execution_cost, participation_bonus);
         }), py::arg("file_path"), py::arg("reward_mode") = "",
-            py::arg("lambda_") = 0.0f, py::arg("execution_cost") = false)
+            py::arg("lambda_") = 0.0f, py::arg("execution_cost") = false,
+            py::arg("participation_bonus") = 0.0f)
         // Constructor with steps_per_episode (int) -> SyntheticSource
         .def(py::init(&make_synthetic_env),
             py::arg("steps_per_episode"),
             py::arg("reward_mode") = "", py::arg("lambda_") = 0.0f,
-            py::arg("execution_cost") = false)
+            py::arg("execution_cost") = false, py::arg("participation_bonus") = 0.0f)
         // Default constructor: SyntheticSource, steps_per_episode=50
         // No positional args — only kwargs
-        .def(py::init([](const std::string& reward_mode, float lambda_, bool execution_cost) {
-            return make_synthetic_env(50, reward_mode, lambda_, execution_cost);
+        .def(py::init([](const std::string& reward_mode, float lambda_, bool execution_cost,
+                         float participation_bonus) {
+            return make_synthetic_env(50, reward_mode, lambda_, execution_cost, participation_bonus);
         }), py::kw_only(), py::arg("reward_mode") = "", py::arg("lambda_") = 0.0f,
-            py::arg("execution_cost") = false)
+            py::arg("execution_cost") = false, py::arg("participation_bonus") = 0.0f)
         // steps_per_episode read-only property
         .def_property_readonly("steps_per_episode", &LOBEnv::steps_per_episode)
         .def("reset", [](LOBEnv& env) {
@@ -99,34 +126,9 @@ PYBIND11_MODULE(lob_rl_core, m) {
         const int N = day.num_steps;
         constexpr int COLS = FeatureBuilder::POSITION;  // 43: obs without position
 
-        // obs: float32 array of shape (N, COLS)
-        py::array_t<float> obs({N, COLS});
-        if (N > 0) {
-            auto buf = obs.mutable_unchecked<2>();
-            for (int r = 0; r < N; ++r) {
-                for (int c = 0; c < COLS; ++c) {
-                    buf(r, c) = day.obs[r * COLS + c];
-                }
-            }
-        }
-
-        // mid: float64 array of shape (N,)
-        py::array_t<double> mid(N);
-        if (N > 0) {
-            auto buf = mid.mutable_unchecked<1>();
-            for (int i = 0; i < N; ++i) {
-                buf(i) = day.mid[i];
-            }
-        }
-
-        // spread: float64 array of shape (N,)
-        py::array_t<double> spread(N);
-        if (N > 0) {
-            auto buf = spread.mutable_unchecked<1>();
-            for (int i = 0; i < N; ++i) {
-                buf(i) = day.spread[i];
-            }
-        }
+        auto obs    = to_numpy_2d(day.obs, N, COLS);
+        auto mid    = to_numpy_1d(day.mid, N);
+        auto spread = to_numpy_1d(day.spread, N);
 
         return py::make_tuple(obs, mid, spread, N);
     }, py::arg("path"), py::arg("session_config"));

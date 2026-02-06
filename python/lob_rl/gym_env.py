@@ -21,6 +21,7 @@ class LOBGymEnv(gym.Env):
         reward_mode="pnl_delta",
         lambda_=0.0,
         execution_cost=False,
+        participation_bonus=0.0,
     ):
         super().__init__()
 
@@ -35,16 +36,19 @@ class LOBGymEnv(gym.Env):
             self._env = lob_rl_core.LOBEnv(
                 file_path, cfg, steps_per_episode,
                 reward_mode, lambda_, execution_cost,
+                participation_bonus,
             )
         elif file_path is not None:
             self._env = lob_rl_core.LOBEnv(
                 file_path, steps_per_episode,
                 reward_mode, lambda_, execution_cost,
+                participation_bonus,
             )
         else:
             self._env = lob_rl_core.LOBEnv(
                 steps_per_episode,
                 reward_mode, lambda_, execution_cost,
+                participation_bonus,
             )
 
     def reset(self, *, seed=None, options=None):
