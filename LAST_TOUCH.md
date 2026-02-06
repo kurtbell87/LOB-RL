@@ -2,50 +2,54 @@
 
 ## What to do next
 
-**Step 4c is DONE.** First training run completed. Results below. Next steps are hyperparameter tuning and improving the agent's performance.
+**Execution cost feature is DONE** (PR #3 open). Next: re-train with execution cost enabled and tune hyperparameters.
 
-### Baseline results (500k timesteps, vanilla PPO)
+### Immediate next steps (pick one)
 
-| Metric | Validation (5 days) | Test (2 days) |
-|---|---|---|
-| Mean return | -39.8 | -76.7 |
-| Sortino ratio | -1.05 | -14.4 |
-| Profitable episodes | 0/5 | 0/2 |
+1. **Re-train with execution cost:** `--execution-cost --total-timesteps 5000000` (~25 min). This is the most important next step — the baseline was trained without execution cost so the reward signal was degenerate.
+2. **Observation normalization:** Wrap env with `VecNormalize` in `train.py`. Standardizes observations and rewards, helps PPO converge.
+3. **Inventory penalty + execution cost combo:** `--execution-cost --reward-mode pnl_delta_penalized --lambda 0.01`
+4. **Network architecture:** Try larger MLP (256x256) via SB3 `policy_kwargs`.
 
-- **Throughput:** 3,350 steps/sec sustained, 2.5 min total training time
-- **Model saved:** `runs/ppo_lob.zip`
-- **TensorBoard:** `runs/tb_logs/`
-- **Key observation:** Entropy collapsed to near-zero early (degenerate policy), then recovered at ~450k steps. Suggests the reward signal is sparse and the agent needs more timesteps, better reward shaping, or both.
-
-### Recommended next steps (pick one)
-
-1. **More timesteps:** Re-run with `--total-timesteps 5000000` (5M). ~25 min at current throughput.
-2. **Inventory penalty:** Try `--reward-mode pnl_delta_penalized --lambda 0.01` to discourage holding.
-3. **Observation normalization:** Wrap env with `VecNormalize` for stable learning.
-4. **Network architecture:** Try larger MLP (256x256) or LSTM policy for temporal patterns.
-
-### To re-run training
+### To re-run training with execution cost
 
 ```bash
-cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --data-dir ../data/mes --total-timesteps 5000000
+cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py \
+  --data-dir ../data/mes --execution-cost --total-timesteps 5000000
 ```
+
+### What was just built
+
+**Execution cost** — charges `spread/2 * |new_pos - old_pos|` on every step where the agent changes position. Implemented across the full stack:
+
+| Layer | Change |
+|---|---|
+| C++ `RewardCalculator` | `execution_cost(old_pos, new_pos, spread)` method |
+| C++ `LOBEnv` | `execution_cost` bool param, tracks `prev_position_` |
+| pybind11 bindings | `execution_cost` kwarg on all 5 constructor overloads |
+| `PrecomputedEnv` | `execution_cost` param, `_prev_position` tracking |
+| `MultiDayEnv` | Forwards `execution_cost` to inner env |
+| `LOBGymEnv` | Forwards `execution_cost` to C++ |
+| `train.py` | `--execution-cost` CLI flag |
+
+**Also:** `.gitignore` now excludes `build-release/`, `data/mes/`, `runs/`. Directory READMEs updated with full API signatures per new CLAUDE.md breadcrumb format.
 
 ## Key files for current task
 
 | File | Role |
 |---|---|
-| `scripts/train.py` | Training entry point. PPO with SB3, Sortino evaluation. Uses `MultiDayEnv`. |
-| `runs/ppo_lob.zip` | Saved baseline model (500k steps, negative Sortino). |
-| `runs/tb_logs/` | TensorBoard training logs. |
-| `python/lob_rl/multi_day_env.py` | Gym env cycling through day files. Precomputes all days at construction. |
-| `data/mes/manifest.json` | 27 days of /MES MBO data. 20 train / 5 val / 2 test split. |
+| `scripts/train.py` | Training entry point. PPO with SB3, Sortino evaluation. `--execution-cost` flag. |
+| `python/lob_rl/precomputed_env.py` | Pure-numpy env. `execution_cost` param charges spread on position change. |
+| `python/lob_rl/multi_day_env.py` | Multi-day env. Forwards `execution_cost` to inner `PrecomputedEnv`. |
+| `include/lob/reward.h` | `RewardCalculator` with `compute()`, `flattening_penalty()`, `execution_cost()`. |
+| `include/lob/env.h` | `LOBEnv` — two constructors, both accept `execution_cost` bool. |
 
 ## Don't waste time on
 
-- **Build verification** — `build-release/` is current, 404 C++ tests pass.
+- **Build verification** — `build-release/` is current, 434 C++ tests pass.
 - **Dependency checks** — SB3, gymnasium, numpy, tensorboard all installed.
 - **Reading PRD.md** — everything relevant is in this file.
-- **Codebase exploration** — read directory `README.md` files instead (every key dir has one).
+- **Codebase exploration** — read directory `README.md` files instead (every key dir has one, now with full API signatures).
 
 ## Architecture overview
 
@@ -63,17 +67,18 @@ data/mes/*.bin  →  BinaryFileSource (C++)  →  Book (C++)  →  LOBEnv (C++)
 
 ## Test coverage
 
-- **404 C++ tests** — `cd build-release && ./lob_tests`
-- **463 Python tests** — `cd build-release && PYTHONPATH=.:../python uv run pytest ../python/tests/`
-- **867 total**, all passing.
+- **434 C++ tests** — `cd build-release && ./lob_tests`
+- **508 Python tests** — `cd build-release && PYTHONPATH=.:../python uv run pytest ../python/tests/`
+- **942 total**, all passing.
 
 ## Remaining work
 
 | Item | Priority | Notes |
 |---|---|---|
-| Hyperparameter tuning / longer training | High | Baseline Sortino is negative; agent needs more signal |
-| `binary_file_source.cpp:62` int64→double precision loss | Medium | Low-impact for real financial data |
-| Test efficiency refactoring | Optional | Consolidate empty book tests, extract shared helpers |
+| Re-train with execution cost | High | Baseline was without cost; need new baseline |
+| Observation normalization (VecNormalize) | High | Helps PPO with unbounded obs space |
+| Hyperparameter tuning | Medium | LR schedule, entropy coeff, clip range |
+| `binary_file_source.cpp:62` int64→double precision loss | Low | Low-impact for real financial data |
 | DST handling for session boundaries | Low | Current dataset is entirely non-DST |
 
 ---

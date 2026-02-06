@@ -1,12 +1,13 @@
 ## Current State (updated 2026-02-06)
 
-- **Build:** `build-release/` is current. 404 C++ tests pass (`./lob_tests`). 463 Python tests pass.
+- **Build:** `build-release/` is current. 434 C++ tests pass (`./lob_tests`). 508 Python tests pass. **942 total.**
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, gymnasium, numpy, tensorboard all installed in uv environment.
-- **Step 4c DONE:** First training run completed (500k steps, 2.5 min). Baseline Sortino is negative (-1.05 val, -14.4 test). Model at `runs/ppo_lob.zip`, TB logs at `runs/tb_logs/`.
-- **Next task:** Hyperparameter tuning — longer training, inventory penalty, observation normalization. See `LAST_TOUCH.md` for recommended next steps.
+- **Execution cost feature DONE:** Per-step `spread/2 * |delta_pos|` on position changes. Enable with `--execution-cost` flag. PR #3 open.
+- **Baseline:** First training run (500k steps). Sortino: -1.05 val, -14.4 test. Entropy collapsed. Model at `runs/ppo_lob.zip`.
+- **Next task:** Re-train with `--execution-cost` and longer timesteps. Then observation normalization (VecNormalize). See `LAST_TOUCH.md`.
 - **Data:** 27 days of /MES MBO data in `data/mes/`, manifest at `data/mes/manifest.json`.
-- **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --data-dir ../data/mes`
+- **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --data-dir ../data/mes --execution-cost`
 
 ## Don't
 
