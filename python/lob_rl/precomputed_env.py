@@ -9,7 +9,7 @@ class PrecomputedEnv(gym.Env):
     metadata = {"render_modes": []}
 
     def __init__(self, obs, mid, spread, reward_mode="pnl_delta", lambda_=0.0,
-                 execution_cost=False):
+                 execution_cost=False, participation_bonus=0.0):
         super().__init__()
         if obs.shape[0] < 2:
             raise ValueError("obs must have at least 2 rows")
@@ -20,6 +20,7 @@ class PrecomputedEnv(gym.Env):
         self._reward_mode = reward_mode
         self._lambda = lambda_
         self._execution_cost = execution_cost
+        self._participation_bonus = participation_bonus
 
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(44,), dtype=np.float32
@@ -54,6 +55,10 @@ class PrecomputedEnv(gym.Env):
                 reward -= spread / 2.0 * abs(self._position - self._prev_position)
         self._prev_position = self._position
 
+        # Participation bonus: bonus * |position|
+        if self._participation_bonus != 0.0:
+            reward += self._participation_bonus * abs(self._position)
+
         self._t += 1
         terminated = self._t >= self._obs.shape[0] - 1
 
@@ -71,11 +76,11 @@ class PrecomputedEnv(gym.Env):
 
     @classmethod
     def from_file(cls, path, session_config=None, reward_mode="pnl_delta", lambda_=0.0,
-                  execution_cost=False):
+                  execution_cost=False, participation_bonus=0.0):
         import lob_rl_core
         from lob_rl._config import make_session_config
 
         cfg = make_session_config(session_config)
         obs, mid, spread, num_steps = lob_rl_core.precompute(path, cfg)
         return cls(obs, mid, spread, reward_mode=reward_mode, lambda_=lambda_,
-                   execution_cost=execution_cost)
+                   execution_cost=execution_cost, participation_bonus=participation_bonus)
