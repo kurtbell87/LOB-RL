@@ -66,6 +66,7 @@ add_executable(lob_tests
     tests/test_data_integrity.cpp
     tests/test_precompute.cpp
     tests/test_execution_cost.cpp
+    tests/test_participation_bonus.cpp
 )
 
 target_link_libraries(lob_tests PRIVATE lob_core GTest::gtest_main)
