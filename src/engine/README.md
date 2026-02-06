@@ -1,17 +1,14 @@
-# Engine Module
+# src/engine — Limit Order Book Engine
 
-## Purpose
-Order book reconstruction from MBO messages.
+Core matching engine. `Book` maintains a price-time priority order book.
 
-## Interface
-- `Book` — defined in `include/lob/book.h`
-- `apply(msg)` — process one MBO message
-- `bid(depth)`, `ask(depth)` — query book levels
-- `mid_price()`, `spread()`, `imbalance()` — derived metrics
+## Files
 
-## Dependencies
-- Depends on: `message.h` only
-- Depended on by: `LOBEnv`, `FeatureBuilder`
+| File | Role |
+|---|---|
+| `book.cpp` | `Book::apply(Message)` — processes Add/Cancel/Modify/Trade. Maintains `top_bids(k)`/`top_asks(k)` with NaN/0 padding. |
 
-## Status
-Not implemented.
+## Key interfaces (in `include/lob/`)
+
+- `book.h` — `Book` class: `apply()`, `best_bid()`, `best_ask()`, `mid()`, `spread()`, `top_bids(k)`, `top_asks(k)`
+- `message.h` — `Message` struct: `Side`, `Action` enums, order fields, `is_valid()`

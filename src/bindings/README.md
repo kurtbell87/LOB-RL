@@ -1,16 +1,25 @@
-# Bindings Module
+# src/bindings — Python Bindings
 
-## Purpose
-pybind11 bindings exposing LOBEnv to Python.
+pybind11 module exposing C++ engine to Python as `lob_rl_core`.
 
-## Interface
-- `lob_rl` Python module
-- `LOBEnv` class with `reset()`, `step(action)`
-- Zero-copy numpy arrays for observations
+## Files
 
-## Dependencies
-- Depends on: `LOBEnv`
-- Depended on by: Python training scripts
+| File | Role |
+|---|---|
+| `bindings.cpp` | Exposes: `LOBEnv` (all constructors), `SessionConfig` (with `default_rth()`), `precompute()`. Module name: `lob_rl_core`. |
 
-## Status
-Not implemented.
+## Usage from Python
+
+```python
+import lob_rl_core
+
+# Synthetic
+env = lob_rl_core.LOBEnv()
+
+# Real data with session config
+config = lob_rl_core.SessionConfig.default_rth()
+env = lob_rl_core.LOBEnv("path/to/file.bin", config, 1000)
+
+# Precompute for fast training
+obs, rewards, dones = lob_rl_core.precompute("path/to/file.bin", config, 1000)
+```
