@@ -2,43 +2,49 @@
 
 ## What to do next
 
-**Execution cost feature is DONE** (PR #3 open). Next: re-train with execution cost enabled and tune hyperparameters.
+**Training pipeline v2 is DONE** (PR #4 merged). The training script now has VecNormalize, 8 parallel envs, entropy regularization, and all key hyperparameters exposed as CLI flags. Next: run a training experiment.
 
-### Immediate next steps (pick one)
+### Immediate next step
 
-1. **Re-train with execution cost:** `--execution-cost --total-timesteps 5000000` (~25 min). This is the most important next step — the baseline was trained without execution cost so the reward signal was degenerate.
-2. **Observation normalization:** Wrap env with `VecNormalize` in `train.py`. Standardizes observations and rewards, helps PPO converge.
-3. **Inventory penalty + execution cost combo:** `--execution-cost --reward-mode pnl_delta_penalized --lambda 0.01`
-4. **Network architecture:** Try larger MLP (256x256) via SB3 `policy_kwargs`.
-
-### To re-run training with execution cost
+Run the improved training pipeline and evaluate:
 
 ```bash
 cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py \
-  --data-dir ../data/mes --execution-cost --total-timesteps 5000000
+  --data-dir ../data/mes --execution-cost --total-timesteps 2000000
 ```
+
+Default flags now include `--ent-coef 0.01`, `--n-envs 8`, `--batch-size 256`, `--n-epochs 5`, VecNormalize on. Monitor in TensorBoard.
+
+### After the training run
+
+1. Check TensorBoard for entropy, policy loss, value loss curves.
+2. If entropy still collapses, increase `--ent-coef` to 0.03 or 0.1.
+3. If training is stable, extend to `--total-timesteps 5000000`.
+4. Try `--reward-mode pnl_delta_penalized --lambda 0.01` for inventory penalty.
+5. Try larger network: add `policy_kwargs=dict(net_arch=[256, 256])` to PPO.
 
 ### What was just built
 
-**Execution cost** — charges `spread/2 * |new_pos - old_pos|` on every step where the agent changes position. Implemented across the full stack:
+**Training pipeline v2** (PR #4) — fixed critical training issues:
 
-| Layer | Change |
-|---|---|
-| C++ `RewardCalculator` | `execution_cost(old_pos, new_pos, spread)` method |
-| C++ `LOBEnv` | `execution_cost` bool param, tracks `prev_position_` |
-| pybind11 bindings | `execution_cost` kwarg on all 5 constructor overloads |
-| `PrecomputedEnv` | `execution_cost` param, `_prev_position` tracking |
-| `MultiDayEnv` | Forwards `execution_cost` to inner env |
-| `LOBGymEnv` | Forwards `execution_cost` to C++ |
-| `train.py` | `--execution-cost` CLI flag |
+| Change | Before | After |
+|---|---|---|
+| `ent_coef` | 0.0 (!) | 0.01 (CLI tunable) |
+| Observation normalization | None | VecNormalize (obs + reward) |
+| Parallel envs | 1 (DummyVecEnv) | 8 (SubprocVecEnv) |
+| Batch size | 64 | 256 |
+| Epochs per rollout | 10 | 5 |
+| Eval execution_cost | Not forwarded (bug) | Forwarded correctly |
+| Eval VecNormalize | None | Loaded in eval mode |
+| Hyperparameter CLI flags | 7 | 13 |
 
-**Also:** `.gitignore` now excludes `build-release/`, `data/mes/`, `runs/`. Directory READMEs updated with full API signatures per new CLAUDE.md breadcrumb format.
+Also: minor C++ refactor (eliminated intermediate buffer in `precompute.cpp`).
 
 ## Key files for current task
 
 | File | Role |
 |---|---|
-| `scripts/train.py` | Training entry point. PPO with SB3, Sortino evaluation. `--execution-cost` flag. |
+| `scripts/train.py` | Training entry point. PPO with SB3, VecNormalize, SubprocVecEnv. 13 CLI flags. |
 | `python/lob_rl/precomputed_env.py` | Pure-numpy env. `execution_cost` param charges spread on position change. |
 | `python/lob_rl/multi_day_env.py` | Multi-day env. Forwards `execution_cost` to inner `PrecomputedEnv`. |
 | `include/lob/reward.h` | `RewardCalculator` with `compute()`, `flattening_penalty()`, `execution_cost()`. |
@@ -75,9 +81,9 @@ data/mes/*.bin  →  BinaryFileSource (C++)  →  Book (C++)  →  LOBEnv (C++)
 
 | Item | Priority | Notes |
 |---|---|---|
-| Re-train with execution cost | High | Baseline was without cost; need new baseline |
-| Observation normalization (VecNormalize) | High | Helps PPO with unbounded obs space |
-| Hyperparameter tuning | Medium | LR schedule, entropy coeff, clip range |
+| Run training with v2 pipeline | High | VecNormalize + ent_coef + 8 envs; evaluate Sortino |
+| Hyperparameter sweep if needed | Medium | ent_coef, LR, network arch |
+| Inventory penalty experiment | Medium | `--reward-mode pnl_delta_penalized --lambda 0.01` |
 | `binary_file_source.cpp:62` int64→double precision loss | Low | Low-impact for real financial data |
 | DST handling for session boundaries | Low | Current dataset is entirely non-DST |
 

@@ -3,9 +3,10 @@
 - **Build:** `build-release/` is current. 434 C++ tests pass (`./lob_tests`). 580 Python tests pass. **1014 total.**
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, gymnasium, numpy, tensorboard all installed in uv environment.
-- **Execution cost feature DONE:** Per-step `spread/2 * |delta_pos|` on position changes. Enable with `--execution-cost` flag. PR #3 open.
-- **Baseline:** First training run (500k steps). Sortino: -1.05 val, -14.4 test. Entropy collapsed. Model at `runs/ppo_lob.zip`.
-- **Next task:** Re-train with `--execution-cost` and longer timesteps. Then observation normalization (VecNormalize). See `LAST_TOUCH.md`.
+- **Training pipeline v2 DONE:** VecNormalize, SubprocVecEnv (8 envs), ent_coef=0.01, 13 CLI flags. PR #4 merged.
+- **Execution cost DONE:** Per-step `spread/2 * |delta_pos|`. Enable with `--execution-cost`. PR #3 merged.
+- **Baseline:** First run (500k, old pipeline) collapsed. Need new baseline with v2 pipeline.
+- **Next task:** Run training with v2 pipeline, evaluate Sortino. See `LAST_TOUCH.md`.
 - **Data:** 27 days of /MES MBO data in `data/mes/`, manifest at `data/mes/manifest.json`.
 - **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --data-dir ../data/mes --execution-cost`
 
