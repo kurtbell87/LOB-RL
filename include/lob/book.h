@@ -2,48 +2,46 @@
 #include "lob/message.h"
 #include <map>
 #include <unordered_map>
-
-namespace lob {
-
-struct Level {
-    int64_t  price    = 0;
-    uint32_t quantity = 0;
-};
-
-struct Order {
-    uint64_t order_id;
-    int64_t  price;
-    uint32_t quantity;
-    Side     side;
-};
+#include <vector>
+#include <cstdint>
 
 class Book {
 public:
-    void apply(const MBOMessage& msg);
-    void clear();
+    struct PriceLevel {
+        double price;
+        uint32_t qty;
+    };
 
-    Level bid(int depth = 0) const;
-    Level ask(int depth = 0) const;
-    int bid_depth() const;
-    int ask_depth() const;
-    int64_t mid_price() const;
-    int64_t spread() const;
-    double imbalance(int levels = 1) const;
+    void apply(const Message& msg);
+    void reset();
+
+    double best_bid() const;
+    double best_ask() const;
+    double mid_price() const;
+    double spread() const;
+    size_t bid_depth() const;
+    size_t ask_depth() const;
+
+    std::vector<PriceLevel> top_bids(int k = 10) const;
+    std::vector<PriceLevel> top_asks(int k = 10) const;
+    uint32_t best_bid_qty() const;
+    uint32_t best_ask_qty() const;
 
 private:
-    void add_order(const MBOMessage& msg);
-    void cancel_order(const MBOMessage& msg);
-    void modify_order(const MBOMessage& msg);
-    void process_trade(const MBOMessage& msg);
+    void apply_add(const Message& msg, std::map<double, uint32_t>& levels);
+    void apply_cancel(const Message& msg, std::map<double, uint32_t>& levels);
+    void apply_modify(const Message& msg, std::map<double, uint32_t>& levels);
+    void apply_trade(const Message& msg, std::map<double, uint32_t>& levels);
 
-    // Order storage: order_id -> Order
-    std::unordered_map<uint64_t, Order> orders_;
+    // price -> total qty at that level
+    std::map<double, uint32_t> bids_;  // sorted ascending, best = rbegin
+    std::map<double, uint32_t> asks_;  // sorted ascending, best = begin
 
-    // Price levels: price -> total quantity
-    // Bids: descending order (highest price first)
-    // Asks: ascending order (lowest price first)
-    std::map<int64_t, uint32_t, std::greater<int64_t>> bids_;
-    std::map<int64_t, uint32_t> asks_;
+    // order_id -> (side, price, qty) for cancel/modify/trade tracking
+    struct OrderEntry {
+        Message::Side side;
+        double price;
+        uint32_t qty;
+    };
+    std::unordered_map<uint64_t, OrderEntry> orders_;
 };
-
-}  // namespace lob
