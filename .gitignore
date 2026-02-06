@@ -17,5 +17,5 @@ dist/
 data/mes/*.bin
 data/mes/manifest.json
 runs/
-lob_rl
+/lob_rl
 LOB-RL.code-workspace
