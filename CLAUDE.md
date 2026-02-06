@@ -1,15 +1,16 @@
 ## Current State (updated 2026-02-06)
 
-- **Build:** `build-release/` is current. 460 C++ tests pass (`./lob_tests`). 626 Python tests pass. **1086 total.**
+- **Build:** `build-release/` is current. 460 C++ tests pass (`./lob_tests`). 696 Python tests pass. **1156 total.**
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, gymnasium, numpy, tensorboard all installed in uv environment.
+- **Temporal features DONE:** Obs expanded 44→54 dims. 10 engineered features (returns, volatility, imbalance, microprice). PR #6 merged.
 - **Participation bonus DONE:** Per-step `bonus * abs(position)`. Enable with `--participation-bonus 0.01`. PR #5 merged.
 - **Training pipeline v2 DONE:** VecNormalize, SubprocVecEnv (8 envs), ent_coef=0.01, 14 CLI flags. PR #4 merged.
 - **Execution cost DONE:** Per-step `spread/2 * |delta_pos|`. Enable with `--execution-cost`. PR #3 merged.
-- **Training runs:** v2 pipeline with/without exec cost both converge to "don't trade." Need participation bonus to incentivize market exposure.
-- **Next task:** Train with `--participation-bonus 0.01` and evaluate. See `LAST_TOUCH.md`.
+- **Training runs:** Agent trades with participation bonus but picks wrong direction (Sortino -0.91). Temporal features added to help with directionality.
+- **Next task:** Train with temporal features (`--participation-bonus 0.01`, 2M steps) and evaluate. See `LAST_TOUCH.md`.
 - **Data:** 27 days of /MES MBO data in `data/mes/`, manifest at `data/mes/manifest.json`.
-- **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --data-dir ../data/mes --execution-cost`
+- **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --data-dir ../data/mes --participation-bonus 0.01`
 
 ## Don't
 
