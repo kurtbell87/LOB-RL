@@ -1,6 +1,6 @@
 ## Current State (updated 2026-02-06)
 
-- **Build:** `build-release/` is current. 434 C++ tests pass (`./lob_tests`). 508 Python tests pass. **942 total.**
+- **Build:** `build-release/` is current. 434 C++ tests pass (`./lob_tests`). 580 Python tests pass. **1014 total.**
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, gymnasium, numpy, tensorboard all installed in uv environment.
 - **Execution cost feature DONE:** Per-step `spread/2 * |delta_pos|` on position changes. Enable with `--execution-cost` flag. PR #3 open.

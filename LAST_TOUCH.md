@@ -68,8 +68,8 @@ data/mes/*.bin  →  BinaryFileSource (C++)  →  Book (C++)  →  LOBEnv (C++)
 ## Test coverage
 
 - **434 C++ tests** — `cd build-release && ./lob_tests`
-- **508 Python tests** — `cd build-release && PYTHONPATH=.:../python uv run pytest ../python/tests/`
-- **942 total**, all passing.
+- **580 Python tests** — `cd build-release && PYTHONPATH=.:../python uv run pytest ../python/tests/`
+- **1014 total**, all passing.
 
 ## Remaining work
 
