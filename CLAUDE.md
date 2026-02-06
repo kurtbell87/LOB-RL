@@ -22,7 +22,7 @@ After every session that changes the codebase, you MUST maintain these navigatio
 1. **`LAST_TOUCH.md`** — Update the "What to do next" and "Key files" sections. This is a cold-start briefing, not a journal. Keep it actionable and concise.
 2. **`CLAUDE.md` "Current State" section** — Update build status, test counts, and next task.
 3. **Directory `README.md` files** — If you add/rename/delete files in a directory, update that directory's `README.md`. If a directory doesn't have one, create it.
-4. **Spec docs in `docs/`** — After completing a TDD cycle, the spec stays as historical record. Don't delete them.
+4. **Spec docs in `docs/`** — Archived automatically by `./tdd.sh ship`. The spec is deleted from the working tree but preserved in git history. Don't manually delete specs before shipping.
 
 The goal: a new agent session should be able to orient itself by reading only `CLAUDE.md` → `LAST_TOUCH.md` → relevant directory `README.md`, without grepping or exploring.
 
@@ -75,10 +75,27 @@ This spawns a dedicated refactoring agent that improves code quality while keepi
 
 **IMPORTANT: Run in background and block-wait.** Use `run_in_background: true`, then block-wait with `TaskOutput(block: true, timeout: 600000)`. Repeat if it times out.
 
+### Step 5: SHIP — Commit, PR, Archive
+
+After the refactor phase, ship the results:
+
+```bash
+./tdd.sh ship docs/<feature>.md
+```
+
+This creates a feature branch (`tdd/<feature>`), commits all changes, opens a PR, and deletes the spec file from the working tree (it's preserved in git history).
+
+Configure auto-merge and branch cleanup via environment variables:
+- `TDD_AUTO_MERGE=true` — auto-merge the PR after creation
+- `TDD_DELETE_BRANCH=true` — delete the feature branch after merge
+- `TDD_BASE_BRANCH=main` — base branch for PRs (default: `main`)
+
+Or run all phases including ship in one command: `./tdd.sh full docs/<feature>.md`
+
 ### After the Cycle
 
-- Verify all tests pass
 - Update `LAST_TOUCH.md` with what was built and the new project state.
+- Update `CLAUDE.md` "Current State" section with new test counts and next task.
 - If more work remains, go back to Step 1 with the next spec.
 
 ### Monitoring Running Phases
