@@ -1,16 +1,16 @@
-# Data Module
+# src/data — Data Sources
 
-## Purpose
-Message sources that feed MBO data to the Book.
+Message sources that feed the Book engine. All implement `IMessageSource` (see `include/lob/source.h`).
 
-## Interface
-- `IMessageSource` — abstract base in `include/lob/source.h`
-- `SyntheticSource` — deterministic test data
-- `DatabentoSource` — real Databento MBO files (later)
+## Files
 
-## Dependencies
-- Depends on: `message.h` only
-- Depended on by: `LOBEnv`
+| File | Role |
+|---|---|
+| `synthetic_source.h/cpp` | `SyntheticSource` — deterministic ~100 message generator for testing. Timestamps are not realistic (start at ~1ms epoch). Cannot be used with session-aware constructors. |
+| `binary_file_source.h/cpp` | `BinaryFileSource(path)` — reads flat binary files (16-byte header + 36-byte records). Created by `convert_dbn.py`. Loads entire file into memory. |
 
-## Status
-Not implemented.
+## Binary file format
+
+- Magic: "LOBR", version 1
+- Header: 16 bytes (magic + version + instrument_id + record_count)
+- Records: 36 bytes each (timestamp, order_id, price, qty, action, side)
