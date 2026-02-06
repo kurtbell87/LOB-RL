@@ -480,7 +480,7 @@ class TestPrecomputedEnvFromFile:
         )
         assert isinstance(env, PrecomputedEnv)
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_from_file_default_participation_bonus_zero(self):
         """from_file() without participation_bonus should default to 0.0."""
@@ -503,7 +503,7 @@ class TestMultiDayEnvParticipationBonus:
             file_paths=DAY_FILES, shuffle=False, participation_bonus=0.0,
         )
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_accepts_participation_bonus_positive(self):
         """MultiDayEnv(participation_bonus=0.01) should construct without error."""
@@ -512,14 +512,14 @@ class TestMultiDayEnvParticipationBonus:
             file_paths=DAY_FILES, shuffle=False, participation_bonus=0.01,
         )
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_default_participation_bonus_is_zero(self):
         """MultiDayEnv() without participation_bonus should default to 0.0."""
         from lob_rl.multi_day_env import MultiDayEnv
         env = MultiDayEnv(file_paths=DAY_FILES, shuffle=False)
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_participation_bonus_forwarded_to_inner_env(self):
         """participation_bonus=0.01 should produce different rewards than 0.0."""

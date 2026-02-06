@@ -53,7 +53,7 @@ class MultiDayEnv(gym.Env):
         self._participation_bonus = participation_bonus
 
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(44,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(54,), dtype=np.float32
         )
         self.action_space = spaces.Discrete(3)
 

@@ -498,7 +498,7 @@ class TestPrecomputedEnvFromFile:
         )
         assert isinstance(env, PrecomputedEnv)
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_from_file_default_execution_cost_false(self):
         """from_file() without execution_cost should default to False."""
@@ -521,7 +521,7 @@ class TestMultiDayEnvExecutionCost:
             file_paths=DAY_FILES, shuffle=False, execution_cost=False,
         )
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_accepts_execution_cost_true(self):
         """MultiDayEnv(execution_cost=True) should construct without error."""
@@ -530,7 +530,7 @@ class TestMultiDayEnvExecutionCost:
             file_paths=DAY_FILES, shuffle=False, execution_cost=True,
         )
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_default_execution_cost_is_false(self):
         """MultiDayEnv() without execution_cost should default to False."""
@@ -539,7 +539,7 @@ class TestMultiDayEnvExecutionCost:
         # Should accept all old args without execution_cost
         env = MultiDayEnv(file_paths=DAY_FILES, shuffle=False)
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_execution_cost_forwarded_to_inner_env(self):
         """execution_cost=True should produce different rewards than False."""

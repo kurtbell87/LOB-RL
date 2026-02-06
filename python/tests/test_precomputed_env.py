@@ -4,9 +4,9 @@ Spec: docs/precomputed-env.md
 
 These tests verify that:
 - PrecomputedEnv is a valid gymnasium.Env with correct spaces
-- reset() returns 44-float obs with position=0 appended at index 43
+- reset() returns 54-float obs with position=0 at index 53
 - step() returns correct 5-tuple (obs, reward, terminated, truncated, info)
-- Action mapping: {0->-1, 1->0, 2->+1} reflected in obs[43]
+- Action mapping: {0->-1, 1->0, 2->+1} reflected in obs[53]
 - Reward = position * (mid[t+1] - mid[t]) for PnLDelta
 - PnLDeltaPenalized subtracts lambda_ * |position|
 - Episode terminates at t == N-1 (N snapshots -> N-1 steps)
@@ -48,9 +48,9 @@ class TestConstructor:
         assert isinstance(env.observation_space, spaces.Box)
 
     def test_observation_space_shape_is_44(self):
-        """observation_space shape should be (44,) — 43 market + 1 position."""
+        """observation_space shape should be (54,) — 43 market + 10 temporal + 1 position."""
         env = PrecomputedEnv(_make_obs(5), _make_mid(5), _make_spread(5))
-        assert env.observation_space.shape == (44,)
+        assert env.observation_space.shape == (54,)
 
     def test_observation_space_dtype_float32(self):
         """observation_space dtype should be float32."""
@@ -80,12 +80,12 @@ class TestConstructor:
 
 
 # ===========================================================================
-# Test 2: reset returns 44-float observation with position=0
+# Test 2: reset returns 54-float observation with position=0
 # ===========================================================================
 
 
 class TestReset:
-    """reset() should return (obs_44, info) with position=0."""
+    """reset() should return (obs_54, info) with position=0."""
 
     def test_reset_returns_tuple_of_two(self):
         """reset() should return a 2-tuple."""
@@ -95,10 +95,10 @@ class TestReset:
         assert len(result) == 2
 
     def test_reset_obs_shape_is_44(self):
-        """reset() observation should have shape (44,)."""
+        """reset() observation should have shape (54,)."""
         env = PrecomputedEnv(_make_obs(5), _make_mid(5), _make_spread(5))
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_reset_obs_dtype_is_float32(self):
         """reset() observation dtype should be float32."""
@@ -107,10 +107,10 @@ class TestReset:
         assert obs.dtype == np.float32
 
     def test_reset_position_is_zero(self):
-        """reset() should set position to 0.0 at index 43."""
+        """reset() should set position to 0.0 at index 53."""
         env = PrecomputedEnv(_make_obs(5), _make_mid(5), _make_spread(5))
         obs, info = env.reset()
-        assert obs[43] == pytest.approx(0.0)
+        assert obs[53] == pytest.approx(0.0)
 
     def test_reset_obs_first_43_match_obs_row_0(self):
         """reset() obs[:43] should match the first row of the input obs array."""
@@ -129,13 +129,13 @@ class TestReset:
         """reset(seed=42) should not raise."""
         env = PrecomputedEnv(_make_obs(5), _make_mid(5), _make_spread(5))
         obs, info = env.reset(seed=42)
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_reset_accepts_options_kwarg(self):
         """reset(options={}) should not raise."""
         env = PrecomputedEnv(_make_obs(5), _make_mid(5), _make_spread(5))
         obs, info = env.reset(options={})
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_reset_obs_in_observation_space(self):
         """reset() observation should be within observation_space."""
@@ -171,9 +171,9 @@ class TestStepFormat:
         assert isinstance(obs, np.ndarray)
 
     def test_step_obs_shape(self):
-        """step() obs should have shape (44,)."""
+        """step() obs should have shape (54,)."""
         obs, _, _, _, _ = self.env.step(1)
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_step_obs_dtype(self):
         """step() obs should have dtype float32."""
@@ -224,32 +224,32 @@ class TestActionMapping:
         env = PrecomputedEnv(_make_obs(5), _make_mid(5), _make_spread(5))
         env.reset()
         obs, _, _, _, _ = env.step(0)
-        assert obs[43] == pytest.approx(-1.0)
+        assert obs[53] == pytest.approx(-1.0)
 
     def test_action_1_gives_position_0(self):
         """action=1 should set position to 0.0 (flat)."""
         env = PrecomputedEnv(_make_obs(5), _make_mid(5), _make_spread(5))
         env.reset()
         obs, _, _, _, _ = env.step(1)
-        assert obs[43] == pytest.approx(0.0)
+        assert obs[53] == pytest.approx(0.0)
 
     def test_action_2_gives_position_pos1(self):
         """action=2 should set position to +1.0 (long)."""
         env = PrecomputedEnv(_make_obs(5), _make_mid(5), _make_spread(5))
         env.reset()
         obs, _, _, _, _ = env.step(2)
-        assert obs[43] == pytest.approx(1.0)
+        assert obs[53] == pytest.approx(1.0)
 
     def test_position_changes_across_steps(self):
         """Position should reflect the most recent action, not accumulate."""
         env = PrecomputedEnv(_make_obs(5), _make_mid(5), _make_spread(5))
         env.reset()
         obs, _, _, _, _ = env.step(2)  # long
-        assert obs[43] == pytest.approx(1.0)
+        assert obs[53] == pytest.approx(1.0)
         obs, _, _, _, _ = env.step(0)  # short
-        assert obs[43] == pytest.approx(-1.0)
+        assert obs[53] == pytest.approx(-1.0)
         obs, _, _, _, _ = env.step(1)  # flat
-        assert obs[43] == pytest.approx(0.0)
+        assert obs[53] == pytest.approx(0.0)
 
 
 # ===========================================================================
@@ -609,7 +609,7 @@ class TestFromFile:
         """from_file() env should support reset()."""
         env = PrecomputedEnv.from_file(PRECOMPUTE_EPISODE_FILE)
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
         assert obs.dtype == np.float32
 
     def test_from_file_can_step(self):
@@ -617,7 +617,7 @@ class TestFromFile:
         env = PrecomputedEnv.from_file(PRECOMPUTE_EPISODE_FILE)
         env.reset()
         obs, reward, terminated, truncated, info = env.step(1)
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
         assert isinstance(reward, (float, np.floating))
 
     def test_from_file_full_episode(self):
@@ -686,7 +686,7 @@ class TestResetMidEpisode:
         # Reset
         obs, info = env.reset()
         np.testing.assert_array_almost_equal(obs[:43], input_obs[0])
-        assert obs[43] == pytest.approx(0.0)
+        assert obs[53] == pytest.approx(0.0)
 
     def test_reset_after_done_returns_t0_obs(self):
         """After episode ends, reset() should return t=0 obs with position=0."""
@@ -701,7 +701,7 @@ class TestResetMidEpisode:
         # Reset
         obs, info = env.reset()
         np.testing.assert_array_almost_equal(obs[:43], input_obs[0])
-        assert obs[43] == pytest.approx(0.0)
+        assert obs[53] == pytest.approx(0.0)
 
     def test_multiple_episodes_same_start(self):
         """Multiple reset/episode cycles should always start from t=0."""
@@ -711,7 +711,7 @@ class TestResetMidEpisode:
         for _ in range(3):
             obs, info = env.reset()
             np.testing.assert_array_almost_equal(obs[:43], input_obs[0])
-            assert obs[43] == pytest.approx(0.0)
+            assert obs[53] == pytest.approx(0.0)
             # Take some steps
             terminated = False
             while not terminated:
@@ -797,14 +797,14 @@ class TestFromFileCustomConfig:
         env = PrecomputedEnv.from_file(PRECOMPUTE_EPISODE_FILE, session_config=config)
         assert isinstance(env, PrecomputedEnv)
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_from_file_none_session_config_uses_default(self):
         """from_file(path, session_config=None) should use default_rth()."""
         env = PrecomputedEnv.from_file(PRECOMPUTE_EPISODE_FILE, session_config=None)
         assert isinstance(env, PrecomputedEnv)
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
 
 # ===========================================================================
