@@ -1,4 +1,5 @@
 build/
+build-release/
 *.o
 *.so
 *.dylib
@@ -12,3 +13,9 @@ compile_commands.json
 *.egg-info/
 dist/
 .claude/settings.local.json
+.venv/
+data/mes/*.bin
+data/mes/manifest.json
+runs/
+lob_rl
+LOB-RL.code-workspace

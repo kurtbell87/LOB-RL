@@ -1,136 +1,133 @@
 #include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
 #include <pybind11/numpy.h>
-
+#include <pybind11/stl.h>
 #include "lob/env.h"
-#include "lob/book.h"
-#include "lob/message.h"
-#include "lob/source.h"
+#include "lob/session.h"
+#include "lob/reward.h"
+#include "lob/precompute.h"
+#include "lob/feature_builder.h"
 #include "synthetic_source.h"
+#include "binary_file_source.h"
 
 namespace py = pybind11;
 
-namespace lob {
-
-// Helper to convert Observation to numpy array
-py::array_t<float> observation_to_numpy(const Observation& obs) {
-    py::array_t<float> result(obs.data.size());
-    auto buf = result.request();
-    float* ptr = static_cast<float*>(buf.ptr);
-    std::copy(obs.data.begin(), obs.data.end(), ptr);
-    return result;
+static RewardMode parse_reward_mode(const std::string& mode_str) {
+    if (mode_str.empty() || mode_str == "pnl_delta") return RewardMode::PnLDelta;
+    if (mode_str == "pnl_delta_penalized") return RewardMode::PnLDeltaPenalized;
+    throw std::invalid_argument("Invalid reward_mode: '" + mode_str +
+        "'. Expected 'pnl_delta' or 'pnl_delta_penalized'.");
 }
 
-// Wrapper for StepResult that returns numpy observation
-struct PyStepResult {
-    py::array_t<float> obs;
-    double reward;
-    bool done;
-    int position;
-    double pnl;
-    uint64_t timestamp_ns;
+static LOBEnv make_synthetic_env(int steps_per_episode,
+                                  const std::string& reward_mode, float lambda_,
+                                  bool execution_cost) {
+    return LOBEnv(std::make_unique<SyntheticSource>(), steps_per_episode,
+                  parse_reward_mode(reward_mode), lambda_, execution_cost);
+}
 
-    explicit PyStepResult(StepResult&& result)
-        : obs(observation_to_numpy(result.obs))
-        , reward(result.reward)
-        , done(result.done)
-        , position(result.position)
-        , pnl(result.pnl)
-        , timestamp_ns(result.timestamp_ns) {}
-};
+static LOBEnv make_file_env(const std::string& path, int steps_per_episode,
+                             const std::string& reward_mode, float lambda_,
+                             bool execution_cost) {
+    return LOBEnv(std::make_unique<BinaryFileSource>(path), steps_per_episode,
+                  parse_reward_mode(reward_mode), lambda_, execution_cost);
+}
+
+static LOBEnv make_session_env(const std::string& path, const SessionConfig& cfg,
+                                int steps_per_episode,
+                                const std::string& reward_mode, float lambda_,
+                                bool execution_cost) {
+    return LOBEnv(std::make_unique<BinaryFileSource>(path), cfg, steps_per_episode,
+                  parse_reward_mode(reward_mode), lambda_, execution_cost);
+}
 
 PYBIND11_MODULE(lob_rl_core, m) {
-    m.doc() = "LOB-RL: Limit Order Book Reinforcement Learning Environment";
+    m.doc() = "LOB-RL core C++ bindings";
 
-    // Enums
-    py::enum_<Side>(m, "Side")
-        .value("Bid", Side::Bid)
-        .value("Ask", Side::Ask);
-
-    py::enum_<Action>(m, "Action")
-        .value("Add", Action::Add)
-        .value("Cancel", Action::Cancel)
-        .value("Modify", Action::Modify)
-        .value("Trade", Action::Trade)
-        .value("Clear", Action::Clear);
-
-    py::enum_<RewardType>(m, "RewardType")
-        .value("PnLDelta", RewardType::PnLDelta)
-        .value("PnLDeltaPenalized", RewardType::PnLDeltaPenalized);
-
-    // Session struct
-    py::class_<Session>(m, "Session")
-        .def(py::init<int, int, int, int>(),
-             py::arg("start_hour_utc"), py::arg("start_minute_utc"),
-             py::arg("end_hour_utc"), py::arg("end_minute_utc"))
-        .def_readwrite("start_hour_utc", &Session::start_hour_utc)
-        .def_readwrite("start_minute_utc", &Session::start_minute_utc)
-        .def_readwrite("end_hour_utc", &Session::end_hour_utc)
-        .def_readwrite("end_minute_utc", &Session::end_minute_utc);
-
-    // Predefined sessions
-    m.attr("US_RTH_EST") = sessions::US_RTH_EST;
-    m.attr("US_RTH_EDT") = sessions::US_RTH_EDT;
-
-    // EnvConfig struct
-    py::class_<EnvConfig>(m, "EnvConfig")
+    // SessionConfig
+    py::class_<SessionConfig>(m, "SessionConfig")
         .def(py::init<>())
-        .def_readwrite("data_path", &EnvConfig::data_path)
-        .def_readwrite("book_depth", &EnvConfig::book_depth)
-        .def_readwrite("trades_per_step", &EnvConfig::trades_per_step)
-        .def_readwrite("reward_type", &EnvConfig::reward_type)
-        .def_readwrite("inventory_penalty", &EnvConfig::inventory_penalty)
-        .def_readwrite("session", &EnvConfig::session);
+        .def_readwrite("rth_open_ns", &SessionConfig::rth_open_ns)
+        .def_readwrite("rth_close_ns", &SessionConfig::rth_close_ns)
+        .def_readwrite("warmup_messages", &SessionConfig::warmup_messages)
+        .def_static("default_rth", &SessionConfig::default_rth);
 
-    // PyStepResult (Python-friendly version with numpy array)
-    py::class_<PyStepResult>(m, "StepResult")
-        .def_readonly("obs", &PyStepResult::obs)
-        .def_readonly("reward", &PyStepResult::reward)
-        .def_readonly("done", &PyStepResult::done)
-        .def_readonly("position", &PyStepResult::position)
-        .def_readonly("pnl", &PyStepResult::pnl)
-        .def_readonly("timestamp_ns", &PyStepResult::timestamp_ns);
-
-    // Level struct
-    py::class_<Level>(m, "Level")
-        .def_readonly("price", &Level::price)
-        .def_readonly("quantity", &Level::quantity);
-
-    // Book class
-    py::class_<Book>(m, "Book")
-        .def(py::init<>())
-        .def("clear", &Book::clear)
-        .def("bid", &Book::bid, py::arg("depth") = 0)
-        .def("ask", &Book::ask, py::arg("depth") = 0)
-        .def("bid_depth", &Book::bid_depth)
-        .def("ask_depth", &Book::ask_depth)
-        .def("mid_price", &Book::mid_price)
-        .def("spread", &Book::spread)
-        .def("imbalance", &Book::imbalance, py::arg("levels") = 1);
-
-    // SyntheticSource
-    py::class_<SyntheticSource>(m, "SyntheticSource")
-        .def(py::init<uint32_t, uint64_t>(),
-             py::arg("seed") = 42, py::arg("num_messages") = 1000)
-        .def("has_next", &SyntheticSource::has_next)
-        .def("reset", &SyntheticSource::reset)
-        .def("message_count", &SyntheticSource::message_count);
-
-    // LOBEnv class
+    // LOBEnv
     py::class_<LOBEnv>(m, "LOBEnv")
-        .def(py::init([](EnvConfig config, uint32_t seed, uint64_t num_messages) {
-            auto source = std::make_unique<SyntheticSource>(seed, num_messages);
-            return std::make_unique<LOBEnv>(std::move(config), std::move(source));
-        }), py::arg("config") = EnvConfig{}, py::arg("seed") = 42, py::arg("num_messages") = 1000)
+        // Constructor with file path + SessionConfig + steps_per_episode
+        // (must be before file_path overloads to avoid ambiguity)
+        .def(py::init(&make_session_env),
+            py::arg("file_path"), py::arg("session_config"), py::arg("steps_per_episode"),
+            py::arg("reward_mode") = "", py::arg("lambda_") = 0.0f,
+            py::arg("execution_cost") = false)
+        // Constructor with file path + steps_per_episode
+        .def(py::init(&make_file_env),
+            py::arg("file_path"), py::arg("steps_per_episode"),
+            py::arg("reward_mode") = "", py::arg("lambda_") = 0.0f,
+            py::arg("execution_cost") = false)
+        // Constructor with file path only (default steps=50)
+        .def(py::init([](const std::string& path, const std::string& reward_mode,
+                         float lambda_, bool execution_cost) {
+            return make_file_env(path, 50, reward_mode, lambda_, execution_cost);
+        }), py::arg("file_path"), py::arg("reward_mode") = "",
+            py::arg("lambda_") = 0.0f, py::arg("execution_cost") = false)
+        // Constructor with steps_per_episode (int) -> SyntheticSource
+        .def(py::init(&make_synthetic_env),
+            py::arg("steps_per_episode"),
+            py::arg("reward_mode") = "", py::arg("lambda_") = 0.0f,
+            py::arg("execution_cost") = false)
+        // Default constructor: SyntheticSource, steps_per_episode=50
+        // No positional args — only kwargs
+        .def(py::init([](const std::string& reward_mode, float lambda_, bool execution_cost) {
+            return make_synthetic_env(50, reward_mode, lambda_, execution_cost);
+        }), py::kw_only(), py::arg("reward_mode") = "", py::arg("lambda_") = 0.0f,
+            py::arg("execution_cost") = false)
+        // steps_per_episode read-only property
+        .def_property_readonly("steps_per_episode", &LOBEnv::steps_per_episode)
         .def("reset", [](LOBEnv& env) {
-            return PyStepResult(env.reset());
+            StepResult r = env.reset();
+            return r.obs;
         })
         .def("step", [](LOBEnv& env, int action) {
-            return PyStepResult(env.step(action));
-        }, py::arg("action"))
-        .def("observation_size", &LOBEnv::observation_size)
-        .def_property_readonly_static("action_size", [](py::object) { return LOBEnv::action_size(); })
-        .def_property_readonly("config", &LOBEnv::config, py::return_value_policy::reference);
-}
+            StepResult r = env.step(action);
+            return py::make_tuple(r.obs, static_cast<double>(r.reward), r.done);
+        });
 
-}  // namespace lob
+    // precompute(path, cfg) -> (obs, mid, spread, num_steps)
+    m.def("precompute", [](const std::string& path, const SessionConfig& cfg) {
+        PrecomputedDay day = precompute(path, cfg);
+
+        const int N = day.num_steps;
+        constexpr int COLS = FeatureBuilder::POSITION;  // 43: obs without position
+
+        // obs: float32 array of shape (N, COLS)
+        py::array_t<float> obs({N, COLS});
+        if (N > 0) {
+            auto buf = obs.mutable_unchecked<2>();
+            for (int r = 0; r < N; ++r) {
+                for (int c = 0; c < COLS; ++c) {
+                    buf(r, c) = day.obs[r * COLS + c];
+                }
+            }
+        }
+
+        // mid: float64 array of shape (N,)
+        py::array_t<double> mid(N);
+        if (N > 0) {
+            auto buf = mid.mutable_unchecked<1>();
+            for (int i = 0; i < N; ++i) {
+                buf(i) = day.mid[i];
+            }
+        }
+
+        // spread: float64 array of shape (N,)
+        py::array_t<double> spread(N);
+        if (N > 0) {
+            auto buf = spread.mutable_unchecked<1>();
+            for (int i = 0; i < N; ++i) {
+                buf(i) = day.spread[i];
+            }
+        }
+
+        return py::make_tuple(obs, mid, spread, N);
+    }, py::arg("path"), py::arg("session_config"));
+}
