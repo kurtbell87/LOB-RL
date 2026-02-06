@@ -11,11 +11,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'build'))
 
 import numpy as np
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
 
-from lob_rl.gym_env import LOBGymEnv
 from lob_rl.multi_day_env import MultiDayEnv
+from lob_rl.precomputed_env import PrecomputedEnv
 
 DEFAULT_SESSION_CONFIG = {
     'rth_open_ns': 48_600_000_000_000,   # 13:30 UTC
@@ -41,11 +40,10 @@ def load_manifest(data_dir):
 
 def make_env(file_path, reward_mode='pnl_delta', lambda_=0.0, execution_cost=False,
              participation_bonus=0.0):
-    """Create a LOBGymEnv for a single day's data."""
-    return LOBGymEnv(
-        file_path=file_path,
+    """Create a PrecomputedEnv for a single day's data."""
+    return PrecomputedEnv.from_file(
+        file_path,
         session_config=DEFAULT_SESSION_CONFIG,
-        steps_per_episode=0,  # Run until session close
         reward_mode=reward_mode,
         lambda_=lambda_,
         execution_cost=execution_cost,
