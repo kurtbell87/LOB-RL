@@ -35,6 +35,10 @@ public:
         return -delta * half_spread(spread);
     }
 
+    static double participation_bonus(double position, double bonus_rate) {
+        return bonus_rate * std::abs(position);
+    }
+
 private:
     static float half_spread(double spread) {
         return static_cast<float>(spread * 0.5);

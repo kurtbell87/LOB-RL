@@ -17,6 +17,12 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNorm
 from lob_rl.gym_env import LOBGymEnv
 from lob_rl.multi_day_env import MultiDayEnv
 
+DEFAULT_SESSION_CONFIG = {
+    'rth_open_ns': 48_600_000_000_000,   # 13:30 UTC
+    'rth_close_ns': 72_000_000_000_000,  # 20:00 UTC
+    'warmup_messages': -1,                # Use all pre-market data
+}
+
 
 def load_manifest(data_dir):
     """Load manifest and return sorted list of (date, file_path, record_count)."""
@@ -33,24 +39,22 @@ def load_manifest(data_dir):
     return sorted(files, key=lambda x: x[0])
 
 
-def make_env(file_path, reward_mode='pnl_delta', lambda_=0.0, execution_cost=False):
+def make_env(file_path, reward_mode='pnl_delta', lambda_=0.0, execution_cost=False,
+             participation_bonus=0.0):
     """Create a LOBGymEnv for a single day's data."""
-    session_config = {
-        'rth_open_ns': 48_600_000_000_000,   # 13:30 UTC
-        'rth_close_ns': 72_000_000_000_000,  # 20:00 UTC
-        'warmup_messages': -1,                # Use all pre-market data
-    }
     return LOBGymEnv(
         file_path=file_path,
-        session_config=session_config,
+        session_config=DEFAULT_SESSION_CONFIG,
         steps_per_episode=0,  # Run until session close
         reward_mode=reward_mode,
         lambda_=lambda_,
         execution_cost=execution_cost,
+        participation_bonus=participation_bonus,
     )
 
 
-def make_train_env(file_paths, session_config, reward_mode, lambda_, execution_cost):
+def make_train_env(file_paths, session_config, reward_mode, lambda_, execution_cost,
+                   participation_bonus=0.0):
     """Factory that returns a closure for SubprocVecEnv (avoids lambda late-binding)."""
     def _init():
         return MultiDayEnv(
@@ -61,16 +65,19 @@ def make_train_env(file_paths, session_config, reward_mode, lambda_, execution_c
             lambda_=lambda_,
             shuffle=True,
             execution_cost=execution_cost,
+            participation_bonus=participation_bonus,
         )
     return _init
 
 
-def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False, vec_normalize_path=None):
+def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False,
+                     vec_normalize_path=None, participation_bonus=0.0):
     """Evaluate model on held-out data and compute Sortino ratio."""
     all_returns = []
 
     for date, path, _ in eval_files[:n_eval_episodes]:
-        env = make_env(path, execution_cost=execution_cost)
+        env = make_env(path, execution_cost=execution_cost,
+                       participation_bonus=participation_bonus)
         venv = DummyVecEnv([lambda: env])
 
         if vec_normalize_path is not None:
@@ -126,6 +133,8 @@ def main():
     parser.add_argument('--learning-rate', type=float, default=3e-4, help='Learning rate')
     parser.add_argument('--no-norm', action='store_true', default=False,
                         help='Disable VecNormalize')
+    parser.add_argument('--participation-bonus', type=float, default=0.0,
+                        help='Per-step bonus for holding a position: bonus * |pos|')
     args = parser.parse_args()
 
     # Load data
@@ -145,15 +154,11 @@ def main():
 
     # Create multi-day training environment cycling through all training days
     train_paths = [f[1] for f in train_files]
-    session_config = {
-        'rth_open_ns': 48_600_000_000_000,   # 13:30 UTC
-        'rth_close_ns': 72_000_000_000_000,  # 20:00 UTC
-        'warmup_messages': -1,
-    }
     print(f"Creating multi-day env with {len(train_paths)} training days (shuffle=True)")
 
     env = SubprocVecEnv([
-        make_train_env(train_paths, session_config, args.reward_mode, args.lambda_, args.execution_cost)
+        make_train_env(train_paths, DEFAULT_SESSION_CONFIG, args.reward_mode, args.lambda_, args.execution_cost,
+                       args.participation_bonus)
         for _ in range(args.n_envs)
     ])
 
@@ -188,23 +193,22 @@ def main():
     print(f"Model saved to: {model_path}")
 
     # Save VecNormalize stats
+    vec_normalize_path = None
     if not args.no_norm:
         vec_normalize_path = os.path.join(args.output_dir, 'vec_normalize.pkl')
         env.save(vec_normalize_path)
         print(f"VecNormalize stats saved to: {vec_normalize_path}")
 
-    vec_normalize_path = os.path.join(args.output_dir, 'vec_normalize.pkl') if not args.no_norm else None
-
     # Evaluate on validation set
     if val_files:
         print("\nEvaluating on validation set...")
-        val_metrics = evaluate_sortino(model, val_files, execution_cost=args.execution_cost, vec_normalize_path=vec_normalize_path)
+        val_metrics = evaluate_sortino(model, val_files, execution_cost=args.execution_cost, vec_normalize_path=vec_normalize_path, participation_bonus=args.participation_bonus)
         print(f"Validation metrics: {val_metrics}")
 
     # Evaluate on test set
     if test_files:
         print("\nEvaluating on test set...")
-        test_metrics = evaluate_sortino(model, test_files, execution_cost=args.execution_cost, vec_normalize_path=vec_normalize_path)
+        test_metrics = evaluate_sortino(model, test_files, execution_cost=args.execution_cost, vec_normalize_path=vec_normalize_path, participation_bonus=args.participation_bonus)
         print(f"Test metrics: {test_metrics}")
 
     return 0
