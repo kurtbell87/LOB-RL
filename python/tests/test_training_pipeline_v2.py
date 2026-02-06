@@ -514,13 +514,13 @@ class TestEvalExecutionCost:
             "make_env() should accept execution_cost parameter"
         )
 
-    def test_make_env_forwards_execution_cost_to_gym_env(self):
-        """make_env() should forward execution_cost to LOBGymEnv."""
-        # Inside make_env, LOBGymEnv should receive execution_cost
-        pattern = r"def\s+make_env.*?LOBGymEnv\s*\(.*?execution_cost"
+    def test_make_env_forwards_execution_cost_to_env(self):
+        """make_env() should forward execution_cost to the env constructor."""
+        # Inside make_env, the env constructor should receive execution_cost
+        pattern = r"def\s+make_env.*?(PrecomputedEnv|LOBGymEnv)\S*\(.*?execution_cost"
         match = re.search(pattern, self.source, re.DOTALL)
         assert match is not None, (
-            "make_env() should forward execution_cost to LOBGymEnv"
+            "make_env() should forward execution_cost to env constructor"
         )
 
 

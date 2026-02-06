@@ -11,7 +11,7 @@ These tests verify that:
 - step() delegates to the current inner LOBGymEnv
 - Empty file_paths raises ValueError
 - Single file works like a regular LOBGymEnv
-- observation_space and action_space match LOBGymEnv (Box(44,), Discrete(3))
+- observation_space and action_space match PrecomputedEnv (Box(54,), Discrete(3))
 - check_env() passes
 """
 
@@ -68,10 +68,10 @@ class TestSpaces:
         assert isinstance(env.observation_space, spaces.Box)
 
     def test_observation_space_shape(self):
-        """observation_space shape should be (44,)."""
+        """observation_space shape should be (54,)."""
         from lob_rl.multi_day_env import MultiDayEnv
         env = MultiDayEnv(file_paths=DAY_FILES, shuffle=False)
-        assert env.observation_space.shape == (44,)
+        assert env.observation_space.shape == (54,)
 
     def test_observation_space_dtype(self):
         """observation_space dtype should be float32."""
@@ -111,7 +111,7 @@ class TestConstructor:
         from lob_rl.multi_day_env import MultiDayEnv
         env = MultiDayEnv(file_paths=[DAY_FILES[0]], shuffle=False)
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
         assert isinstance(info, dict)
 
     def test_accepts_session_config(self):
@@ -126,7 +126,7 @@ class TestConstructor:
             shuffle=False,
         )
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_accepts_steps_per_episode(self):
         """steps_per_episode should be forwarded to inner LOBGymEnv."""
@@ -188,11 +188,11 @@ class TestReset:
         assert isinstance(obs, np.ndarray)
 
     def test_reset_obs_shape(self):
-        """reset() observation shape should be (44,)."""
+        """reset() observation shape should be (54,)."""
         from lob_rl.multi_day_env import MultiDayEnv
         env = MultiDayEnv(file_paths=DAY_FILES, shuffle=False)
         obs, info = env.reset()
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_reset_obs_dtype(self):
         """reset() observation dtype should be float32."""
@@ -216,25 +216,25 @@ class TestReset:
         assert env.observation_space.contains(obs)
 
     def test_reset_position_is_zero(self):
-        """reset() should return obs with position=0 (index 43)."""
+        """reset() should return obs with position=0 (index 53)."""
         from lob_rl.multi_day_env import MultiDayEnv
         env = MultiDayEnv(file_paths=DAY_FILES, shuffle=False)
         obs, info = env.reset()
-        assert obs[43] == pytest.approx(0.0)
+        assert obs[53] == pytest.approx(0.0)
 
     def test_reset_accepts_seed_kwarg(self):
         """reset(seed=42) should be accepted without error."""
         from lob_rl.multi_day_env import MultiDayEnv
         env = MultiDayEnv(file_paths=DAY_FILES, shuffle=True)
         obs, info = env.reset(seed=42)
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_reset_accepts_options_kwarg(self):
         """reset(options={}) should be accepted without error."""
         from lob_rl.multi_day_env import MultiDayEnv
         env = MultiDayEnv(file_paths=DAY_FILES, shuffle=False)
         obs, info = env.reset(options={})
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_reset_no_nan(self):
         """Observation after reset should contain no NaN values."""
@@ -277,12 +277,12 @@ class TestStep:
         assert isinstance(obs, np.ndarray)
 
     def test_step_obs_shape(self):
-        """step() observation shape should be (44,)."""
+        """step() observation shape should be (54,)."""
         from lob_rl.multi_day_env import MultiDayEnv
         env = MultiDayEnv(file_paths=DAY_FILES, shuffle=False)
         env.reset()
         obs, _, _, _, _ = env.step(1)
-        assert obs.shape == (44,)
+        assert obs.shape == (54,)
 
     def test_step_obs_dtype(self):
         """step() observation dtype should be float32."""
@@ -346,7 +346,7 @@ class TestStep:
         env = MultiDayEnv(file_paths=DAY_FILES, shuffle=False)
         env.reset()
         obs, _, _, _, _ = env.step(0)
-        assert obs[43] == pytest.approx(-1.0)
+        assert obs[53] == pytest.approx(-1.0)
 
     def test_action_1_flat_position(self):
         """Action 1 should set position to 0."""
@@ -354,7 +354,7 @@ class TestStep:
         env = MultiDayEnv(file_paths=DAY_FILES, shuffle=False)
         env.reset()
         obs, _, _, _, _ = env.step(1)
-        assert obs[43] == pytest.approx(0.0)
+        assert obs[53] == pytest.approx(0.0)
 
     def test_action_2_long_position(self):
         """Action 2 should set position to +1."""
@@ -362,7 +362,7 @@ class TestStep:
         env = MultiDayEnv(file_paths=DAY_FILES, shuffle=False)
         env.reset()
         obs, _, _, _, _ = env.step(2)
-        assert obs[43] == pytest.approx(1.0)
+        assert obs[53] == pytest.approx(1.0)
 
     def test_full_episode_no_crash(self):
         """Complete a full episode without crashing."""
@@ -751,14 +751,14 @@ class TestMultiEpisodeLifecycle:
         for epoch in range(2):
             for day in range(n_days):
                 obs, info = env.reset()
-                assert obs.shape == (44,), f"Epoch {epoch}, day {day}: bad obs shape"
+                assert obs.shape == (54,), f"Epoch {epoch}, day {day}: bad obs shape"
                 assert obs.dtype == np.float32
                 assert isinstance(info, dict)
                 steps = run_episode(env)
                 assert steps > 0, f"Epoch {epoch}, day {day}: zero steps"
 
     def test_position_resets_each_episode(self):
-        """Position (obs[43]) should be 0 at the start of each new episode/day."""
+        """Position (obs[53]) should be 0 at the start of each new episode/day."""
         from lob_rl.multi_day_env import MultiDayEnv
         env = MultiDayEnv(
             file_paths=DAY_FILES[:3],
@@ -768,8 +768,8 @@ class TestMultiEpisodeLifecycle:
 
         for i in range(6):  # 2 full epochs
             obs, _ = env.reset()
-            assert obs[43] == pytest.approx(0.0), (
-                f"Position not 0 at start of episode {i}: {obs[43]}"
+            assert obs[53] == pytest.approx(0.0), (
+                f"Position not 0 at start of episode {i}: {obs[53]}"
             )
             # Take a position-changing action, then let episode end
             env.step(2)  # go long
@@ -789,7 +789,7 @@ class TestMultiEpisodeLifecycle:
             for _ in range(5):
                 action = env.action_space.sample()
                 obs, reward, terminated, truncated, info = env.step(action)
-                assert obs.shape == (44,)
+                assert obs.shape == (54,)
                 if terminated:
                     break
 
@@ -858,7 +858,7 @@ class TestDummyVecEnvCompatibility:
             )
         ])
         obs = vec_env.reset()
-        assert obs.shape == (1, 44)
+        assert obs.shape == (1, 54)
 
     def test_dummy_vec_env_step(self):
         """step() through DummyVecEnv should return valid results."""
@@ -874,6 +874,6 @@ class TestDummyVecEnvCompatibility:
         ])
         vec_env.reset()
         obs, rewards, dones, infos = vec_env.step([1])
-        assert obs.shape == (1, 44)
+        assert obs.shape == (1, 54)
         assert rewards.shape == (1,)
         assert dones.shape == (1,)
