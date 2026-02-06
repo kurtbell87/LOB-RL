@@ -1,5 +1,4 @@
 #include "lob/book.h"
-#include <algorithm>
 #include <limits>
 
 // Saturating addition for uint32_t

@@ -19,22 +19,16 @@ PrecomputedDay precompute(IMessageSource& source, const SessionConfig& cfg) {
     double prev_best_bid = std::numeric_limits<double>::quiet_NaN();
     double prev_best_ask = std::numeric_limits<double>::quiet_NaN();
 
-    // Read all messages then separate into phases
-    std::vector<Message> all_msgs;
-    while (source.next(m)) {
-        all_msgs.push_back(m);
-    }
-
-    // Separate into phases
+    // Separate messages into phases in a single pass (no intermediate buffer)
     std::vector<Message> pre_market;
     std::vector<Message> rth;
 
-    for (auto& msg : all_msgs) {
-        auto phase = filter.classify(msg.ts_ns);
+    while (source.next(m)) {
+        auto phase = filter.classify(m.ts_ns);
         if (phase == SessionFilter::Phase::PreMarket) {
-            pre_market.push_back(msg);
+            pre_market.push_back(m);
         } else if (phase == SessionFilter::Phase::RTH) {
-            rth.push_back(msg);
+            rth.push_back(m);
         }
         // Post-market: skip
     }
