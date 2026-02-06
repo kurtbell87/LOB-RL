@@ -2,57 +2,54 @@
 
 ## What to do next
 
-**Training pipeline v2 is DONE** (PR #4 merged). The training script now has VecNormalize, 8 parallel envs, entropy regularization, and all key hyperparameters exposed as CLI flags. Next: run a training experiment.
+**Participation bonus DONE** (PR #5 merged). Agent was converging to "don't trade" because holding flat = zero risk. The participation bonus rewards market exposure: `bonus * abs(position)`.
 
 ### Immediate next step
 
-Run the improved training pipeline and evaluate:
+Train with participation bonus to incentivize market participation:
 
 ```bash
 cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py \
-  --data-dir ../data/mes --execution-cost --total-timesteps 2000000
+  --data-dir ../data/mes --participation-bonus 0.01 --total-timesteps 2000000
 ```
 
-Default flags now include `--ent-coef 0.01`, `--n-envs 8`, `--batch-size 256`, `--n-epochs 5`, VecNormalize on. Monitor in TensorBoard.
+If the agent trades but loses money, try with execution cost too:
+```bash
+cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py \
+  --data-dir ../data/mes --participation-bonus 0.01 --execution-cost --total-timesteps 2000000
+```
 
-### After the training run
+### Training history
 
-1. Check TensorBoard for entropy, policy loss, value loss curves.
-2. If entropy still collapses, increase `--ent-coef` to 0.03 or 0.1.
-3. If training is stable, extend to `--total-timesteps 5000000`.
-4. Try `--reward-mode pnl_delta_penalized --lambda 0.01` for inventory penalty.
-5. Try larger network: add `policy_kwargs=dict(net_arch=[256, 256])` to PPO.
+| Run | Config | Result |
+|-----|--------|--------|
+| Baseline (old pipeline) | 500k steps, ent_coef=0.0, 1 env | Sortino -1.05 val. Entropy collapsed. |
+| v2 + exec cost | 2M steps, ent_coef=0.01, 8 envs, VecNormalize, exec_cost | Entropy stable (0.70). Agent learned to stay flat (mean return ~0). |
+| v2 no exec cost | 2M steps, ent_coef=0.01, 8 envs, VecNormalize | Entropy collapsed (0.09). Sortino -1.05 val. Consistently negative. |
 
 ### What was just built
 
-**Training pipeline v2** (PR #4) — fixed critical training issues:
+**Participation bonus** (PR #5) — per-step reward for market exposure:
 
-| Change | Before | After |
-|---|---|---|
-| `ent_coef` | 0.0 (!) | 0.01 (CLI tunable) |
-| Observation normalization | None | VecNormalize (obs + reward) |
-| Parallel envs | 1 (DummyVecEnv) | 8 (SubprocVecEnv) |
-| Batch size | 64 | 256 |
-| Epochs per rollout | 10 | 5 |
-| Eval execution_cost | Not forwarded (bug) | Forwarded correctly |
-| Eval VecNormalize | None | Loaded in eval mode |
-| Hyperparameter CLI flags | 7 | 13 |
+```
+reward += participation_bonus * abs(position)
+```
 
-Also: minor C++ refactor (eliminated intermediate buffer in `precompute.cpp`).
+Full-stack implementation: C++ `RewardCalculator::participation_bonus()`, `LOBEnv`, pybind11 bindings, `PrecomputedEnv`, `MultiDayEnv`, `LOBGymEnv`, `train.py --participation-bonus` flag. Also refactored: extracted `DEFAULT_SESSION_CONFIG` in train.py, cleaned up bindings.cpp.
 
 ## Key files for current task
 
 | File | Role |
 |---|---|
-| `scripts/train.py` | Training entry point. PPO with SB3, VecNormalize, SubprocVecEnv. 13 CLI flags. |
-| `python/lob_rl/precomputed_env.py` | Pure-numpy env. `execution_cost` param charges spread on position change. |
-| `python/lob_rl/multi_day_env.py` | Multi-day env. Forwards `execution_cost` to inner `PrecomputedEnv`. |
-| `include/lob/reward.h` | `RewardCalculator` with `compute()`, `flattening_penalty()`, `execution_cost()`. |
-| `include/lob/env.h` | `LOBEnv` — two constructors, both accept `execution_cost` bool. |
+| `scripts/train.py` | Training entry point. PPO with SB3, VecNormalize, SubprocVecEnv. 14 CLI flags incl `--participation-bonus`. |
+| `python/lob_rl/precomputed_env.py` | Pure-numpy env. `execution_cost`, `participation_bonus` params. |
+| `python/lob_rl/multi_day_env.py` | Multi-day env. Forwards all reward params to inner `PrecomputedEnv`. |
+| `include/lob/reward.h` | `RewardCalculator` with `compute()`, `flattening_penalty()`, `execution_cost()`, `participation_bonus()`. |
+| `include/lob/env.h` | `LOBEnv` — two constructors, both accept `execution_cost` and `participation_bonus`. |
 
 ## Don't waste time on
 
-- **Build verification** — `build-release/` is current, 434 C++ tests pass.
+- **Build verification** — `build-release/` is current, 460 C++ tests pass.
 - **Dependency checks** — SB3, gymnasium, numpy, tensorboard all installed.
 - **Reading PRD.md** — everything relevant is in this file.
 - **Codebase exploration** — read directory `README.md` files instead (every key dir has one, now with full API signatures).
@@ -73,16 +70,17 @@ data/mes/*.bin  →  BinaryFileSource (C++)  →  Book (C++)  →  LOBEnv (C++)
 
 ## Test coverage
 
-- **434 C++ tests** — `cd build-release && ./lob_tests`
-- **580 Python tests** — `cd build-release && PYTHONPATH=.:../python uv run pytest ../python/tests/`
-- **1014 total**, all passing.
+- **460 C++ tests** — `cd build-release && ./lob_tests`
+- **626 Python tests** — `cd build-release && PYTHONPATH=.:../python uv run pytest ../python/tests/`
+- **1086 total**, all passing.
 
 ## Remaining work
 
 | Item | Priority | Notes |
 |---|---|---|
-| Run training with v2 pipeline | High | VecNormalize + ent_coef + 8 envs; evaluate Sortino |
-| Hyperparameter sweep if needed | Medium | ent_coef, LR, network arch |
+| Train with participation bonus | High | `--participation-bonus 0.01`; check if agent trades |
+| Train with bonus + exec cost | High | `--participation-bonus 0.01 --execution-cost`; realistic setup |
+| Hyperparameter sweep | Medium | ent_coef, participation_bonus size, LR, network arch |
 | Inventory penalty experiment | Medium | `--reward-mode pnl_delta_penalized --lambda 0.01` |
 | `binary_file_source.cpp:62` int64→double precision loss | Low | Low-impact for real financial data |
 | DST handling for session boundaries | Low | Current dataset is entirely non-DST |
