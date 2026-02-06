@@ -1,0 +1,12 @@
+[project]
+name = "lob-rl"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "gymnasium",
+    "numpy",
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]

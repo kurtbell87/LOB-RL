@@ -3,7 +3,8 @@
 - **Build:** `build-release/` is current. 404 C++ tests pass (`./lob_tests`). 463 Python tests pass.
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, gymnasium, numpy, tensorboard all installed in uv environment.
-- **Next task:** Step 4c — run training (`scripts/train.py`). All infrastructure is complete. No code changes needed.
+- **Step 4c DONE:** First training run completed (500k steps, 2.5 min). Baseline Sortino is negative (-1.05 val, -14.4 test). Model at `runs/ppo_lob.zip`, TB logs at `runs/tb_logs/`.
+- **Next task:** Hyperparameter tuning — longer training, inventory penalty, observation normalization. See `LAST_TOUCH.md` for recommended next steps.
 - **Data:** 27 days of /MES MBO data in `data/mes/`, manifest at `data/mes/manifest.json`.
 - **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --data-dir ../data/mes`
 
@@ -21,10 +22,26 @@ After every session that changes the codebase, you MUST maintain these navigatio
 
 1. **`LAST_TOUCH.md`** — Update the "What to do next" and "Key files" sections. This is a cold-start briefing, not a journal. Keep it actionable and concise.
 2. **`CLAUDE.md` "Current State" section** — Update build status, test counts, and next task.
-3. **Directory `README.md` files** — If you add/rename/delete files in a directory, update that directory's `README.md`. If a directory doesn't have one, create it.
+3. **Directory `README.md` files** — If you add/rename/delete files in a directory, update that directory's `README.md`. If a directory doesn't have one, create it. **See format requirements below.**
 4. **Spec docs in `docs/`** — Archived automatically by `./tdd.sh ship`. The spec is deleted from the working tree but preserved in git history. Don't manually delete specs before shipping.
 
-The goal: a new agent session should be able to orient itself by reading only `CLAUDE.md` → `LAST_TOUCH.md` → relevant directory `README.md`, without grepping or exploring.
+The goal: a new agent session (or TDD sub-agent) should be able to orient itself by reading only `CLAUDE.md` → `LAST_TOUCH.md` → relevant directory `README.md`, **without grepping or reading source files**.
+
+### Directory README.md Format
+
+Every directory README.md must contain enough detail that a sub-agent can **write code against the interfaces without reading the source files**. This prevents TDD sub-agents from wasting context on file reads and greps. Required sections:
+
+1. **File table** — Every file with a one-line role description.
+2. **API signatures** — Constructor parameters with types and defaults, key method signatures, return types. Use code blocks. Example:
+   ```
+   LOBEnv(unique_ptr<IMessageSource> src, int steps=50,
+          RewardMode mode=PnLDelta, float lambda=0.0, bool execution_cost=false)
+   ```
+3. **Enums and constants** — List all enum values, important constants (e.g., `OBS_SIZE=44`, `RewardMode::PnLDelta`).
+4. **Cross-file dependencies** — Which headers/modules this code depends on and which depend on it. Helps agents know what else to update.
+5. **Modification hints** — If there's a common pattern for adding new features (e.g., "to add a new reward mode, update `reward.h` enum, `RewardCalculator::compute()`, and the bindings `parse_reward_mode()`"), document it.
+
+Keep it concise — a table or bullet list, not prose. The README is a **machine-readable API reference**, not documentation for humans.
 
 ## How You Work: TDD Workflow (MANDATORY)
 
