@@ -74,8 +74,12 @@ def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False
     all_returns = []
 
     for date, path, _ in eval_files[:n_eval_episodes]:
-        env = make_env(path, execution_cost=execution_cost,
-                       participation_bonus=participation_bonus)
+        try:
+            env = make_env(path, execution_cost=execution_cost,
+                           participation_bonus=participation_bonus)
+        except ValueError as e:
+            print(f"  Skipping {date}: {e}")
+            continue
         venv = DummyVecEnv([lambda: env])
 
         if vec_normalize_path is not None:
@@ -94,6 +98,10 @@ def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False
             done = dones[0]
 
         all_returns.append(episode_reward)
+
+    if not all_returns:
+        return {'mean_return': 0.0, 'std_return': 0.0, 'sortino_ratio': 0.0,
+                'n_episodes': 0, 'positive_episodes': 0}
 
     returns = np.array(all_returns)
     mean_return = np.mean(returns)
