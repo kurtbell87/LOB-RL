@@ -6,18 +6,12 @@
 
 ### Immediate next step
 
-Train with temporal features to see if the agent can learn directionality:
+**Fix the spread calculation in C++ precompute.** The `spread` array from `lob_rl_core.precompute()` is wrong:
+- Always negative (100% of values) — should be positive (ask - bid)
+- Mean magnitude ~37 points (~150 ticks) — should be ~0.25-0.50 for /MES
+- This breaks execution cost and terminal flattening penalty
 
-```bash
-cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py \
-  --data-dir ../data/mes --participation-bonus 0.01 --total-timesteps 2000000
-```
-
-If results improve, try with execution cost for realism:
-```bash
-cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py \
-  --data-dir ../data/mes --participation-bonus 0.01 --execution-cost --total-timesteps 2000000
-```
+After fixing spread, need **coarser time sampling** to reduce bid-ask bounce dominance. Current sampling (~4.6 steps/sec) gives autocorrelation of -0.75, making trivial mean reversion the dominant strategy. A coarser time scale (e.g., 1 step/sec or 1 step per N messages) would shift the signal toward genuine directional moves.
 
 ### Training history
 
@@ -27,6 +21,7 @@ cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py \
 | v2 + exec cost | 2M steps, ent_coef=0.01, 8 envs, VecNormalize, exec_cost | Entropy stable (0.70). Agent learned to stay flat (mean return ~0). |
 | v2 no exec cost | 2M steps, ent_coef=0.01, 8 envs, VecNormalize | Entropy collapsed (0.09). Sortino -1.05 val. Consistently negative. |
 | v2 + participation bonus | 2M steps, participation_bonus=0.01 | Sortino -0.91 val. Entropy 0.17. Agent trades but picks wrong direction. |
+| **Temporal features** | 2M steps, 54-dim obs, participation_bonus=0.01 | Sortino inf val. **But PnL is bid-ask bounce mean reversion, not real alpha.** Autocorr(1)=-0.75. Simple mean-reversion rule matches agent PnL. Entropy 0.07. |
 
 ### What was just built
 
@@ -91,8 +86,9 @@ data/mes/*.bin  →  BinaryFileSource (C++)  →  Book (C++)  →  LOBEnv (C++)
 
 | Item | Priority | Notes |
 |---|---|---|
-| Train with temporal features | High | 54-dim obs, `--participation-bonus 0.01`, 2M steps |
-| Train with temporal + exec cost | High | Add `--execution-cost` for realistic setup |
+| **Fix spread in C++ precompute** | **Critical** | `spread` is negative and ~150x too large. Must fix before execution cost or any realistic training. Check `env.h` or `precompute` logic. |
+| **Coarser time sampling** | **High** | Current ~4.6 steps/sec has autocorr -0.75 (bid-ask bounce). Need step_interval or time-based sampling to get genuine directional signal. |
+| Re-train with correct spread + exec cost | High | After spread fix, verify mean reversion no longer dominates |
 | Hyperparameter sweep | Medium | ent_coef, participation_bonus size, LR, network arch |
 | Inventory penalty experiment | Medium | `--reward-mode pnl_delta_penalized --lambda 0.01` |
 | `binary_file_source.cpp:62` int64→double precision loss | Low | Low-impact for real financial data |
