@@ -1,25 +1,25 @@
 #pragma once
 #include <cstdint>
+#include <cmath>
 
-namespace lob {
+struct Message {
+    enum class Side : uint8_t { Bid, Ask };
+    enum class Action : uint8_t { Add, Cancel, Modify, Trade };
 
-enum class Side : uint8_t { Bid, Ask };
+    uint64_t order_id = 0;
+    Side side = Side::Bid;
+    Action action = Action::Add;
+    double price = 0.0;
+    uint32_t qty = 0;
+    uint64_t ts_ns = 0;
 
-enum class Action : uint8_t {
-    Add,
-    Cancel,
-    Modify,
-    Trade,
-    Clear
+    bool is_valid() const {
+        // price must be positive and finite
+        if (price <= 0.0 || !std::isfinite(price)) return false;
+        // qty must be positive
+        if (qty == 0) return false;
+        // order_id must be non-zero
+        if (order_id == 0) return false;
+        return true;
+    }
 };
-
-struct MBOMessage {
-    uint64_t timestamp_ns;
-    uint64_t order_id;
-    int64_t  price;          // fixed-point (price * 1e9)
-    uint32_t quantity;
-    Side     side;
-    Action   action;
-};
-
-}  // namespace lob

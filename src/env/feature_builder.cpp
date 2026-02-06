@@ -1,77 +1,61 @@
-#include "feature_builder.h"
-#include <cmath>
+#include "lob/feature_builder.h"
 #include <algorithm>
+#include <cmath>
 
-namespace lob {
+std::vector<float> FeatureBuilder::build(const Book& book, float position, float time_remaining) const {
+    std::vector<float> obs(OBS_SIZE, 0.0f);
 
-FeatureBuilder::FeatureBuilder(int book_depth)
-    : book_depth_(book_depth) {}
+    double mid = book.mid_price();
+    bool has_mid = std::isfinite(mid) && mid > 0.0;
 
-Observation FeatureBuilder::build(const Book& book, int position, double time_remaining) const {
-    Observation obs;
-    obs.data.resize(observation_size(), 0.0f);
+    auto bids = book.top_bids(DEPTH);
+    auto asks = book.top_asks(DEPTH);
 
-    int64_t mid = book.mid_price();
-    double mid_price = static_cast<double>(mid) * kPriceScale;
-
-    // If no mid price (empty book), return zeros
-    if (mid == 0) {
-        obs.data[4 * book_depth_ + 3] = static_cast<float>(position);
-        return obs;
+    // Find max size across all 20 levels for normalization
+    uint32_t max_size = 0;
+    for (int i = 0; i < DEPTH; ++i) {
+        max_size = std::max(max_size, bids[i].qty);
+        max_size = std::max(max_size, asks[i].qty);
     }
 
-    // Bid prices (relative to mid, normalized by tick size)
-    for (int i = 0; i < book_depth_; ++i) {
-        Level level = book.bid(i);
-        if (level.quantity > 0) {
-            double price = static_cast<double>(level.price) * kPriceScale;
-            double relative = (price - mid_price) / kTickSize;
-            obs.data[i] = static_cast<float>(relative);
+    if (has_mid) {
+        for (int i = 0; i < DEPTH; ++i) {
+            if (!std::isnan(bids[i].price)) {
+                obs[BID_PRICE + i] = static_cast<float>((bids[i].price - mid) / mid);
+            }
+        }
+        for (int i = 0; i < DEPTH; ++i) {
+            if (!std::isnan(asks[i].price)) {
+                obs[ASK_PRICE + i] = static_cast<float>((asks[i].price - mid) / mid);
+            }
         }
     }
 
-    // Bid sizes (log normalized)
-    for (int i = 0; i < book_depth_; ++i) {
-        Level level = book.bid(i);
-        if (level.quantity > 0) {
-            double size = std::log1p(static_cast<double>(level.quantity)) * kSizeScale;
-            obs.data[book_depth_ + i] = static_cast<float>(size);
+    if (max_size > 0) {
+        float fmax = static_cast<float>(max_size);
+        for (int i = 0; i < DEPTH; ++i) {
+            obs[BID_SIZE + i] = static_cast<float>(bids[i].qty) / fmax;
+            obs[ASK_SIZE + i] = static_cast<float>(asks[i].qty) / fmax;
         }
     }
 
-    // Ask prices (relative to mid, normalized by tick size)
-    for (int i = 0; i < book_depth_; ++i) {
-        Level level = book.ask(i);
-        if (level.quantity > 0) {
-            double price = static_cast<double>(level.price) * kPriceScale;
-            double relative = (price - mid_price) / kTickSize;
-            obs.data[2 * book_depth_ + i] = static_cast<float>(relative);
+    if (has_mid) {
+        double spread = book.spread();
+        if (std::isfinite(spread)) {
+            obs[SPREAD] = static_cast<float>(spread / mid);
+        }
+
+        uint32_t bid_qty_top = book.best_bid_qty();
+        uint32_t ask_qty_top = book.best_ask_qty();
+        uint32_t total = bid_qty_top + ask_qty_top;
+        if (total > 0) {
+            obs[IMBALANCE] = static_cast<float>(static_cast<int64_t>(bid_qty_top) - static_cast<int64_t>(ask_qty_top))
+                     / static_cast<float>(total);
         }
     }
 
-    // Ask sizes (log normalized)
-    for (int i = 0; i < book_depth_; ++i) {
-        Level level = book.ask(i);
-        if (level.quantity > 0) {
-            double size = std::log1p(static_cast<double>(level.quantity)) * kSizeScale;
-            obs.data[3 * book_depth_ + i] = static_cast<float>(size);
-        }
-    }
-
-    // Spread (normalized by tick size)
-    double spread = static_cast<double>(book.spread()) * kPriceScale / kTickSize;
-    obs.data[4 * book_depth_] = static_cast<float>(spread);
-
-    // Imbalance [-1, 1]
-    obs.data[4 * book_depth_ + 1] = static_cast<float>(book.imbalance(book_depth_));
-
-    // Time remaining [0, 1]
-    obs.data[4 * book_depth_ + 2] = static_cast<float>(std::clamp(time_remaining, 0.0, 1.0));
-
-    // Position {-1, 0, 1}
-    obs.data[4 * book_depth_ + 3] = static_cast<float>(position);
+    obs[TIME_LEFT] = time_remaining;
+    obs[POSITION] = position;
 
     return obs;
 }
-
-}  // namespace lob

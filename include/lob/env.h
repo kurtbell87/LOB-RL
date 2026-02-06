@@ -1,62 +1,61 @@
 #pragma once
+#include "lob/book.h"
 #include "lob/source.h"
+#include "lob/session.h"
+#include "lob/feature_builder.h"
 #include "lob/reward.h"
 #include <vector>
 #include <memory>
-#include <string>
-
-namespace lob {
-
-struct Session {
-    int start_hour_utc;
-    int start_minute_utc;
-    int end_hour_utc;
-    int end_minute_utc;
-};
-
-namespace sessions {
-    constexpr Session US_RTH_EST = {14, 30, 21, 0};  // EST (no DST)
-    constexpr Session US_RTH_EDT = {13, 30, 20, 0};  // EDT (DST)
-}
-
-struct EnvConfig {
-    std::string data_path;
-    int book_depth = 10;
-    int trades_per_step = 100;
-    RewardType reward_type = RewardType::PnLDelta;
-    double inventory_penalty = 0.0;
-    Session session = sessions::US_RTH_EST;
-};
-
-struct Observation {
-    std::vector<float> data;
-    static int size(int book_depth) { return 4 * book_depth + 4; }
-};
+#include <cstdint>
+#include <optional>
 
 struct StepResult {
-    Observation obs;
-    double reward;
-    bool done;
-    int position;
-    double pnl;
-    uint64_t timestamp_ns;
+    std::vector<float> obs;
+    float reward = 0.0f;
+    bool done = false;
 };
 
 class LOBEnv {
 public:
-    LOBEnv(EnvConfig config, std::unique_ptr<IMessageSource> source);
-    ~LOBEnv();
+    explicit LOBEnv(std::unique_ptr<IMessageSource> src, int steps_per_episode = 50,
+                    RewardMode mode = RewardMode::PnLDelta, float lambda = 0.0f,
+                    bool execution_cost = false);
+    LOBEnv(std::unique_ptr<IMessageSource> src, SessionConfig cfg, int steps_per_episode,
+           RewardMode mode = RewardMode::PnLDelta, float lambda = 0.0f,
+           bool execution_cost = false);
 
     StepResult reset();
-    StepResult step(int action);  // 0=short, 1=flat, 2=long
-
-    int observation_size() const;
-    static constexpr int action_size() { return 3; }
-    const EnvConfig& config() const;
+    StepResult step(int action);
+    int steps_per_episode() const { return steps_per_episode_; }
 
 private:
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
-};
+    std::vector<float> make_obs();
+    void advance_one_message();
+    StepResult reset_with_session();
+    StepResult reset_basic();
+    StepResult make_initial_result(bool done);
 
-}  // namespace lob
+    std::unique_ptr<IMessageSource> src_;
+    Book book_;
+    int steps_per_episode_;
+    int current_step_ = 0;
+    float position_ = 0.0f;
+    double prev_mid_ = 0.0;
+    bool source_exhausted_ = false;
+
+    // Session support
+    std::optional<SessionFilter> session_filter_;
+    int warmup_messages_ = -1;
+    bool session_done_ = false;
+    Message pending_msg_;
+    bool has_pending_msg_ = false;
+
+    // 44-float observation support
+    FeatureBuilder feature_builder_;
+    uint64_t last_ts_ns_ = 0;
+
+    // Reward calculation
+    RewardCalculator reward_calc_;
+    bool execution_cost_enabled_ = false;
+    float prev_position_ = 0.0f;
+};
