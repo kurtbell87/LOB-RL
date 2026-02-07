@@ -28,6 +28,7 @@ _POSITION_IDX = 53
 
 class PrecomputedEnv(gym.Env):
     metadata = {"render_modes": []}
+    _ACTION_MAP = {0: -1.0, 1: 0.0, 2: 1.0}
 
     def __init__(self, obs, mid, spread, reward_mode="pnl_delta", lambda_=0.0,
                  execution_cost=False, participation_bonus=0.0, step_interval=1):
@@ -71,8 +72,7 @@ class PrecomputedEnv(gym.Env):
         return obs, {}
 
     def step(self, action):
-        action_map = {0: -1.0, 1: 0.0, 2: 1.0}
-        self._position = action_map[action]
+        self._position = self._ACTION_MAP[action]
 
         reward = self._position * (self._mid[self._t + 1] - self._mid[self._t])
 
