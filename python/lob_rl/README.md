@@ -11,6 +11,8 @@ Gymnasium wrappers and utilities on top of the C++ `lob_rl_core` module.
 | `gym_env.py` | `LOBGymEnv` — single-day `gymnasium.Env` wrapping `lob_rl_core.LOBEnv`. |
 | `precomputed_env.py` | `PrecomputedEnv` — single-day env backed by precomputed numpy arrays. Zero C++ at runtime. |
 | `multi_day_env.py` | `MultiDayEnv` — cycles through multiple day files. Precomputes all at construction. **This is what `train.py` uses.** |
+| `bar_aggregation.py` | `aggregate_bars(obs, mid, spread, bar_size)` — tick → bar feature aggregation. Returns (bar_features, bar_mid_close, bar_spread_close). |
+| `bar_level_env.py` | `BarLevelEnv` — bar-level `gymnasium.Env`. 21-dim obs (13 intra-bar + 7 temporal + 1 position). `from_cache()`, `from_file()`. |
 | `convert_dbn.py` | Converts Databento `.dbn.zst` to flat binary `.bin`. CLI entry point. |
 
 ## API Signatures
