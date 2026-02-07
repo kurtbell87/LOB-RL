@@ -1,17 +1,18 @@
 """Multi-day training environment that cycles through multiple data files.
 
-Precomputes all days at construction time using lob_rl_core.precompute().
+Precomputes all days at construction time using lob_rl_core.precompute(),
+or loads pre-cached .npz files from a cache directory.
 step() and reset() use pure numpy via PrecomputedEnv.
 """
 
+import glob
+import os
 import warnings
 
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
-import lob_rl_core
-from lob_rl._config import make_session_config
 from lob_rl.precomputed_env import PrecomputedEnv
 
 
@@ -31,7 +32,7 @@ class MultiDayEnv(gym.Env):
 
     def __init__(
         self,
-        file_paths,
+        file_paths=None,
         session_config=None,
         steps_per_episode=50,
         reward_mode="pnl_delta",
@@ -41,11 +42,15 @@ class MultiDayEnv(gym.Env):
         execution_cost=False,
         participation_bonus=0.0,
         step_interval=1,
+        cache_dir=None,
     ):
         super().__init__()
 
-        if not file_paths:
-            raise ValueError("file_paths must be a non-empty list")
+        # Validate mutual exclusivity
+        if file_paths is not None and cache_dir is not None:
+            raise ValueError("Provide exactly one of file_paths or cache_dir, not both")
+        if file_paths is None and cache_dir is None:
+            raise ValueError("Provide exactly one of file_paths or cache_dir")
 
         self._reward_mode = reward_mode
         self._lambda = lambda_
@@ -59,17 +64,12 @@ class MultiDayEnv(gym.Env):
         )
         self.action_space = spaces.Discrete(3)
 
-        # Precompute all days at construction time
-        cfg = make_session_config(session_config)
         self._precomputed_days = []  # list of (obs, mid, spread) tuples
-        for path in file_paths:
-            obs, mid, spread, num_steps = lob_rl_core.precompute(path, cfg)
-            if num_steps < 2:
-                warnings.warn(
-                    f"Skipping {path}: only {num_steps} BBO snapshots (need >= 2)"
-                )
-                continue
-            self._precomputed_days.append((obs, mid, spread))
+
+        if cache_dir is not None:
+            self._load_from_cache_dir(cache_dir)
+        else:
+            self._load_from_file_paths(file_paths, session_config)
 
         if not self._precomputed_days:
             raise ValueError(
@@ -83,6 +83,48 @@ class MultiDayEnv(gym.Env):
             self._rng.shuffle(self._order)
         self._day_index = 0
         self._inner_env = None
+
+    def _load_from_file_paths(self, file_paths, session_config):
+        """Load days from raw .bin files via C++ precompute."""
+        import lob_rl_core
+        from lob_rl._config import make_session_config
+
+        if not file_paths:
+            raise ValueError("file_paths must be a non-empty list")
+
+        cfg = make_session_config(session_config)
+        for path in file_paths:
+            obs, mid, spread, num_steps = lob_rl_core.precompute(path, cfg)
+            if num_steps < 2:
+                warnings.warn(
+                    f"Skipping {path}: only {num_steps} BBO snapshots (need >= 2)"
+                )
+                continue
+            self._precomputed_days.append((obs, mid, spread))
+
+    def _load_from_cache_dir(self, cache_dir):
+        """Load days from pre-cached .npz files in a directory."""
+        npz_files = sorted(glob.glob(os.path.join(cache_dir, "*.npz")))
+        if not npz_files:
+            raise ValueError(f"No .npz files found in {cache_dir}")
+
+        for npz_path in npz_files:
+            try:
+                data = np.load(npz_path)
+                if not all(k in data for k in ("obs", "mid", "spread")):
+                    warnings.warn(f"Skipping {npz_path}: missing required keys")
+                    continue
+                obs = data["obs"]
+                mid = data["mid"]
+                spread = data["spread"]
+                if obs.shape[0] < 2:
+                    warnings.warn(
+                        f"Skipping {npz_path}: only {obs.shape[0]} rows (need >= 2)"
+                    )
+                    continue
+                self._precomputed_days.append((obs, mid, spread))
+            except Exception as e:
+                warnings.warn(f"Skipping {npz_path}: {e}")
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed, options=options)

@@ -194,3 +194,17 @@ class PrecomputedEnv(gym.Env):
         return cls(obs, mid, spread, reward_mode=reward_mode, lambda_=lambda_,
                    execution_cost=execution_cost, participation_bonus=participation_bonus,
                    step_interval=step_interval)
+
+    @classmethod
+    def from_cache(cls, npz_path, reward_mode="pnl_delta", lambda_=0.0,
+                   execution_cost=False, participation_bonus=0.0, step_interval=1):
+        data = np.load(npz_path)
+        for key in ("obs", "mid", "spread"):
+            if key not in data:
+                raise KeyError(f"Missing required key '{key}' in {npz_path}")
+        obs = data["obs"]
+        mid = data["mid"]
+        spread = data["spread"]
+        return cls(obs, mid, spread, reward_mode=reward_mode, lambda_=lambda_,
+                   execution_cost=execution_cost, participation_bonus=participation_bonus,
+                   step_interval=step_interval)
