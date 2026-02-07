@@ -46,11 +46,20 @@ obs, reward, terminated, truncated, info = env.step(action)  # action: 0=short, 
 - `[43:53]` — Temporal features: mid_return_{1,5,20,50}, volatility_20, imb_delta_{5,20}, microprice_offset, total_vol_imb, spread_change_5
 - `[53]` — Agent position (-1, 0, 1)
 
+```python
+PrecomputedEnv.from_cache(npz_path,
+                          reward_mode="pnl_delta", lambda_=0.0,
+                          execution_cost=False, participation_bonus=0.0,
+                          step_interval=1)
+# Loads obs, mid, spread from .npz file. Validates required keys.
+```
+
 ### MultiDayEnv (`multi_day_env.py`)
 
 ```python
-MultiDayEnv(file_paths,                # list of .bin paths
-            session_config=None,       # dict or None (uses default RTH)
+MultiDayEnv(file_paths=None,           # list of .bin paths (mutually exclusive with cache_dir)
+            cache_dir=None,            # path to dir with .npz files (mutually exclusive with file_paths)
+            session_config=None,       # dict or None (uses default RTH); ignored when cache_dir is set
             steps_per_episode=50,      # 0 = run to session close
             reward_mode="pnl_delta",
             lambda_=0.0,
@@ -60,7 +69,9 @@ MultiDayEnv(file_paths,                # list of .bin paths
             participation_bonus=0.0,
             step_interval=1)           # forwarded to PrecomputedEnv
 
-# Each reset() advances to next day. Precomputes all days at construction.
+# Exactly one of file_paths or cache_dir must be provided.
+# When cache_dir: globs *.npz sorted by name, loads via from_cache().
+# Each reset() advances to next day.
 # observation_space: (54,) — same as PrecomputedEnv
 ```
 

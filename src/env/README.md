@@ -9,6 +9,7 @@ Wraps the Book engine as a Gym-like RL environment.
 | `lob_env.cpp` | `LOBEnv` — step/reset interface. Actions: Short(0), Flat(1), Long(2). Manages position, PnL, episode length. Session-aware mode supports RTH warmup and position flattening. |
 | `feature_builder.cpp` | `FeatureBuilder` — builds 44-float observation vector from Book state. |
 | `precompute.cpp` | `precompute(path, config)` — runs full episode, returns (obs, mid, spread, num_steps) as contiguous arrays. Used by Python `MultiDayEnv` for zero-C++ training. |
+| `warmup.h` | `apply_warmup(Book&, msgs, warmup_messages)` — shared inline helper for applying pre-market warmup messages to Book. Used by both `lob_env.cpp` and `precompute.cpp`. |
 
 ## API Signatures (headers in `include/lob/`)
 
