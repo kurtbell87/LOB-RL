@@ -61,6 +61,7 @@ Message BinaryFileSource::convert(const FlatRecord& rec) const {
     msg.order_id = rec.order_id;
     msg.price = static_cast<double>(rec.price_raw) / 1e9;
     msg.qty = rec.qty;
+    msg.flags = rec.flags;
 
     // Map action byte ('F' = Fill is treated as Trade)
     switch (rec.action) {

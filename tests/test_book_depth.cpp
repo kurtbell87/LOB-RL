@@ -595,34 +595,36 @@ TEST_F(BookDepthPhase1, SyntheticSourceBestAskQtyMatchesTopAsks) {
 // top_bids/top_asks: After trade removes level
 // ===========================================================================
 
-TEST(BookDepth, TopBidsAfterTradeRemovesBestLevel) {
+TEST(BookDepth, TopBidsAfterTradeIsNoOp) {
+    // Databento spec: Trade does not affect the book.
     Book book;
     book.apply(make_msg(1, Message::Side::Bid, Message::Action::Add, 100.0, 10));
     book.apply(make_msg(2, Message::Side::Bid, Message::Action::Add, 99.0, 20));
 
-    // Trade fills the entire best bid
+    // Trade — should be no-op
     book.apply(make_msg(1, Message::Side::Bid, Message::Action::Trade, 100.0, 10));
 
     auto levels = book.top_bids(2);
-    EXPECT_DOUBLE_EQ(levels[0].price, 99.0);
-    EXPECT_EQ(levels[0].qty, 20u);
-    EXPECT_TRUE(std::isnan(levels[1].price));
-    EXPECT_EQ(levels[1].qty, 0u);
+    EXPECT_DOUBLE_EQ(levels[0].price, 100.0);  // best bid unchanged
+    EXPECT_EQ(levels[0].qty, 10u);  // qty unchanged
+    EXPECT_DOUBLE_EQ(levels[1].price, 99.0);
+    EXPECT_EQ(levels[1].qty, 20u);
 }
 
-TEST(BookDepth, TopAsksAfterTradeRemovesBestLevel) {
+TEST(BookDepth, TopAsksAfterTradeIsNoOp) {
+    // Databento spec: Trade does not affect the book.
     Book book;
     book.apply(make_msg(1, Message::Side::Ask, Message::Action::Add, 101.0, 10));
     book.apply(make_msg(2, Message::Side::Ask, Message::Action::Add, 102.0, 20));
 
-    // Trade fills the entire best ask
+    // Trade — should be no-op
     book.apply(make_msg(1, Message::Side::Ask, Message::Action::Trade, 101.0, 10));
 
     auto levels = book.top_asks(2);
-    EXPECT_DOUBLE_EQ(levels[0].price, 102.0);
-    EXPECT_EQ(levels[0].qty, 20u);
-    EXPECT_TRUE(std::isnan(levels[1].price));
-    EXPECT_EQ(levels[1].qty, 0u);
+    EXPECT_DOUBLE_EQ(levels[0].price, 101.0);  // best ask unchanged
+    EXPECT_EQ(levels[0].qty, 10u);  // qty unchanged
+    EXPECT_DOUBLE_EQ(levels[1].price, 102.0);
+    EXPECT_EQ(levels[1].qty, 20u);
 }
 
 // ===========================================================================

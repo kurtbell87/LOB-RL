@@ -51,43 +51,116 @@ PrecomputedDay precompute(IMessageSource& source, const SessionConfig& cfg) {
     prev_best_bid = book.best_bid();
     prev_best_ask = book.best_ask();
 
+    // Auto-detect flag-aware mode: if any RTH message has non-zero flags,
+    // enable flag filtering. Otherwise, use legacy behavior (snapshot on BBO change).
+    bool flag_aware = false;
+    for (const auto& msg : rth) {
+        if (msg.flags != 0) { flag_aware = true; break; }
+    }
+
     // Phase 2: Process RTH messages, snapshot on BBO change
-    for (auto& msg : rth) {
-        book.apply(msg);
+    if (!flag_aware) {
+        // Legacy mode: snapshot on any BBO change (no flag filtering)
+        for (auto& msg : rth) {
+            book.apply(msg);
 
-        double cur_bid = book.best_bid();
-        double cur_ask = book.best_ask();
+            double cur_bid = book.best_bid();
+            double cur_ask = book.best_ask();
 
-        // Snapshot when BBO changes and both sides are valid (finite)
-        bool bbo_changed = false;
-        if (has_valid_bbo(cur_bid, cur_ask)) {
-            bbo_changed = !has_valid_bbo(prev_best_bid, prev_best_ask)
-                       || cur_bid != prev_best_bid
-                       || cur_ask != prev_best_ask;
-        }
-
-        prev_best_bid = cur_bid;
-        prev_best_ask = cur_ask;
-
-        if (bbo_changed) {
-            double mid = book.mid_price();
-            double spread = book.spread();
-
-            // Compute time_remaining: 1.0 - session_progress
-            float progress = filter.session_progress(msg.ts_ns);
-            float time_remaining = 1.0f - progress;
-
-            // Build observation with position=0, take first 43 floats (no position)
-            auto full_obs = fb.build(book, 0.0f, time_remaining);
-
-            // Append first OBS_SIZE-1 floats (exclude position) to flat obs vector
-            for (int i = 0; i < FeatureBuilder::POSITION; ++i) {
-                result.obs.push_back(full_obs[i]);
+            bool bbo_changed = false;
+            if (has_valid_bbo(cur_bid, cur_ask)) {
+                bbo_changed = !has_valid_bbo(prev_best_bid, prev_best_ask)
+                           || cur_bid != prev_best_bid
+                           || cur_ask != prev_best_ask;
             }
-            result.mid.push_back(mid);
-            result.spread.push_back(spread);
-            result.num_steps++;
+
+            prev_best_bid = cur_bid;
+            prev_best_ask = cur_ask;
+
+            if (bbo_changed) {
+                double mid = book.mid_price();
+                double spread = book.spread();
+
+                float progress = filter.session_progress(msg.ts_ns);
+                float time_remaining = 1.0f - progress;
+
+                auto full_obs = fb.build(book, 0.0f, time_remaining);
+
+                for (int i = 0; i < FeatureBuilder::POSITION; ++i) {
+                    result.obs.push_back(full_obs[i]);
+                }
+                result.mid.push_back(mid);
+                result.spread.push_back(spread);
+                result.num_steps++;
+            }
         }
+    } else {
+        // Flag-aware mode: buffer mid-event messages and only apply
+        // complete events (when F_LAST arrives at the same timestamp).
+        // Orphaned mid-event messages (no F_LAST) are discarded.
+        std::vector<Message> event_buf;
+        uint64_t event_ts = 0;
+
+        for (size_t idx = 0; idx < rth.size(); ++idx) {
+            auto& msg = rth[idx];
+            bool is_f_last     = (msg.flags & 0x80) != 0;
+            bool is_snapshot   = (msg.flags & 0x20) != 0;
+
+            // Skip snapshot records entirely (don't apply to book)
+            if (is_snapshot) continue;
+
+            // If timestamp changed, discard any orphaned mid-event messages
+            if (msg.ts_ns != event_ts) {
+                event_buf.clear();
+                event_ts = msg.ts_ns;
+            }
+
+            if (!is_f_last) {
+                // Mid-event message: buffer it
+                event_buf.push_back(msg);
+                continue;
+            }
+
+            // F_LAST message: apply buffered messages + this one to the book
+            for (auto& buffered : event_buf) {
+                book.apply(buffered);
+            }
+            event_buf.clear();
+            book.apply(msg);
+
+            double cur_bid = book.best_bid();
+            double cur_ask = book.best_ask();
+
+            bool bbo_changed = false;
+            if (has_valid_bbo(cur_bid, cur_ask)) {
+                bbo_changed = !has_valid_bbo(prev_best_bid, prev_best_ask)
+                           || cur_bid != prev_best_bid
+                           || cur_ask != prev_best_ask;
+            }
+
+            prev_best_bid = cur_bid;
+            prev_best_ask = cur_ask;
+
+            if (bbo_changed) {
+                double spread = book.spread();
+                if (spread <= 0.0) continue;  // reject crossed/locked books
+
+                double mid = book.mid_price();
+
+                float progress = filter.session_progress(msg.ts_ns);
+                float time_remaining = 1.0f - progress;
+
+                auto full_obs = fb.build(book, 0.0f, time_remaining);
+
+                for (int i = 0; i < FeatureBuilder::POSITION; ++i) {
+                    result.obs.push_back(full_obs[i]);
+                }
+                result.mid.push_back(mid);
+                result.spread.push_back(spread);
+                result.num_steps++;
+            }
+        }
+        // Discard any remaining buffered mid-event messages (orphaned)
     }
 
     return result;
