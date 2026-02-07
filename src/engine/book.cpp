@@ -95,19 +95,9 @@ void Book::apply_modify(const Message& msg, std::map<double, uint32_t>& levels) 
     entry.qty = msg.qty;
 }
 
-void Book::apply_trade(const Message& msg, std::map<double, uint32_t>& levels) {
-    auto it = orders_.find(msg.order_id);
-    if (it == orders_.end()) return;
-    auto& entry = it->second;
-    auto lvl_it = levels.find(entry.price);
-    if (lvl_it != levels.end()) {
-        reduce_level(levels, lvl_it, msg.qty);
-    }
-    if (entry.qty <= msg.qty) {
-        orders_.erase(it);
-    } else {
-        entry.qty -= msg.qty;
-    }
+void Book::apply_trade(const Message& /*msg*/, std::map<double, uint32_t>& /*levels*/) {
+    // No-op: Databento spec says Trade/Fill messages do not affect the book.
+    // Book changes are communicated entirely through Add, Cancel, and Modify.
 }
 
 void Book::reset() {

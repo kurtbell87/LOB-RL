@@ -12,6 +12,7 @@ struct Message {
     double price = 0.0;
     uint32_t qty = 0;
     uint64_t ts_ns = 0;
+    uint8_t flags = 0;
 
     bool is_valid() const {
         // price must be positive and finite
