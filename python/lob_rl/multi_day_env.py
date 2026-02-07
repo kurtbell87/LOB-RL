@@ -2,7 +2,7 @@
 
 Precomputes all days at construction time using lob_rl_core.precompute(),
 or loads pre-cached .npz files from a cache directory.
-step() and reset() use pure numpy via PrecomputedEnv.
+step() and reset() use pure numpy via PrecomputedEnv or BarLevelEnv.
 """
 
 import glob
@@ -43,6 +43,7 @@ class MultiDayEnv(gym.Env):
         participation_bonus=0.0,
         step_interval=1,
         cache_dir=None,
+        bar_size=0,
     ):
         super().__init__()
 
@@ -58,9 +59,23 @@ class MultiDayEnv(gym.Env):
         self._execution_cost = execution_cost
         self._participation_bonus = participation_bonus
         self._step_interval = step_interval
+        self._bar_size = bar_size
+
+        # Warn if step_interval is set with bar_size > 0
+        if bar_size > 0 and step_interval > 1:
+            warnings.warn(
+                f"step_interval={step_interval} is ignored when bar_size={bar_size} > 0. "
+                "Bar-level aggregation replaces tick subsampling."
+            )
+
+        # Set observation space based on mode
+        if bar_size > 0:
+            obs_dim = 21  # 13 intra-bar + 7 temporal + 1 position
+        else:
+            obs_dim = 54  # 43 base + 10 temporal + 1 position
 
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(54,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
         )
         self.action_space = spaces.Discrete(3)
 
@@ -70,6 +85,10 @@ class MultiDayEnv(gym.Env):
             self._load_from_cache_dir(cache_dir)
         else:
             self._load_from_file_paths(file_paths, session_config)
+
+        # If bar_size > 0, filter out days that produce < 2 bars
+        if bar_size > 0:
+            self._filter_days_for_bar_size()
 
         if not self._precomputed_days:
             raise ValueError(
@@ -83,6 +102,22 @@ class MultiDayEnv(gym.Env):
             self._rng.shuffle(self._order)
         self._day_index = 0
         self._inner_env = None
+
+    def _filter_days_for_bar_size(self):
+        """Remove days that produce < 2 bars with the given bar_size."""
+        from lob_rl.bar_aggregation import aggregate_bars
+
+        filtered = []
+        for obs, mid, spread in self._precomputed_days:
+            bar_features, _, _ = aggregate_bars(obs, mid, spread, self._bar_size)
+            if bar_features.shape[0] >= 2:
+                filtered.append((obs, mid, spread))
+            else:
+                warnings.warn(
+                    f"Skipping day with {obs.shape[0]} ticks: "
+                    f"only {bar_features.shape[0]} bars with bar_size={self._bar_size}"
+                )
+        self._precomputed_days = filtered
 
     def _load_from_file_paths(self, file_paths, session_config):
         """Load days from raw .bin files via C++ precompute."""
@@ -147,16 +182,28 @@ class MultiDayEnv(gym.Env):
         file_idx = self._order[self._day_index]
         self._day_index += 1
 
-        # Create inner PrecomputedEnv for this day
+        # Create inner env for this day
         obs, mid, spread = self._precomputed_days[file_idx]
-        self._inner_env = PrecomputedEnv(
-            obs, mid, spread,
-            reward_mode=self._reward_mode,
-            lambda_=self._lambda,
-            execution_cost=self._execution_cost,
-            participation_bonus=self._participation_bonus,
-            step_interval=self._step_interval,
-        )
+
+        if self._bar_size > 0:
+            from lob_rl.bar_level_env import BarLevelEnv
+            self._inner_env = BarLevelEnv(
+                obs, mid, spread,
+                bar_size=self._bar_size,
+                reward_mode=self._reward_mode,
+                lambda_=self._lambda,
+                execution_cost=self._execution_cost,
+                participation_bonus=self._participation_bonus,
+            )
+        else:
+            self._inner_env = PrecomputedEnv(
+                obs, mid, spread,
+                reward_mode=self._reward_mode,
+                lambda_=self._lambda,
+                execution_cost=self._execution_cost,
+                participation_bonus=self._participation_bonus,
+                step_interval=self._step_interval,
+            )
         obs_out, info = self._inner_env.reset()
         info["day_index"] = file_idx
         return obs_out, info
