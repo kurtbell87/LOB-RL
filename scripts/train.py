@@ -1,6 +1,7 @@
 """Train a PPO agent on LOB data using Stable-Baselines3."""
 
 import argparse
+import glob
 import json
 import os
 import sys
@@ -52,10 +53,22 @@ def make_env(file_path, reward_mode='pnl_delta', lambda_=0.0, execution_cost=Fal
     )
 
 
-def make_train_env(file_paths, session_config, reward_mode, lambda_, execution_cost,
-                   participation_bonus=0.0, step_interval=1):
+def make_train_env(file_paths=None, session_config=None, reward_mode='pnl_delta',
+                   lambda_=0.0, execution_cost=False, participation_bonus=0.0,
+                   step_interval=1, cache_dir=None):
     """Factory that returns a closure for SubprocVecEnv (avoids lambda late-binding)."""
     def _init():
+        if cache_dir is not None:
+            return MultiDayEnv(
+                cache_dir=cache_dir,
+                steps_per_episode=0,
+                reward_mode=reward_mode,
+                lambda_=lambda_,
+                shuffle=True,
+                execution_cost=execution_cost,
+                participation_bonus=participation_bonus,
+                step_interval=step_interval,
+            )
         return MultiDayEnv(
             file_paths=file_paths,
             session_config=session_config,
@@ -71,15 +84,26 @@ def make_train_env(file_paths, session_config, reward_mode, lambda_, execution_c
 
 
 def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False,
-                     vec_normalize_path=None, participation_bonus=0.0, step_interval=1):
+                     vec_normalize_path=None, participation_bonus=0.0, step_interval=1,
+                     cache_path=None):
     """Evaluate model on held-out data and compute Sortino ratio."""
     all_returns = []
 
     for date, path, _ in eval_files[:n_eval_episodes]:
         try:
-            env = make_env(path, execution_cost=execution_cost,
-                           participation_bonus=participation_bonus,
-                           step_interval=step_interval)
+            if cache_path is not None:
+                # Use from_cache for the specific .npz file
+                npz_file = os.path.join(cache_path, f"{date}.npz") if os.path.isdir(cache_path) else cache_path
+                env = PrecomputedEnv.from_cache(
+                    npz_file,
+                    execution_cost=execution_cost,
+                    participation_bonus=participation_bonus,
+                    step_interval=step_interval,
+                )
+            else:
+                env = make_env(path, execution_cost=execution_cost,
+                               participation_bonus=participation_bonus,
+                               step_interval=step_interval)
         except ValueError as e:
             print(f"  Skipping {date}: {e}")
             continue
@@ -127,7 +151,8 @@ def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False
 
 def main():
     parser = argparse.ArgumentParser(description='Train PPO on LOB data')
-    parser.add_argument('--data-dir', default='data/mes', help='Directory with .bin files')
+    parser.add_argument('--data-dir', default=None, help='Directory with .bin files')
+    parser.add_argument('--cache-dir', default=None, help='Directory with cached .npz files')
     parser.add_argument('--train-days', type=int, default=20, help='Number of training days')
     parser.add_argument('--total-timesteps', type=int, default=500_000, help='Total training timesteps')
     parser.add_argument('--reward-mode', default='pnl_delta', choices=['pnl_delta', 'pnl_delta_penalized'])
@@ -148,30 +173,68 @@ def main():
                         help='Subsample every Nth BBO snapshot (default: 1, no subsampling)')
     args = parser.parse_args()
 
-    # Load data
-    all_files = load_manifest(args.data_dir)
-    print(f"Loaded {len(all_files)} days of data")
+    # Validate mutual exclusivity
+    if args.cache_dir and args.data_dir:
+        parser.error("--cache-dir and --data-dir are mutually exclusive")
+    if not args.cache_dir and not args.data_dir:
+        parser.error("One of --cache-dir or --data-dir is required")
 
-    # Split: first N days for training, rest for validation/test
-    train_files = all_files[:args.train_days]
-    val_files = all_files[args.train_days:args.train_days + 5]
-    test_files = all_files[args.train_days + 5:]
+    if args.cache_dir:
+        # Load from cached .npz files
+        npz_files = sorted(glob.glob(os.path.join(args.cache_dir, "*.npz")))
+        all_files = [(os.path.splitext(os.path.basename(f))[0], f, 0) for f in npz_files]
+        print(f"Loaded {len(all_files)} cached days from {args.cache_dir}")
 
-    print(f"Train: {len(train_files)} days, Val: {len(val_files)} days, Test: {len(test_files)} days")
+        train_files = all_files[:args.train_days]
+        val_files = all_files[args.train_days:args.train_days + 5]
+        test_files = all_files[args.train_days + 5:]
 
-    if len(train_files) == 0:
-        print("ERROR: No training files!")
-        return 1
+        print(f"Train: {len(train_files)} days, Val: {len(val_files)} days, Test: {len(test_files)} days")
 
-    # Create multi-day training environment cycling through all training days
-    train_paths = [f[1] for f in train_files]
-    print(f"Creating multi-day env with {len(train_paths)} training days (shuffle=True)")
+        if len(train_files) == 0:
+            print("ERROR: No training files!")
+            return 1
 
-    env = SubprocVecEnv([
-        make_train_env(train_paths, DEFAULT_SESSION_CONFIG, args.reward_mode, args.lambda_, args.execution_cost,
-                       args.participation_bonus, step_interval=args.step_interval)
-        for _ in range(args.n_envs)
-    ])
+        # Build cache_dir for train split by using a temp dir with symlinks,
+        # or pass full cache_dir and let MultiDayEnv handle it
+        # For simplicity, pass the full cache_dir since train/val split uses
+        # different files for eval anyway
+        train_cache_dir = args.cache_dir
+
+        env = SubprocVecEnv([
+            make_train_env(
+                cache_dir=train_cache_dir,
+                reward_mode=args.reward_mode,
+                lambda_=args.lambda_,
+                execution_cost=args.execution_cost,
+                participation_bonus=args.participation_bonus,
+                step_interval=args.step_interval,
+            )
+            for _ in range(args.n_envs)
+        ])
+    else:
+        # Load data from manifest
+        all_files = load_manifest(args.data_dir)
+        print(f"Loaded {len(all_files)} days of data")
+
+        train_files = all_files[:args.train_days]
+        val_files = all_files[args.train_days:args.train_days + 5]
+        test_files = all_files[args.train_days + 5:]
+
+        print(f"Train: {len(train_files)} days, Val: {len(val_files)} days, Test: {len(test_files)} days")
+
+        if len(train_files) == 0:
+            print("ERROR: No training files!")
+            return 1
+
+        train_paths = [f[1] for f in train_files]
+        print(f"Creating multi-day env with {len(train_paths)} training days (shuffle=True)")
+
+        env = SubprocVecEnv([
+            make_train_env(train_paths, DEFAULT_SESSION_CONFIG, args.reward_mode, args.lambda_, args.execution_cost,
+                           args.participation_bonus, step_interval=args.step_interval)
+            for _ in range(args.n_envs)
+        ])
 
     if not args.no_norm:
         env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.0)
@@ -211,15 +274,24 @@ def main():
         print(f"VecNormalize stats saved to: {vec_normalize_path}")
 
     # Evaluate on validation set
+    cache_path = args.cache_dir if args.cache_dir else None
     if val_files:
         print("\nEvaluating on validation set...")
-        val_metrics = evaluate_sortino(model, val_files, execution_cost=args.execution_cost, vec_normalize_path=vec_normalize_path, participation_bonus=args.participation_bonus, step_interval=args.step_interval)
+        val_metrics = evaluate_sortino(model, val_files, execution_cost=args.execution_cost,
+                                       vec_normalize_path=vec_normalize_path,
+                                       participation_bonus=args.participation_bonus,
+                                       step_interval=args.step_interval,
+                                       cache_path=cache_path)
         print(f"Validation metrics: {val_metrics}")
 
     # Evaluate on test set
     if test_files:
         print("\nEvaluating on test set...")
-        test_metrics = evaluate_sortino(model, test_files, execution_cost=args.execution_cost, vec_normalize_path=vec_normalize_path, participation_bonus=args.participation_bonus, step_interval=args.step_interval)
+        test_metrics = evaluate_sortino(model, test_files, execution_cost=args.execution_cost,
+                                        vec_normalize_path=vec_normalize_path,
+                                        participation_bonus=args.participation_bonus,
+                                        step_interval=args.step_interval,
+                                        cache_path=cache_path)
         print(f"Test metrics: {test_metrics}")
 
     return 0
