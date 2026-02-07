@@ -22,16 +22,19 @@ PrecomputedEnv(obs, mid, spread,
                reward_mode="pnl_delta",       # or "pnl_delta_penalized"
                lambda_=0.0,
                execution_cost=False,           # if True, charges spread/2 * |delta_pos|
-               participation_bonus=0.0)        # per-step bonus * abs(position)
+               participation_bonus=0.0,        # per-step bonus * abs(position)
+               step_interval=1)               # subsample every Nth BBO snapshot
 
 # obs: ndarray (N, 43) float32 — precomputed C++ feature rows
 # mid: ndarray (N,) float64 — mid prices
 # spread: ndarray (N,) float64 — bid-ask spreads
-# At construction, _precompute_temporal_features() builds self._temporal (N, 10)
+# step_interval: subsamples arrays[::step_interval] BEFORE computing temporal features
+# At construction, _precompute_temporal_features() builds self._temporal (M, 10) where M=N//step_interval
 
 PrecomputedEnv.from_file(path, session_config=None,
                          reward_mode="pnl_delta", lambda_=0.0,
-                         execution_cost=False, participation_bonus=0.0)
+                         execution_cost=False, participation_bonus=0.0,
+                         step_interval=1)
 
 # Gym interface
 obs, info = env.reset()                      # obs: ndarray(54,) float32
@@ -54,7 +57,8 @@ MultiDayEnv(file_paths,                # list of .bin paths
             shuffle=False,
             seed=None,
             execution_cost=False,
-            participation_bonus=0.0)
+            participation_bonus=0.0,
+            step_interval=1)           # forwarded to PrecomputedEnv
 
 # Each reset() advances to next day. Precomputes all days at construction.
 # observation_space: (54,) — same as PrecomputedEnv
