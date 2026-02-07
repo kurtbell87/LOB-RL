@@ -307,8 +307,8 @@ TEST(Book, ModifyPriceChangeThenCancelWorksCorrectly) {
     EXPECT_TRUE(std::isnan(book.best_bid()));
 }
 
-TEST(Book, ModifyPriceChangeThenTradeWorksCorrectly) {
-    // After a price-changing modify, trade should decrement from the new level
+TEST(Book, ModifyPriceChangeThenTradeIsNoOp) {
+    // Databento spec: Trade is a no-op. After modify, trade should not change qty.
     Book book;
     book.apply(make_msg(1, Message::Side::Ask, Message::Action::Add, 101.0, 10));
     book.apply(make_msg(1, Message::Side::Ask, Message::Action::Modify, 100.0, 20));
@@ -316,7 +316,7 @@ TEST(Book, ModifyPriceChangeThenTradeWorksCorrectly) {
 
     EXPECT_EQ(book.ask_depth(), 1);
     EXPECT_DOUBLE_EQ(book.best_ask(), 100.0);
-    EXPECT_EQ(book.best_ask_qty(), 15);
+    EXPECT_EQ(book.best_ask_qty(), 20u);  // Trade is no-op, qty unchanged from modify
 }
 
 TEST(Book, ModifyPriceChangeToExistingLevel) {
@@ -353,22 +353,27 @@ TEST(Book, ModifyPriceChangeUpdatesOrderEntryPrice) {
 // Book: Trade messages
 // ===========================================================================
 
-TEST(Book, TradeDecrementsQtyAtLevel) {
+TEST(Book, TradeIsNoOp) {
+    // Databento spec: Trade/Fill messages do not affect the book.
+    // Book changes are communicated entirely through Add, Cancel, and Modify.
     Book book;
     book.apply(make_msg(1, Message::Side::Ask, Message::Action::Add, 101.0, 10));
     book.apply(make_msg(1, Message::Side::Ask, Message::Action::Trade, 101.0, 3));
 
     EXPECT_EQ(book.ask_depth(), 1);
     EXPECT_DOUBLE_EQ(book.best_ask(), 101.0);
+    EXPECT_EQ(book.best_ask_qty(), 10u);  // unchanged
 }
 
-TEST(Book, TradeRemovesLevelWhenFullyFilled) {
+TEST(Book, TradeDoesNotRemoveLevelWhenFullyFilled) {
+    // Databento spec: Trade does not affect the book.
     Book book;
     book.apply(make_msg(1, Message::Side::Ask, Message::Action::Add, 101.0, 10));
     book.apply(make_msg(1, Message::Side::Ask, Message::Action::Trade, 101.0, 10));
 
-    EXPECT_EQ(book.ask_depth(), 0);
-    EXPECT_TRUE(std::isnan(book.best_ask()));
+    EXPECT_EQ(book.ask_depth(), 1);  // level stays
+    EXPECT_DOUBLE_EQ(book.best_ask(), 101.0);  // price unchanged
+    EXPECT_EQ(book.best_ask_qty(), 10u);  // qty unchanged
 }
 
 // ===========================================================================
@@ -567,16 +572,16 @@ TEST(Book, SubtractFromSaturatedValueWorks) {
         << "After canceling saturated order, remaining order's qty should be visible";
 }
 
-TEST(Book, TradeReducesSaturatedLevel) {
-    // Trade should reduce a saturated level correctly
+TEST(Book, TradeDoesNotReduceSaturatedLevel) {
+    // Databento spec: Trade is a no-op. Saturated level stays at UINT32_MAX.
     Book book;
     book.apply(make_msg(1, Message::Side::Ask, Message::Action::Add, 101.0, UINT32_MAX));
 
-    // Trade for 1000 — should reduce from UINT32_MAX
+    // Trade for 1000 — should NOT reduce (Trade is no-op)
     book.apply(make_msg(1, Message::Side::Ask, Message::Action::Trade, 101.0, 1000));
 
-    EXPECT_EQ(book.best_ask_qty(), UINT32_MAX - 1000)
-        << "Trade should reduce level quantity correctly";
+    EXPECT_EQ(book.best_ask_qty(), UINT32_MAX)
+        << "Trade should not reduce level quantity (Databento spec: Trade is no-op)";
 }
 
 TEST(Book, OverflowOnAskSideSaturates) {
