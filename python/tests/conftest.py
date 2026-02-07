@@ -55,33 +55,38 @@ def make_realistic_obs(n, mid_start=100.0, mid_step=0.25, spread=0.50):
     DEPTH = 10
     OBS_COLS = 43
     obs = np.zeros((n, OBS_COLS), dtype=np.float32)
-    mid = np.empty(n, dtype=np.float64)
+
+    t = np.arange(n, dtype=np.float64)
+    mid = mid_start + t * mid_step
     spread_arr = np.full(n, spread, dtype=np.float64)
+    half_spread = spread / 2.0
+    lvl = np.arange(DEPTH, dtype=np.float32)
 
-    for t in range(n):
-        m = mid_start + t * mid_step
-        mid[t] = m
-        half_spread = spread / 2.0
+    # Bid prices: bid0 - lvl * 0.25 for each level
+    bid0 = (mid - half_spread).astype(np.float32)
+    obs[:, :DEPTH] = bid0[:, np.newaxis] - lvl[np.newaxis, :] * 0.25
 
-        bid0 = m - half_spread
-        for lvl in range(DEPTH):
-            obs[t, lvl] = bid0 - lvl * 0.25
+    # Ask prices: ask0 + lvl * 0.25 for each level
+    ask0 = (mid + half_spread).astype(np.float32)
+    obs[:, 20:20 + DEPTH] = ask0[:, np.newaxis] + lvl[np.newaxis, :] * 0.25
 
-        ask0 = m + half_spread
-        for lvl in range(DEPTH):
-            obs[t, 20 + lvl] = ask0 + lvl * 0.25
+    # Bid sizes: 10.0 + t * 0.5 + lvl
+    obs[:, 10:10 + DEPTH] = (10.0 + t[:, np.newaxis] * 0.5 + lvl[np.newaxis, :]).astype(np.float32)
 
-        for lvl in range(DEPTH):
-            obs[t, 10 + lvl] = 10.0 + t * 0.5 + lvl
+    # Ask sizes: 8.0 + t * 0.3 + lvl
+    obs[:, 30:30 + DEPTH] = (8.0 + t[:, np.newaxis] * 0.3 + lvl[np.newaxis, :]).astype(np.float32)
 
-        for lvl in range(DEPTH):
-            obs[t, 30 + lvl] = 8.0 + t * 0.3 + lvl
+    # Relative spread
+    obs[:, 40] = (spread / mid).astype(np.float32)
 
-        obs[t, 40] = spread / m
-        bs0 = obs[t, 10]
-        as0 = obs[t, 30]
-        obs[t, 41] = (bs0 - as0) / (bs0 + as0) if (bs0 + as0) > 0 else 0.0
-        obs[t, 42] = 1.0 - t / max(n - 1, 1)
+    # Imbalance at level 0
+    bs0 = obs[:, 10]
+    as0 = obs[:, 30]
+    denom = bs0 + as0
+    obs[:, 41] = np.where(denom > 0, (bs0 - as0) / denom, 0.0)
+
+    # Time left
+    obs[:, 42] = (1.0 - t / max(n - 1, 1)).astype(np.float32)
 
     return obs, mid, spread_arr
 

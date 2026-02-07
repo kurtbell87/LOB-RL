@@ -5,6 +5,7 @@ import glob
 import json
 import os
 import sys
+import warnings
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'python'))
@@ -55,7 +56,7 @@ def make_env(file_path, reward_mode='pnl_delta', lambda_=0.0, execution_cost=Fal
 
 def make_train_env(file_paths=None, session_config=None, reward_mode='pnl_delta',
                    lambda_=0.0, execution_cost=False, participation_bonus=0.0,
-                   step_interval=1, cache_dir=None):
+                   step_interval=1, cache_dir=None, bar_size=0):
     """Factory that returns a closure for SubprocVecEnv (avoids lambda late-binding)."""
     def _init():
         if cache_dir is not None:
@@ -68,6 +69,7 @@ def make_train_env(file_paths=None, session_config=None, reward_mode='pnl_delta'
                 execution_cost=execution_cost,
                 participation_bonus=participation_bonus,
                 step_interval=step_interval,
+                bar_size=bar_size,
             )
         return MultiDayEnv(
             file_paths=file_paths,
@@ -79,19 +81,37 @@ def make_train_env(file_paths=None, session_config=None, reward_mode='pnl_delta'
             execution_cost=execution_cost,
             participation_bonus=participation_bonus,
             step_interval=step_interval,
+            bar_size=bar_size,
         )
     return _init
 
 
 def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False,
                      vec_normalize_path=None, participation_bonus=0.0, step_interval=1,
-                     cache_path=None):
+                     cache_path=None, bar_size=0):
     """Evaluate model on held-out data and compute Sortino ratio."""
     all_returns = []
 
     for date, path, _ in eval_files[:n_eval_episodes]:
         try:
-            if cache_path is not None:
+            if bar_size > 0:
+                from lob_rl.bar_level_env import BarLevelEnv
+                if cache_path is not None:
+                    npz_file = os.path.join(cache_path, f"{date}.npz") if os.path.isdir(cache_path) else cache_path
+                    env = BarLevelEnv.from_cache(
+                        npz_file,
+                        bar_size=bar_size,
+                        execution_cost=execution_cost,
+                        participation_bonus=participation_bonus,
+                    )
+                else:
+                    env = BarLevelEnv.from_file(
+                        path,
+                        bar_size=bar_size,
+                        execution_cost=execution_cost,
+                        participation_bonus=participation_bonus,
+                    )
+            elif cache_path is not None:
                 # Use from_cache for the specific .npz file
                 npz_file = os.path.join(cache_path, f"{date}.npz") if os.path.isdir(cache_path) else cache_path
                 env = PrecomputedEnv.from_cache(
@@ -171,6 +191,12 @@ def main():
                         help='Per-step bonus for holding a position: bonus * |pos|')
     parser.add_argument('--step-interval', type=int, default=1,
                         help='Subsample every Nth BBO snapshot (default: 1, no subsampling)')
+    parser.add_argument('--bar-size', type=int, default=0,
+                        help='Number of ticks per bar (0 = tick-level, >0 = bar-level)')
+    parser.add_argument('--policy-arch', type=str, default='64,64',
+                        help='Comma-separated hidden layer sizes (default: 64,64)')
+    parser.add_argument('--activation', type=str, default='tanh', choices=['tanh', 'relu'],
+                        help='Activation function for policy/value networks (default: tanh)')
     args = parser.parse_args()
 
     # Validate mutual exclusivity
@@ -178,6 +204,21 @@ def main():
         parser.error("--cache-dir and --data-dir are mutually exclusive")
     if not args.cache_dir and not args.data_dir:
         parser.error("One of --cache-dir or --data-dir is required")
+
+    # Warn if bar_size and step_interval are both set
+    if args.bar_size > 0 and args.step_interval > 1:
+        warnings.warn(
+            f"step_interval={args.step_interval} is ignored when bar_size={args.bar_size} > 0"
+        )
+
+    # Parse policy architecture
+    import torch
+    net_arch = [int(x) for x in args.policy_arch.split(',')]
+    activation_fn = torch.nn.Tanh if args.activation == 'tanh' else torch.nn.ReLU
+    policy_kwargs = dict(
+        net_arch=dict(pi=net_arch, vf=net_arch),
+        activation_fn=activation_fn,
+    )
 
     if args.cache_dir:
         # Load from cached .npz files
@@ -209,6 +250,7 @@ def main():
                 execution_cost=args.execution_cost,
                 participation_bonus=args.participation_bonus,
                 step_interval=args.step_interval,
+                bar_size=args.bar_size,
             )
             for _ in range(args.n_envs)
         ])
@@ -232,7 +274,7 @@ def main():
 
         env = SubprocVecEnv([
             make_train_env(train_paths, DEFAULT_SESSION_CONFIG, args.reward_mode, args.lambda_, args.execution_cost,
-                           args.participation_bonus, step_interval=args.step_interval)
+                           args.participation_bonus, step_interval=args.step_interval, bar_size=args.bar_size)
             for _ in range(args.n_envs)
         ])
 
@@ -253,6 +295,7 @@ def main():
         vf_coef=0.5,
         max_grad_norm=0.5,
         clip_range=0.2,
+        policy_kwargs=policy_kwargs,
         tensorboard_log=os.path.join(args.output_dir, 'tb_logs'),
     )
 
@@ -281,7 +324,8 @@ def main():
                                        vec_normalize_path=vec_normalize_path,
                                        participation_bonus=args.participation_bonus,
                                        step_interval=args.step_interval,
-                                       cache_path=cache_path)
+                                       cache_path=cache_path,
+                                       bar_size=args.bar_size)
         print(f"Validation metrics: {val_metrics}")
 
     # Evaluate on test set
@@ -291,7 +335,8 @@ def main():
                                         vec_normalize_path=vec_normalize_path,
                                         participation_bonus=args.participation_bonus,
                                         step_interval=args.step_interval,
-                                        cache_path=cache_path)
+                                        cache_path=cache_path,
+                                        bar_size=args.bar_size)
         print(f"Test metrics: {test_metrics}")
 
     return 0
