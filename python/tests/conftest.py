@@ -46,6 +46,46 @@ def make_spread(n, value=0.5):
     return np.full(n, value, dtype=np.float64)
 
 
+def make_realistic_obs(n, mid_start=100.0, mid_step=0.25, spread=0.50):
+    """Build (n, 43) obs array with realistic LOB fields for testing.
+
+    Returns (obs, mid, spread_arr) — obs has proper bid/ask/size/imbalance
+    structure and each row is distinguishable via row-dependent values.
+    """
+    DEPTH = 10
+    OBS_COLS = 43
+    obs = np.zeros((n, OBS_COLS), dtype=np.float32)
+    mid = np.empty(n, dtype=np.float64)
+    spread_arr = np.full(n, spread, dtype=np.float64)
+
+    for t in range(n):
+        m = mid_start + t * mid_step
+        mid[t] = m
+        half_spread = spread / 2.0
+
+        bid0 = m - half_spread
+        for lvl in range(DEPTH):
+            obs[t, lvl] = bid0 - lvl * 0.25
+
+        ask0 = m + half_spread
+        for lvl in range(DEPTH):
+            obs[t, 20 + lvl] = ask0 + lvl * 0.25
+
+        for lvl in range(DEPTH):
+            obs[t, 10 + lvl] = 10.0 + t * 0.5 + lvl
+
+        for lvl in range(DEPTH):
+            obs[t, 30 + lvl] = 8.0 + t * 0.3 + lvl
+
+        obs[t, 40] = spread / m
+        bs0 = obs[t, 10]
+        as0 = obs[t, 30]
+        obs[t, 41] = (bs0 - as0) / (bs0 + as0) if (bs0 + as0) > 0 else 0.0
+        obs[t, 42] = 1.0 - t / max(n - 1, 1)
+
+    return obs, mid, spread_arr
+
+
 def run_episode(env, max_steps=5000):
     """Step through an episode until terminated. Returns step count."""
     terminated = False
