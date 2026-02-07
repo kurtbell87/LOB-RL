@@ -1,18 +1,18 @@
 ## Current State (updated 2026-02-06)
 
-- **Build:** `build-release/` is current. 460 C++ tests pass (`./lob_tests`). 696 Python tests pass. **1156 total.**
+- **Build:** `build-release/` is current. 489 C++ tests pass (`./lob_tests`). 696 Python tests pass. **1185 total.**
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, gymnasium, numpy, tensorboard all installed in uv environment.
+- **Fix precompute events DONE:** 4 C++ changes — `flags` field on Message, copy in BinaryFileSource, Trade no-op in Book, flag-aware snapshotting in precompute(). PR #7 merged.
 - **Temporal features DONE:** Obs expanded 44→54 dims. 10 engineered features (returns, volatility, imbalance, microprice). PR #6 merged.
 - **Participation bonus DONE:** Per-step `bonus * abs(position)`. Enable with `--participation-bonus 0.01`. PR #5 merged.
 - **Training pipeline v2 DONE:** VecNormalize, SubprocVecEnv (8 envs), ent_coef=0.01, 14 CLI flags. PR #4 merged.
 - **Execution cost DONE:** Per-step `spread/2 * |delta_pos|`. Enable with `--execution-cost`. PR #3 merged.
-- **Spread/precompute ROOT CAUSE FOUND:** Two bugs in C++ event handling — snapshotting mid-event (ignoring `F_LAST` flag) + applying Trade/Fill to book (Databento says they don't affect book). Fix is 4 targeted C++ changes. Full diagnosis in `LAST_TOUCH.md`.
 - **Walk-forward/lookahead audited CLEAN:** Reward formula, temporal features, train/val split, VecNormalize all verified correct. No lookahead.
-- **Next task:** Write TDD spec for fix-precompute-events and run the cycle. See `LAST_TOUCH.md`.
+- **Next task:** Re-run precompute to verify spread is positive, then re-train with `--execution-cost`. See `LAST_TOUCH.md`.
 - **Data:** 27 days of /MES MBO data in `data/mes/`, manifest at `data/mes/manifest.json`.
 - **Reference:** Databento DBN spec cloned to `references/dbn/` (flag defs, record layout, event semantics).
-- **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --data-dir ../data/mes --participation-bonus 0.01`
+- **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --data-dir ../data/mes --participation-bonus 0.01 --execution-cost`
 
 ## Don't
 
