@@ -29,72 +29,13 @@ from conftest import (
     make_obs as _make_obs,
     make_mid as _make_mid,
     make_spread as _make_spread,
+    make_realistic_obs,
 )
 
 
-# ===========================================================================
-# Helpers: build realistic obs arrays with distinguishable book data
-# ===========================================================================
-
-# Observation layout from C++ (43 features):
-#   [0:10]   bid prices (10 levels)
-#   [10:20]  bid sizes (10 levels)
-#   [20:30]  ask prices (10 levels)
-#   [30:40]  ask sizes (10 levels)
-#   [40]     spread/mid (relative spread)
-#   [41]     imbalance
-#   [42]     time_left
-
-DEPTH = 10
-OBS_COLS = 43
+# Observation layout constants
 NEW_OBS_SIZE = 54
-POSITION_INDEX = 53  # spec says position moves to index 53
-
-
-def make_realistic_obs(n, mid_start=100.0, mid_step=0.25, spread=0.50):
-    """Build (n, 43) obs array with realistic LOB fields for temporal feature testing.
-
-    Returns (obs, mid, spread_arr) — obs has proper bid/ask/size/imbalance structure.
-    """
-    obs = np.zeros((n, OBS_COLS), dtype=np.float32)
-    mid = np.empty(n, dtype=np.float64)
-    spread_arr = np.full(n, spread, dtype=np.float64)
-
-    for t in range(n):
-        m = mid_start + t * mid_step
-        mid[t] = m
-        half_spread = spread / 2.0
-
-        # Bid prices: 10 levels descending from bid0
-        bid0 = m - half_spread
-        for lvl in range(DEPTH):
-            obs[t, lvl] = bid0 - lvl * 0.25  # bid prices
-
-        # Ask prices: 10 levels ascending from ask0
-        ask0 = m + half_spread
-        for lvl in range(DEPTH):
-            obs[t, 20 + lvl] = ask0 + lvl * 0.25  # ask prices
-
-        # Bid sizes: vary by level so total_volume_imbalance is non-trivial
-        for lvl in range(DEPTH):
-            obs[t, 10 + lvl] = 10.0 + t * 0.5 + lvl  # bid sizes
-
-        # Ask sizes: slightly different so imbalance != 0
-        for lvl in range(DEPTH):
-            obs[t, 30 + lvl] = 8.0 + t * 0.3 + lvl  # ask sizes
-
-        # spread/mid (relative spread)
-        obs[t, 40] = spread / m
-
-        # imbalance = (bidsize0 - asksize0) / (bidsize0 + asksize0)
-        bs0 = obs[t, 10]
-        as0 = obs[t, 30]
-        obs[t, 41] = (bs0 - as0) / (bs0 + as0) if (bs0 + as0) > 0 else 0.0
-
-        # time_left
-        obs[t, 42] = 1.0 - t / max(n - 1, 1)
-
-    return obs, mid, spread_arr
+POSITION_INDEX = 53
 
 
 def make_constant_mid_obs(n, mid_val=100.0, spread=0.50):

@@ -2,7 +2,7 @@
 
 GoogleTest-based tests. Run with: `cd build-release && ./lob_tests`
 
-**434 tests** across 28 test suites.
+**489 tests** across 32 test suites.
 
 ## Key test files
 
@@ -21,6 +21,8 @@ GoogleTest-based tests. Run with: `cd build-release && ./lob_tests`
 | `test_source.cpp` | SyntheticSource determinism | ~15 |
 | `test_binary_file_source.cpp` | BinaryFileSource reading, edge cases | ~25 |
 | `test_precompute.cpp` | Precompute arrays match step-by-step execution | ~20 |
+| `test_participation_bonus.cpp` | RewardCalculator::participation_bonus, LOBEnv integration | ~15 |
+| `test_fix_precompute_events.cpp` | Flag-aware precompute, F_LAST/F_SNAPSHOT handling | ~29 |
 | `test_data_integrity.cpp` | Validation, overflow, truncation handling | ~20 |
 
 ## Fixtures

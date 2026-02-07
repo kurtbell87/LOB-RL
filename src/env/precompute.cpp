@@ -7,6 +7,31 @@ static bool has_valid_bbo(double bid, double ask) {
     return std::isfinite(bid) && std::isfinite(ask);
 }
 
+static bool detect_bbo_change(double cur_bid, double cur_ask,
+                              double prev_bid, double prev_ask) {
+    if (!has_valid_bbo(cur_bid, cur_ask)) return false;
+    return !has_valid_bbo(prev_bid, prev_ask)
+        || cur_bid != prev_bid
+        || cur_ask != prev_ask;
+}
+
+static void record_snapshot(PrecomputedDay& result, const Book& book,
+                            FeatureBuilder& fb, const SessionFilter& filter,
+                            uint64_t ts_ns) {
+    double mid = book.mid_price();
+    double spread = book.spread();
+    float progress = filter.session_progress(ts_ns);
+    float time_remaining = 1.0f - progress;
+
+    auto full_obs = fb.build(book, 0.0f, time_remaining);
+    for (int i = 0; i < FeatureBuilder::POSITION; ++i) {
+        result.obs.push_back(full_obs[i]);
+    }
+    result.mid.push_back(mid);
+    result.spread.push_back(spread);
+    result.num_steps++;
+}
+
 PrecomputedDay precompute(IMessageSource& source, const SessionConfig& cfg) {
     PrecomputedDay result;
     Book book;
@@ -67,32 +92,12 @@ PrecomputedDay precompute(IMessageSource& source, const SessionConfig& cfg) {
             double cur_bid = book.best_bid();
             double cur_ask = book.best_ask();
 
-            bool bbo_changed = false;
-            if (has_valid_bbo(cur_bid, cur_ask)) {
-                bbo_changed = !has_valid_bbo(prev_best_bid, prev_best_ask)
-                           || cur_bid != prev_best_bid
-                           || cur_ask != prev_best_ask;
+            if (detect_bbo_change(cur_bid, cur_ask, prev_best_bid, prev_best_ask)) {
+                record_snapshot(result, book, fb, filter, msg.ts_ns);
             }
 
             prev_best_bid = cur_bid;
             prev_best_ask = cur_ask;
-
-            if (bbo_changed) {
-                double mid = book.mid_price();
-                double spread = book.spread();
-
-                float progress = filter.session_progress(msg.ts_ns);
-                float time_remaining = 1.0f - progress;
-
-                auto full_obs = fb.build(book, 0.0f, time_remaining);
-
-                for (int i = 0; i < FeatureBuilder::POSITION; ++i) {
-                    result.obs.push_back(full_obs[i]);
-                }
-                result.mid.push_back(mid);
-                result.spread.push_back(spread);
-                result.num_steps++;
-            }
         }
     } else {
         // Flag-aware mode: buffer mid-event messages and only apply
@@ -131,34 +136,15 @@ PrecomputedDay precompute(IMessageSource& source, const SessionConfig& cfg) {
             double cur_bid = book.best_bid();
             double cur_ask = book.best_ask();
 
-            bool bbo_changed = false;
-            if (has_valid_bbo(cur_bid, cur_ask)) {
-                bbo_changed = !has_valid_bbo(prev_best_bid, prev_best_ask)
-                           || cur_bid != prev_best_bid
-                           || cur_ask != prev_best_ask;
+            if (detect_bbo_change(cur_bid, cur_ask, prev_best_bid, prev_best_ask)) {
+                double spread = book.spread();
+                if (spread > 0.0) {  // reject crossed/locked books
+                    record_snapshot(result, book, fb, filter, msg.ts_ns);
+                }
             }
 
             prev_best_bid = cur_bid;
             prev_best_ask = cur_ask;
-
-            if (bbo_changed) {
-                double spread = book.spread();
-                if (spread <= 0.0) continue;  // reject crossed/locked books
-
-                double mid = book.mid_price();
-
-                float progress = filter.session_progress(msg.ts_ns);
-                float time_remaining = 1.0f - progress;
-
-                auto full_obs = fb.build(book, 0.0f, time_remaining);
-
-                for (int i = 0; i < FeatureBuilder::POSITION; ++i) {
-                    result.obs.push_back(full_obs[i]);
-                }
-                result.mid.push_back(mid);
-                result.spread.push_back(spread);
-                result.num_steps++;
-            }
         }
         // Discard any remaining buffered mid-event messages (orphaned)
     }

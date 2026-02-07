@@ -40,6 +40,7 @@ class MultiDayEnv(gym.Env):
         seed=None,
         execution_cost=False,
         participation_bonus=0.0,
+        step_interval=1,
     ):
         super().__init__()
 
@@ -51,6 +52,7 @@ class MultiDayEnv(gym.Env):
         self._shuffle = shuffle
         self._execution_cost = execution_cost
         self._participation_bonus = participation_bonus
+        self._step_interval = step_interval
 
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(54,), dtype=np.float32
@@ -111,6 +113,7 @@ class MultiDayEnv(gym.Env):
             lambda_=self._lambda,
             execution_cost=self._execution_cost,
             participation_bonus=self._participation_bonus,
+            step_interval=self._step_interval,
         )
         obs_out, info = self._inner_env.reset()
         info["day_index"] = file_idx
