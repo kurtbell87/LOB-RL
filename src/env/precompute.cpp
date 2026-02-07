@@ -1,7 +1,7 @@
 #include "lob/precompute.h"
 #include "binary_file_source.h"
+#include "warmup.h"
 #include <cmath>
-#include <algorithm>
 
 static bool has_valid_bbo(double bid, double ask) {
     return std::isfinite(bid) && std::isfinite(ask);
@@ -44,7 +44,7 @@ PrecomputedDay precompute(IMessageSource& source, const SessionConfig& cfg) {
     double prev_best_bid = std::numeric_limits<double>::quiet_NaN();
     double prev_best_ask = std::numeric_limits<double>::quiet_NaN();
 
-    // Separate messages into phases in a single pass (no intermediate buffer)
+    // Separate messages into pre-market and RTH phase buffers
     std::vector<Message> pre_market;
     std::vector<Message> rth;
 
@@ -59,18 +59,7 @@ PrecomputedDay precompute(IMessageSource& source, const SessionConfig& cfg) {
     }
 
     // Apply warmup
-    if (cfg.warmup_messages < 0) {
-        // All pre-market messages
-        for (auto& pm : pre_market) {
-            book.apply(pm);
-        }
-    } else if (cfg.warmup_messages > 0) {
-        int start = std::max(0, static_cast<int>(pre_market.size()) - cfg.warmup_messages);
-        for (int i = start; i < static_cast<int>(pre_market.size()); ++i) {
-            book.apply(pre_market[i]);
-        }
-    }
-    // warmup_messages == 0: skip all pre-market
+    apply_warmup(book, pre_market, cfg.warmup_messages);
 
     // Track initial BBO after warmup
     prev_best_bid = book.best_bid();

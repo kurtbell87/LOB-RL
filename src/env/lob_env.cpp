@@ -1,5 +1,5 @@
 #include "lob/env.h"
-#include <algorithm>
+#include "warmup.h"
 #include <cmath>
 
 static constexpr int INITIAL_BOOK_MESSAGES = 10;
@@ -57,16 +57,7 @@ StepResult LOBEnv::reset_with_session() {
     }
 
     // Apply warmup messages to book
-    if (warmup_messages_ < 0) {
-        for (auto& pm : pre_market_msgs) {
-            book_.apply(pm);
-        }
-    } else if (warmup_messages_ > 0) {
-        int start = std::max(0, static_cast<int>(pre_market_msgs.size()) - warmup_messages_);
-        for (int i = start; i < static_cast<int>(pre_market_msgs.size()); ++i) {
-            book_.apply(pre_market_msgs[i]);
-        }
-    }
+    apply_warmup(book_, pre_market_msgs, warmup_messages_);
 
     if (source_exhausted_ || !has_pending_msg_) {
         prev_mid_ = book_.mid_price();
