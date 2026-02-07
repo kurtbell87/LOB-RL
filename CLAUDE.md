@@ -1,21 +1,21 @@
 ## Current State (updated 2026-02-06)
 
-- **Build:** `build-release/` is current. 489 C++ tests pass (`./lob_tests`). 847 Python tests pass. **1336 total.**
+- **Build:** `build-release/` is current. 489 C++ tests pass (`./lob_tests`). 1001 Python tests pass. **1490 total.**
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
-- **Dependencies:** SB3, gymnasium, numpy, tensorboard all installed in uv environment.
-- **Precompute cache DONE:** `scripts/precompute_cache.py` saves precomputed arrays to `.npz` files. `PrecomputedEnv.from_cache()`, `MultiDayEnv(cache_dir=...)`, `train.py --cache-dir`. Eliminates redundant C++ precompute calls. PR #9 merged.
-- **Step interval DONE:** `--step-interval N` subsamples precomputed data (every Nth BBO snapshot). Python-only change. PR #8 merged.
-- **Fix precompute events DONE:** 4 C++ changes — `flags` field on Message, copy in BinaryFileSource, Trade no-op in Book, flag-aware snapshotting in precompute(). PR #7 merged.
-- **Temporal features DONE:** Obs expanded 44→54 dims. 10 engineered features (returns, volatility, imbalance, microprice). PR #6 merged.
-- **Participation bonus DONE:** Per-step `bonus * abs(position)`. Enable with `--participation-bonus 0.01`. PR #5 merged.
-- **Training pipeline v2 DONE:** VecNormalize, SubprocVecEnv (8 envs), ent_coef=0.01, 15 CLI flags. PR #4 merged.
-- **Execution cost DONE:** Per-step `spread/2 * |delta_pos|`. Enable with `--execution-cost`. PR #3 merged.
-- **Walk-forward/lookahead audited CLEAN:** Reward formula, temporal features, train/val split, VecNormalize all verified correct. No lookahead.
-- **Spread verified CLEAN:** All days have min spread=0.25 (one /MES tick), no negative or zero spreads.
-- **Next task:** Build cache with `precompute_cache.py`, then iterate on reward design with instant startup via `--cache-dir`. See `LAST_TOUCH.md`.
+- **Dependencies:** SB3, gymnasium, numpy, tensorboard, torch all installed in uv environment.
+- **Bar-level env DONE:** `BarLevelEnv` aggregates ticks into N-tick bars (21-dim obs). `aggregate_bars()`, `MultiDayEnv(bar_size=500)`, `train.py --bar-size 500 --policy-arch 256,256 --activation relu`. PR #10 merged.
+- **Precompute cache DONE:** `scripts/precompute_cache.py` saves precomputed arrays to `.npz` files. `PrecomputedEnv.from_cache()`, `MultiDayEnv(cache_dir=...)`, `train.py --cache-dir`. PR #9 merged.
+- **Step interval DONE:** `--step-interval N` subsamples precomputed data. PR #8 merged.
+- **Fix precompute events DONE:** Flag-aware snapshotting in precompute(). PR #7 merged.
+- **Temporal features DONE:** Obs expanded 44→54 dims. PR #6 merged.
+- **Participation bonus DONE:** `--participation-bonus 0.01`. PR #5 merged.
+- **Training pipeline v2 DONE:** VecNormalize, SubprocVecEnv, ent_coef. PR #4 merged.
+- **Execution cost DONE:** `--execution-cost`. PR #3 merged.
+- **Walk-forward/lookahead audited CLEAN.** Spread verified CLEAN.
+- **Next task:** Build cache, run supervised diagnostic on bar features, then train with bar-level env. See `LAST_TOUCH.md`.
 - **Data:** 27 days of /MES MBO data in `data/mes/`, manifest at `data/mes/manifest.json`.
-- **Reference:** Databento DBN spec cloned to `references/dbn/` (flag defs, record layout, event semantics).
-- **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --execution-cost --step-interval 10`
+- **Reference:** Databento DBN spec cloned to `references/dbn/`.
+- **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 500 --execution-cost --policy-arch 256,256 --activation relu`
 
 ## Don't
 
