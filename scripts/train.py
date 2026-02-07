@@ -39,7 +39,7 @@ def load_manifest(data_dir):
 
 
 def make_env(file_path, reward_mode='pnl_delta', lambda_=0.0, execution_cost=False,
-             participation_bonus=0.0):
+             participation_bonus=0.0, step_interval=1):
     """Create a PrecomputedEnv for a single day's data."""
     return PrecomputedEnv.from_file(
         file_path,
@@ -48,11 +48,12 @@ def make_env(file_path, reward_mode='pnl_delta', lambda_=0.0, execution_cost=Fal
         lambda_=lambda_,
         execution_cost=execution_cost,
         participation_bonus=participation_bonus,
+        step_interval=step_interval,
     )
 
 
 def make_train_env(file_paths, session_config, reward_mode, lambda_, execution_cost,
-                   participation_bonus=0.0):
+                   participation_bonus=0.0, step_interval=1):
     """Factory that returns a closure for SubprocVecEnv (avoids lambda late-binding)."""
     def _init():
         return MultiDayEnv(
@@ -64,19 +65,21 @@ def make_train_env(file_paths, session_config, reward_mode, lambda_, execution_c
             shuffle=True,
             execution_cost=execution_cost,
             participation_bonus=participation_bonus,
+            step_interval=step_interval,
         )
     return _init
 
 
 def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False,
-                     vec_normalize_path=None, participation_bonus=0.0):
+                     vec_normalize_path=None, participation_bonus=0.0, step_interval=1):
     """Evaluate model on held-out data and compute Sortino ratio."""
     all_returns = []
 
     for date, path, _ in eval_files[:n_eval_episodes]:
         try:
             env = make_env(path, execution_cost=execution_cost,
-                           participation_bonus=participation_bonus)
+                           participation_bonus=participation_bonus,
+                           step_interval=step_interval)
         except ValueError as e:
             print(f"  Skipping {date}: {e}")
             continue
@@ -141,6 +144,8 @@ def main():
                         help='Disable VecNormalize')
     parser.add_argument('--participation-bonus', type=float, default=0.0,
                         help='Per-step bonus for holding a position: bonus * |pos|')
+    parser.add_argument('--step-interval', type=int, default=1,
+                        help='Subsample every Nth BBO snapshot (default: 1, no subsampling)')
     args = parser.parse_args()
 
     # Load data
@@ -164,7 +169,7 @@ def main():
 
     env = SubprocVecEnv([
         make_train_env(train_paths, DEFAULT_SESSION_CONFIG, args.reward_mode, args.lambda_, args.execution_cost,
-                       args.participation_bonus)
+                       args.participation_bonus, step_interval=args.step_interval)
         for _ in range(args.n_envs)
     ])
 
@@ -208,13 +213,13 @@ def main():
     # Evaluate on validation set
     if val_files:
         print("\nEvaluating on validation set...")
-        val_metrics = evaluate_sortino(model, val_files, execution_cost=args.execution_cost, vec_normalize_path=vec_normalize_path, participation_bonus=args.participation_bonus)
+        val_metrics = evaluate_sortino(model, val_files, execution_cost=args.execution_cost, vec_normalize_path=vec_normalize_path, participation_bonus=args.participation_bonus, step_interval=args.step_interval)
         print(f"Validation metrics: {val_metrics}")
 
     # Evaluate on test set
     if test_files:
         print("\nEvaluating on test set...")
-        test_metrics = evaluate_sortino(model, test_files, execution_cost=args.execution_cost, vec_normalize_path=vec_normalize_path, participation_bonus=args.participation_bonus)
+        test_metrics = evaluate_sortino(model, test_files, execution_cost=args.execution_cost, vec_normalize_path=vec_normalize_path, participation_bonus=args.participation_bonus, step_interval=args.step_interval)
         print(f"Test metrics: {test_metrics}")
 
     return 0
