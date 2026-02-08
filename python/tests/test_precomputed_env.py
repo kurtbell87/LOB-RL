@@ -495,10 +495,10 @@ class TestEpisodeLength:
 
 
 class TestFlatteningPenalty:
-    """Terminal step should include flattening penalty: -|position| * spread[t] / 2."""
+    """Terminal step: forced flatten with close cost = -spread[t]/2 * |prev_position|."""
 
     def test_long_position_flattening_penalty(self):
-        """Long position at terminal incurs -|1| * spread[t] / 2."""
+        """Long position at terminal: forced flatten, reward = -spread/2 * |prev_pos|."""
         # 3 snapshots -> 2 steps. Step 1 is terminal.
         mid = np.array([100.0, 101.0, 102.0], dtype=np.float64)
         spread = np.array([0.5, 0.5, 0.5], dtype=np.float64)
@@ -509,16 +509,16 @@ class TestFlatteningPenalty:
         _, _, terminated, _, _ = env.step(2)
         assert not terminated
 
-        # Step 1: stay long (terminal)
-        # pnl_delta = +1 * (102 - 101) = 1.0
-        # flattening = -|+1| * 0.5 / 2 = -0.25
-        # total reward = 1.0 - 0.25 = 0.75
-        _, reward, terminated, _, _ = env.step(2)
+        # Step 1: terminal — forced flatten (no PnL, just close cost)
+        # close_cost = spread[t]/2 * |prev_position| = 0.5/2 * 1 = 0.25
+        # reward = -0.25
+        _, reward, terminated, _, info = env.step(2)
         assert terminated
-        assert reward == pytest.approx(0.75)
+        assert reward == pytest.approx(-0.25)
+        assert info["forced_flatten"] is True
 
     def test_short_position_flattening_penalty(self):
-        """Short position at terminal incurs -|-1| * spread[t] / 2."""
+        """Short position at terminal: forced flatten, reward = -spread/2 * |prev_pos|."""
         mid = np.array([100.0, 99.0, 98.0], dtype=np.float64)
         spread = np.array([1.0, 1.0, 1.0], dtype=np.float64)
         env = PrecomputedEnv(_make_obs(3), mid, spread)
@@ -527,13 +527,13 @@ class TestFlatteningPenalty:
         # Step 0: go short (non-terminal)
         env.step(0)
 
-        # Step 1: stay short (terminal)
-        # pnl_delta = -1 * (98 - 99) = 1.0
-        # flattening = -|-1| * 1.0 / 2 = -0.5
-        # total reward = 1.0 - 0.5 = 0.5
-        _, reward, terminated, _, _ = env.step(0)
+        # Step 1: terminal — forced flatten (no PnL, just close cost)
+        # close_cost = spread[t]/2 * |prev_position| = 1.0/2 * 1 = 0.5
+        # reward = -0.5
+        _, reward, terminated, _, info = env.step(0)
         assert terminated
-        assert reward == pytest.approx(0.5)
+        assert reward == pytest.approx(-0.5)
+        assert info["forced_flatten"] is True
 
 
 # ===========================================================================
@@ -968,10 +968,10 @@ class TestDeterminism:
 
 
 class TestFlatteningWithPenalizedMode:
-    """Flattening penalty should combine with PnLDeltaPenalized mode."""
+    """Forced flatten on terminal overrides penalized mode — only close cost."""
 
     def test_terminal_penalized_and_flattening(self):
-        """Terminal step with penalized mode should include both penalties."""
+        """Terminal step: forced flatten ignores penalized mode, reward = -spread/2 * |prev_pos|."""
         mid = np.array([100.0, 101.0, 102.0], dtype=np.float64)
         spread = np.array([0.5, 0.5, 0.5], dtype=np.float64)
         env = PrecomputedEnv(
@@ -986,11 +986,10 @@ class TestFlatteningWithPenalizedMode:
         assert not terminated
         assert r0 == pytest.approx(0.5)
 
-        # Step 1: stay long (terminal)
-        # pnl = +1 * (102 - 101) = 1.0
-        # lambda penalty = 0.5 * 1 = 0.5
-        # flattening = -|1| * 0.5 / 2 = -0.25
-        # total = 1.0 - 0.5 - 0.25 = 0.25
-        _, r1, terminated, _, _ = env.step(2)
+        # Step 1: terminal — forced flatten (no PnL, no lambda penalty)
+        # close_cost = spread[t]/2 * |prev_position| = 0.5/2 * 1 = 0.25
+        # reward = -0.25
+        _, r1, terminated, _, info = env.step(2)
         assert terminated
-        assert r1 == pytest.approx(0.25)
+        assert r1 == pytest.approx(-0.25)
+        assert info["forced_flatten"] is True

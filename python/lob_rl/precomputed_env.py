@@ -110,10 +110,32 @@ class PrecomputedEnv(gym.Env):
         return obs, float(reward), bool(terminated), False, info
 
     def _precompute_temporal_features(self):
+        """Precompute 10 temporal features and pack into (N, 10) array."""
         N = self._obs.shape[0]
         mid = self._mid
 
-        # Mid-price returns at various lookbacks
+        mid_returns = self._compute_mid_returns(mid, N)
+        vol_20 = self._compute_rolling_volatility(mid, N)
+        microprice_offset = self._compute_microprice_offset(mid, N)
+        total_vol_imb = self._compute_volume_imbalance(N)
+
+        imbalance = self._obs[:, _IMBALANCE]
+        rel_spread = self._obs[:, _REL_SPREAD]
+
+        # Pack all 10 temporal features for fast slice copy in _build_obs.
+        self._temporal = np.column_stack([
+            mid_returns[1], mid_returns[5], mid_returns[20], mid_returns[50],
+            vol_20,
+            _lagged_diff(imbalance, 5),
+            _lagged_diff(imbalance, 20),
+            microprice_offset.astype(np.float32),
+            total_vol_imb.astype(np.float32),
+            _lagged_diff(rel_spread, 5),
+        ])  # (N, 10) float32
+        self._temporal[0] = 0.0  # t=0 convention
+
+    def _compute_mid_returns(self, mid, N):
+        """Mid-price returns at various lookbacks."""
         mid_returns = {}
         for lag in (1, 5, 20, 50):
             arr = np.zeros(N, dtype=np.float32)
@@ -121,8 +143,10 @@ class PrecomputedEnv(gym.Env):
                 denom = np.where(mid[:-lag] != 0, mid[:-lag], 1.0)
                 arr[lag:] = ((mid[lag:] - mid[:-lag]) / denom).astype(np.float32)
             mid_returns[lag] = arr
+        return mid_returns
 
-        # Volatility: rolling std of 1-step returns over 20 steps
+    def _compute_rolling_volatility(self, mid, N):
+        """Rolling std of 1-step returns over 20 steps."""
         ret1 = np.zeros(N, dtype=np.float64)
         if N > 1:
             denom = np.where(mid[:-1] != 0, mid[:-1], 1.0)
@@ -130,24 +154,19 @@ class PrecomputedEnv(gym.Env):
         vol_20 = np.zeros(N, dtype=np.float32)
         if N > 20:
             window = 20
-            # Use cumulative sums for O(N) rolling variance instead of O(N*W) loop.
-            # For t in [window, N): vol_20[t] = std(ret1[t-window:t])
-            cs = np.concatenate(([0.0], np.cumsum(ret1)))
-            cs2 = np.concatenate(([0.0], np.cumsum(ret1 ** 2)))
-            roll_sum = cs[window:N] - cs[:N - window]
-            roll_sum2 = cs2[window:N] - cs2[:N - window]
+            # Cumulative sums for O(N) rolling variance
+            cumsum_ret = np.concatenate(([0.0], np.cumsum(ret1)))
+            cumsum_ret_sq = np.concatenate(([0.0], np.cumsum(ret1 ** 2)))
+            roll_sum = cumsum_ret[window:N] - cumsum_ret[:N - window]
+            roll_sum2 = cumsum_ret_sq[window:N] - cumsum_ret_sq[:N - window]
             roll_mean = roll_sum / window
             roll_var = roll_sum2 / window - roll_mean ** 2
             np.maximum(roll_var, 0.0, out=roll_var)
             vol_20[window:N] = np.sqrt(roll_var).astype(np.float32)
+        return vol_20
 
-        # Imbalance deltas
-        imbalance = self._obs[:, _IMBALANCE]
-        imb_delta_5 = _lagged_diff(imbalance, 5)
-        imb_delta_20 = _lagged_diff(imbalance, 20)
-
-        # Microprice offset — compute microprice in float32 (matching obs dtype),
-        # then divide by float64 mid for the final offset
+    def _compute_microprice_offset(self, mid, N):
+        """Microprice offset: (microprice / mid) - 1."""
         bid0 = self._obs[:, _BID_PRICES.start]
         bidsize0 = self._obs[:, _BID_SIZES.start]
         ask0 = self._obs[:, _ASK_PRICES.start]
@@ -158,32 +177,17 @@ class PrecomputedEnv(gym.Env):
             (ask0 * bidsize0 + bid0 * asksize0) / safe_denom,
             (bid0 + ask0) / np.float32(2.0))
         safe_mid = np.where(mid != 0, mid, 1.0)
-        microprice_offset = np.where(mid != 0,
+        return np.where(mid != 0,
             microprice.astype(np.float64) / safe_mid - 1.0, 0.0)
 
-        # Total volume imbalance across all 10 levels (compute in float64)
+    def _compute_volume_imbalance(self, N):
+        """Total volume imbalance across all 10 levels."""
         bid_sizes_sum = self._obs[:, _BID_SIZES].astype(np.float64).sum(axis=1)
         ask_sizes_sum = self._obs[:, _ASK_SIZES].astype(np.float64).sum(axis=1)
         total = bid_sizes_sum + ask_sizes_sum
         safe_total = np.where(total > 0, total, 1.0)
-        total_vol_imb = np.where(total > 0,
+        return np.where(total > 0,
             (bid_sizes_sum - ask_sizes_sum) / safe_total, 0.0)
-
-        # Spread change over 5 steps
-        rel_spread = self._obs[:, _REL_SPREAD]
-        spread_change_5 = _lagged_diff(rel_spread, 5)
-
-        # Pack all 10 temporal features into a single (N, 10) array for fast
-        # slice copy in _build_obs.  Row 0 is zeroed (t=0 convention).
-        self._temporal = np.column_stack([
-            mid_returns[1], mid_returns[5], mid_returns[20], mid_returns[50],
-            vol_20,
-            imb_delta_5, imb_delta_20,
-            microprice_offset.astype(np.float32),
-            total_vol_imb.astype(np.float32),
-            spread_change_5,
-        ])  # (N, 10) float32
-        self._temporal[0] = 0.0
 
     def _build_obs(self):
         t = self._t

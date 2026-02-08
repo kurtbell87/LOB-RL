@@ -1,7 +1,7 @@
 """Multi-day training environment that cycles through multiple data files.
 
 Precomputes all days at construction time using lob_rl_core.precompute(),
-or loads pre-cached .npz files from a cache directory.
+or lazily loads pre-cached .npz files from a cache directory or explicit file list.
 step() and reset() use pure numpy via PrecomputedEnv or BarLevelEnv.
 """
 
@@ -24,8 +24,10 @@ class MultiDayEnv(gym.Env):
     mode (shuffle=True), the order is randomized and re-shuffled at each
     epoch boundary.
 
-    All days are precomputed at construction time — step() and reset()
-    use pure numpy via PrecomputedEnv.
+    Supports three modes:
+    - file_paths: Eager load from raw .bin files via C++ precompute (arrays in memory).
+    - cache_dir: Lazy load from a directory of .npz files (paths only at init).
+    - cache_files: Lazy load from an explicit list of .npz file paths.
     """
 
     metadata = {"render_modes": []}
@@ -44,14 +46,16 @@ class MultiDayEnv(gym.Env):
         step_interval=1,
         cache_dir=None,
         bar_size=0,
+        cache_files=None,
     ):
         super().__init__()
 
-        # Validate mutual exclusivity
-        if file_paths is not None and cache_dir is not None:
-            raise ValueError("Provide exactly one of file_paths or cache_dir, not both")
-        if file_paths is None and cache_dir is None:
-            raise ValueError("Provide exactly one of file_paths or cache_dir")
+        # Validate mutual exclusivity: exactly one of file_paths, cache_dir, cache_files
+        provided = sum(x is not None for x in (file_paths, cache_dir, cache_files))
+        if provided != 1:
+            raise ValueError(
+                "Provide exactly one of file_paths, cache_dir, or cache_files"
+            )
 
         self._reward_mode = reward_mode
         self._lambda = lambda_
@@ -79,11 +83,18 @@ class MultiDayEnv(gym.Env):
         )
         self.action_space = spaces.Discrete(3)
 
-        self._precomputed_days = []  # list of (obs, mid, spread) tuples
+        # Lazy mode: store paths only; Eager mode (file_paths): store arrays
+        self._lazy = False
+        self._npz_paths = []  # list of str (lazy mode only)
+        self._precomputed_days = []  # list of (obs, mid, spread) tuples (eager mode only)
         self._contract_ids = []  # list of instrument_id (int or None) per day
 
         if cache_dir is not None:
-            self._load_from_cache_dir(cache_dir)
+            self._lazy = True
+            self._init_lazy_from_cache_dir(cache_dir)
+        elif cache_files is not None:
+            self._lazy = True
+            self._init_lazy_from_cache_files(cache_files)
         else:
             self._load_from_file_paths(file_paths, session_config)
 
@@ -91,7 +102,9 @@ class MultiDayEnv(gym.Env):
         if bar_size > 0:
             self._filter_days_for_bar_size()
 
-        if not self._precomputed_days:
+        # Validate we have data
+        n_days = len(self._npz_paths) if self._lazy else len(self._precomputed_days)
+        if n_days == 0:
             raise ValueError(
                 "No valid day files: all files produced < 2 BBO snapshots"
             )
@@ -100,7 +113,7 @@ class MultiDayEnv(gym.Env):
 
         # RNG for shuffle ordering
         self._rng = np.random.RandomState(seed)
-        self._order = list(range(len(self._precomputed_days)))
+        self._order = list(range(n_days))
         if self._shuffle:
             self._rng.shuffle(self._order)
         self._day_index = 0
@@ -111,24 +124,92 @@ class MultiDayEnv(gym.Env):
         """List of instrument_id (int or None) per day, in load order."""
         return list(self._contract_ids)
 
+    def _num_days(self):
+        """Number of days available."""
+        return len(self._npz_paths) if self._lazy else len(self._precomputed_days)
+
     def _filter_days_for_bar_size(self):
         """Remove days that produce < 2 bars with the given bar_size."""
         from lob_rl.bar_aggregation import aggregate_bars
 
-        filtered = []
-        filtered_ids = []
-        for i, (obs, mid, spread) in enumerate(self._precomputed_days):
-            bar_features, _, _ = aggregate_bars(obs, mid, spread, self._bar_size)
-            if bar_features.shape[0] >= 2:
-                filtered.append((obs, mid, spread))
-                filtered_ids.append(self._contract_ids[i])
-            else:
+        if self._lazy:
+            filtered_paths = []
+            filtered_ids = []
+            for i, npz_path in enumerate(self._npz_paths):
+                data = np.load(npz_path)
+                obs = data["obs"]
+                mid = data["mid"]
+                spread = data["spread"]
+                bar_features, _, _ = aggregate_bars(obs, mid, spread, self._bar_size)
+                if bar_features.shape[0] >= 2:
+                    filtered_paths.append(npz_path)
+                    filtered_ids.append(self._contract_ids[i])
+                else:
+                    warnings.warn(
+                        f"Skipping day with {obs.shape[0]} ticks: "
+                        f"only {bar_features.shape[0]} bars with bar_size={self._bar_size}"
+                    )
+            self._npz_paths = filtered_paths
+            self._contract_ids = filtered_ids
+        else:
+            filtered = []
+            filtered_ids = []
+            for i, (obs, mid, spread) in enumerate(self._precomputed_days):
+                bar_features, _, _ = aggregate_bars(obs, mid, spread, self._bar_size)
+                if bar_features.shape[0] >= 2:
+                    filtered.append((obs, mid, spread))
+                    filtered_ids.append(self._contract_ids[i])
+                else:
+                    warnings.warn(
+                        f"Skipping day with {obs.shape[0]} ticks: "
+                        f"only {bar_features.shape[0]} bars with bar_size={self._bar_size}"
+                    )
+            self._precomputed_days = filtered
+            self._contract_ids = filtered_ids
+
+    def _validate_npz(self, npz_path):
+        """Validate and extract metadata from an .npz file.
+
+        Returns (is_valid, contract_id) where contract_id is int or None.
+        """
+        try:
+            data = np.load(npz_path)
+            if not all(k in data for k in ("obs", "mid", "spread")):
+                warnings.warn(f"Skipping {npz_path}: missing required keys")
+                return False, None
+            if data["obs"].shape[0] < 2:
                 warnings.warn(
-                    f"Skipping day with {obs.shape[0]} ticks: "
-                    f"only {bar_features.shape[0]} bars with bar_size={self._bar_size}"
+                    f"Skipping {npz_path}: only {data['obs'].shape[0]} rows (need >= 2)"
                 )
-        self._precomputed_days = filtered
-        self._contract_ids = filtered_ids
+                return False, None
+            contract_id = int(data["instrument_id"][0]) if "instrument_id" in data else None
+            return True, contract_id
+        except Exception as e:
+            warnings.warn(f"Skipping {npz_path}: {e}")
+            return False, None
+
+    def _init_lazy_from_cache_dir(self, cache_dir):
+        """Initialize lazy loading from a cache directory."""
+        npz_files = sorted(glob.glob(os.path.join(cache_dir, "*.npz")))
+        if not npz_files:
+            raise ValueError(f"No .npz files found in {cache_dir}")
+
+        for npz_path in npz_files:
+            is_valid, contract_id = self._validate_npz(npz_path)
+            if is_valid:
+                self._npz_paths.append(npz_path)
+                self._contract_ids.append(contract_id)
+
+    def _init_lazy_from_cache_files(self, cache_files):
+        """Initialize lazy loading from an explicit list of .npz paths."""
+        if not cache_files:
+            raise ValueError("cache_files must be a non-empty list")
+
+        for npz_path in cache_files:
+            is_valid, contract_id = self._validate_npz(npz_path)
+            if is_valid:
+                self._npz_paths.append(npz_path)
+                self._contract_ids.append(contract_id)
 
     def _load_from_file_paths(self, file_paths, session_config):
         """Load days from raw .bin files via C++ precompute."""
@@ -149,42 +230,20 @@ class MultiDayEnv(gym.Env):
             self._precomputed_days.append((obs, mid, spread))
             self._contract_ids.append(None)
 
-    def _load_from_cache_dir(self, cache_dir):
-        """Load days from pre-cached .npz files in a directory."""
-        npz_files = sorted(glob.glob(os.path.join(cache_dir, "*.npz")))
-        if not npz_files:
-            raise ValueError(f"No .npz files found in {cache_dir}")
-
-        for npz_path in npz_files:
-            try:
-                data = np.load(npz_path)
-                if not all(k in data for k in ("obs", "mid", "spread")):
-                    warnings.warn(f"Skipping {npz_path}: missing required keys")
-                    continue
-                obs = data["obs"]
-                mid = data["mid"]
-                spread = data["spread"]
-                if obs.shape[0] < 2:
-                    warnings.warn(
-                        f"Skipping {npz_path}: only {obs.shape[0]} rows (need >= 2)"
-                    )
-                    continue
-                self._precomputed_days.append((obs, mid, spread))
-                # Extract instrument_id if present
-                if "instrument_id" in data:
-                    self._contract_ids.append(int(data["instrument_id"][0]))
-                else:
-                    self._contract_ids.append(None)
-            except Exception as e:
-                warnings.warn(f"Skipping {npz_path}: {e}")
+    def _load_day_from_npz(self, npz_path):
+        """Load arrays from an .npz file. Returns (obs, mid, spread)."""
+        data = np.load(npz_path)
+        return data["obs"], data["mid"], data["spread"]
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed, options=options)
 
+        n_days = self._num_days()
+
         # If seed is provided, reseed the RNG
         if seed is not None:
             self._rng = np.random.RandomState(seed)
-            self._order = list(range(len(self._precomputed_days)))
+            self._order = list(range(n_days))
             if self._shuffle:
                 self._rng.shuffle(self._order)
             self._day_index = 0
@@ -199,8 +258,11 @@ class MultiDayEnv(gym.Env):
         file_idx = self._order[self._day_index]
         self._day_index += 1
 
-        # Create inner env for this day
-        obs, mid, spread = self._precomputed_days[file_idx]
+        # Get arrays for this day
+        if self._lazy:
+            obs, mid, spread = self._load_day_from_npz(self._npz_paths[file_idx])
+        else:
+            obs, mid, spread = self._precomputed_days[file_idx]
 
         if self._bar_size > 0:
             from lob_rl.bar_level_env import BarLevelEnv

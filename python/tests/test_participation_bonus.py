@@ -365,8 +365,8 @@ class TestPrecomputedEnvParticipationBonusEdgeCases:
         _, reward, _, _, _ = env.step(2)
         assert reward == pytest.approx(-0.01)
 
-    def test_bonus_applied_before_flattening_penalty(self):
-        """Bonus applies on terminal step BEFORE flattening penalty."""
+    def test_bonus_not_applied_at_forced_flatten(self):
+        """Forced flatten on terminal: no bonus, only close cost."""
         # 3 snapshots -> 2 steps. Step 1 is terminal.
         mid = np.array([100.0, 100.0, 100.0], dtype=np.float64)
         spread = np.array([1.0, 1.0, 1.0], dtype=np.float64)
@@ -382,15 +382,16 @@ class TestPrecomputedEnvParticipationBonusEdgeCases:
         assert not terminated0
         assert r0 == pytest.approx(0.01)
 
-        # Step 1: stay long (terminal)
-        # pnl=0, bonus=0.01*1=0.01, flattening=-|1|*1.0/2=-0.5
-        # reward = 0 + 0.01 - 0.5 = -0.49
-        _, r1, terminated1, _, _ = env.step(2)
+        # Step 1: terminal — forced flatten
+        # close_cost = spread[t]/2 * |prev_position| = 1.0/2 * 1 = 0.5
+        # reward = -0.5  (no bonus on terminal)
+        _, r1, terminated1, _, info = env.step(2)
         assert terminated1
-        assert r1 == pytest.approx(-0.49)
+        assert r1 == pytest.approx(-0.5)
+        assert info["forced_flatten"] is True
 
-    def test_bonus_with_execution_cost_and_flattening_at_terminal(self):
-        """All three: bonus + execution_cost + flattening at terminal step."""
+    def test_bonus_and_exec_cost_not_applied_at_forced_flatten(self):
+        """Forced flatten on terminal: no bonus, no exec cost, only close cost."""
         mid = np.array([100.0, 100.0, 100.0], dtype=np.float64)
         spread = np.array([1.0, 1.0, 1.0], dtype=np.float64)
 
@@ -405,15 +406,16 @@ class TestPrecomputedEnvParticipationBonusEdgeCases:
         _, r0, _, _, _ = env.step(1)
         assert r0 == pytest.approx(0.0)
 
-        # Step 1: go long (flat->long, delta=1, terminal)
-        # pnl=0, exec_cost=-1.0/2*1=-0.5, bonus=0.01*1=0.01, flattening=-|1|*1.0/2=-0.5
-        # reward = 0 - 0.5 + 0.01 - 0.5 = -0.99
-        _, r1, terminated, _, _ = env.step(2)
+        # Step 1: terminal — forced flatten
+        # prev_position is 0.0 (flat), so close_cost = 0.0
+        # reward = 0.0
+        _, r1, terminated, _, info = env.step(2)
         assert terminated
-        assert r1 == pytest.approx(-0.99)
+        assert r1 == pytest.approx(0.0)
+        assert info["forced_flatten"] is True
 
     def test_holding_long_accumulates_bonus(self):
-        """Holding long for multiple steps accumulates bonus each step."""
+        """Holding long accumulates bonus each non-terminal step; terminal is forced flatten."""
         mid = np.array([100.0, 100.0, 100.0, 100.0], dtype=np.float64)
         spread = np.array([0.5, 0.5, 0.5, 0.5], dtype=np.float64)
 
@@ -430,11 +432,13 @@ class TestPrecomputedEnvParticipationBonusEdgeCases:
         _, r1, _, _, _ = env.step(2)
         assert r1 == pytest.approx(0.01)
 
-        # Step 2 is terminal: stay long, pnl=0, bonus=0.01, flattening=-|1|*0.5/2=-0.25
-        # reward = 0 + 0.01 - 0.25 = -0.24
-        _, r2, terminated, _, _ = env.step(2)
+        # Step 2: terminal — forced flatten
+        # close_cost = spread[t]/2 * |prev_position| = 0.5/2 * 1 = 0.25
+        # reward = -0.25  (no bonus on terminal)
+        _, r2, terminated, _, info = env.step(2)
         assert terminated
-        assert r2 == pytest.approx(-0.24)
+        assert r2 == pytest.approx(-0.25)
+        assert info["forced_flatten"] is True
 
 
 # ===========================================================================

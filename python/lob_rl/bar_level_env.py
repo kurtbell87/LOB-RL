@@ -59,10 +59,10 @@ class BarLevelEnv(gym.Env):
 
     def _precompute_temporal(self):
         """Compute 7 cross-bar temporal features for each bar index."""
-        B = self._num_bars
-        self._temporal = np.zeros((B, _NUM_TEMPORAL), dtype=np.float32)
+        num_bars = self._num_bars
+        self._temporal = np.zeros((num_bars, _NUM_TEMPORAL), dtype=np.float32)
 
-        if B == 0:
+        if num_bars == 0:
             return
 
         bar_return = self._bar_features[:, 0]
@@ -70,51 +70,50 @@ class BarLevelEnv(gym.Env):
         spread_close = self._bar_features[:, 4]
 
         # 0: return_lag1 — bar_return shifted by 1
-        if B > 1:
+        if num_bars > 1:
             self._temporal[1:, 0] = bar_return[:-1]
 
         # 1: return_lag3 — bar_return shifted by 3
-        if B > 3:
+        if num_bars > 3:
             self._temporal[3:, 1] = bar_return[:-3]
 
         # 2: return_lag5 — bar_return shifted by 5
-        if B > 5:
+        if num_bars > 5:
             self._temporal[5:, 2] = bar_return[:-5]
 
         # 3: cumulative_return_5 — rolling sum of bar_return[max(0,t-5):t]
-        # Use cumulative sum: cum_ret[t] - cum_ret[max(0, t-5)]
-        cs = np.concatenate(([0.0], np.cumsum(bar_return)))
-        for t in range(1, min(B, 6)):
-            self._temporal[t, 3] = cs[t] - cs[0]
-        if B > 5:
-            self._temporal[5:, 3] = (cs[5:B] - cs[:B - 5]).astype(np.float32)
+        cumsum_ret = np.concatenate(([0.0], np.cumsum(bar_return)))
+        for t in range(1, min(num_bars, 6)):
+            self._temporal[t, 3] = cumsum_ret[t] - cumsum_ret[0]
+        if num_bars > 5:
+            self._temporal[5:, 3] = (cumsum_ret[5:num_bars] - cumsum_ret[:num_bars - 5]).astype(np.float32)
 
         # 4: rolling_vol_5 — std of bar_return[max(0,t-5):t] for t >= 2
-        # Use cumulative sums for O(B) computation of rolling variance
-        cs2 = np.concatenate(([0.0], np.cumsum(bar_return.astype(np.float64) ** 2)))
-        cs_f64 = np.concatenate(([0.0], np.cumsum(bar_return.astype(np.float64))))
-        for t in range(2, min(B, 6)):
+        # Use cumulative sums for O(num_bars) computation of rolling variance
+        cumsum_ret_sq = np.concatenate(([0.0], np.cumsum(bar_return.astype(np.float64) ** 2)))
+        cumsum_ret_f64 = np.concatenate(([0.0], np.cumsum(bar_return.astype(np.float64))))
+        for t in range(2, min(num_bars, 6)):
             w = t  # window size: bar_return[0:t]
-            roll_sum = cs_f64[t]
-            roll_sum2 = cs2[t]
+            roll_sum = cumsum_ret_f64[t]
+            roll_sum2 = cumsum_ret_sq[t]
             roll_mean = roll_sum / w
             roll_var = roll_sum2 / w - roll_mean ** 2
             self._temporal[t, 4] = np.sqrt(max(roll_var, 0.0))
-        if B > 5:
+        if num_bars > 5:
             w = 5
-            roll_sum = cs_f64[5:B] - cs_f64[:B - 5]
-            roll_sum2 = cs2[5:B] - cs2[:B - 5]
+            roll_sum = cumsum_ret_f64[5:num_bars] - cumsum_ret_f64[:num_bars - 5]
+            roll_sum2 = cumsum_ret_sq[5:num_bars] - cumsum_ret_sq[:num_bars - 5]
             roll_mean = roll_sum / w
             roll_var = roll_sum2 / w - roll_mean ** 2
             np.maximum(roll_var, 0.0, out=roll_var)
             self._temporal[5:, 4] = np.sqrt(roll_var).astype(np.float32)
 
         # 5: imb_delta_3 — imbalance_close[t] - imbalance_close[t-3]
-        if B > 3:
+        if num_bars > 3:
             self._temporal[3:, 5] = imbalance_close[3:] - imbalance_close[:-3]
 
         # 6: spread_delta_3 — spread_close[t] - spread_close[t-3]
-        if B > 3:
+        if num_bars > 3:
             self._temporal[3:, 6] = spread_close[3:] - spread_close[:-3]
 
     def _build_obs(self):
