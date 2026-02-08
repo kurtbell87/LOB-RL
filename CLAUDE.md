@@ -25,8 +25,11 @@
 - **Local experiments done:** MLP shuffle-split → val -51.5 / test -62.5. Frame-stack → val -48.4 / test -50.2. Both negative OOS. LSTM killed at 15% (too slow locally at 422 fps).
 - **Checkpointing DONE:** `--checkpoint-freq N` and `--resume PATH` on `train.py`. `CheckpointCallback` + custom `VecNormalizeSaveCallback`. Resume with `reset_num_timesteps=False`. PR #17 merged.
 - **RunPod infrastructure DONE:** `Dockerfile`, `.dockerignore`, `runpod/` scripts (upload-cache, launch, fetch-results). Persistent network volume + ephemeral GPU pods.
-- **RunPod config:** Region US-NC-1, default GPU RTX 4090 ($0.59/hr, 24GB). Secrets in `secrets/api_keys.env` (gitignored).
-- **Next task:** Run LSTM experiment on RunPod GPU. See `LAST_TOUCH.md` and `runpod/README.md`.
+- **RunPod config:** Region US-NC-1, default GPU RTX 4090 ($0.59/hr, 24GB). Volume ID `4w2m8hek66`. Docker Hub `kurtbell87/lob-rl:latest`. RunPod S3 creds via `aws configure --profile runpod`.
+- **RunPod fixes applied:** Dockerfile now builds for `linux/amd64` (not ARM). Includes `openssh-server`+`rsync`. Entrypoint is `scripts/start.sh` (starts sshd, runs training in background, keeps container alive). `fetch-results.sh` rewritten to use rsync over SSH. Cache upload uses `aws s3 sync --profile runpod`. Each experiment writes to `/workspace/runs/{exp_name}_{pod_id}/`.
+- **Cache uploaded:** 249 `.npz` files (18GB) on RunPod volume `4w2m8hek66` at `cache/mes/`. Verified via `aws s3 ls`.
+- **GPU experiments RUNNING:** 3 parallel pods on RTX 4090s — LSTM (`6kwbf810ribiza`), MLP (`yvag35jcok2egk`), frame-stack (`0w3gtzsu1h3nhl`). 5M steps each, checkpoint every 500k. `research/monitor.sh` polling hourly, auto-fetches results, auto-removes pods, then launches Claude Code to write `research/experiment_report.md`.
+- **Next task:** Check `research/experiment_report.md` in the morning. Then investigate negative OOS results.
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
 - **Precompute hint:** If cache needs rebuilding: `precompute_cache.py --roll-calendar ... --workers 8` (script supports `--workers N` via `ProcessPoolExecutor`).
 - **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42`

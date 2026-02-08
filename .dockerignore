@@ -4,6 +4,9 @@ cache/
 *.dbn.zst
 *.npz
 
+# Secrets (API keys, credentials — never bake into image)
+secrets/
+
 # Build artifacts
 build/
 build-release/

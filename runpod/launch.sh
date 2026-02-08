@@ -26,8 +26,11 @@
 #
 # The pod runs train.py with:
 #   --cache-dir /workspace/cache/mes/
-#   --output-dir /workspace/runs/
+#   --output-dir /workspace/runs/{exp_name}_{pod_id}/
 #   [your additional args]
+#
+# EXP_NAME is auto-detected (--recurrent → lstm, --frame-stack → framestack,
+# else mlp) or set via EXP_NAME env var.
 
 set -euo pipefail
 
@@ -38,24 +41,38 @@ IMAGE="${DOCKER_USER}/lob-rl:latest"
 GPU_TYPE="${GPU_TYPE:-NVIDIA GeForce RTX 4090}"
 CLOUD_TYPE="${CLOUD_TYPE:---secureCloud}"  # --secureCloud or --communityCloud
 
-# Build the training command
-# --cache-dir and --output-dir are always set to volume paths
-TRAIN_ARGS="--cache-dir /workspace/cache/mes/ --output-dir /workspace/runs/ $*"
+# Auto-detect experiment name from training args
+if [ -z "${EXP_NAME:-}" ]; then
+    EXP_NAME="mlp"
+    for arg in "$@"; do
+        case "$arg" in
+            --recurrent) EXP_NAME="lstm" ;;
+            --frame-stack) EXP_NAME="framestack" ;;
+        esac
+    done
+fi
+
+# --cache-dir is always set to volume path
+# --output-dir is constructed by start.sh using EXP_NAME + RUNPOD_POD_ID
+TRAIN_ARGS="--cache-dir /workspace/cache/mes/ $*"
 
 echo "=== Launching training pod ==="
 echo "Image:    $IMAGE"
 echo "GPU:      $GPU_TYPE"
 echo "Volume:   $VOLUME_ID"
+echo "Exp:      $EXP_NAME"
 echo "Args:     $TRAIN_ARGS"
 echo ""
 
 CREATE_OUTPUT=$(runpodctl create pod \
-    --name "lob-rl-train" \
+    --name "lob-rl-${EXP_NAME}" \
     --gpuType "$GPU_TYPE" \
     --imageName "$IMAGE" \
     --networkVolumeId "$VOLUME_ID" \
+    --volumePath /workspace \
     --ports "22/tcp" --ports "6006/http" \
     --startSSH \
+    --env "EXP_NAME=$EXP_NAME" \
     $CLOUD_TYPE \
     --args "$TRAIN_ARGS" \
     2>&1) || true
@@ -69,6 +86,7 @@ if [ -z "$POD_ID" ]; then
 fi
 
 echo "Pod created: $POD_ID"
+echo "Output dir: /workspace/runs/${EXP_NAME}_${POD_ID}/"
 echo ""
 echo "=== Next steps ==="
 echo "  Monitor:  runpodctl logs $POD_ID"
@@ -77,5 +95,8 @@ echo "  Stop:     runpodctl stop pod $POD_ID"
 echo "  Remove:   runpodctl remove pod $POD_ID"
 echo "  Results:  ./runpod/fetch-results.sh $POD_ID"
 echo ""
+echo "  Log (after SSH):"
+echo "    tail -f /workspace/runs/${EXP_NAME}_${POD_ID}/train.log"
+echo ""
 echo "  TensorBoard (after SSH):"
-echo "    tensorboard --logdir /workspace/runs/tb_logs --port 6006 --bind_all"
+echo "    tensorboard --logdir /workspace/runs/${EXP_NAME}_${POD_ID}/tb_logs --port 6006 --bind_all"
