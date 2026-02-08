@@ -4,6 +4,7 @@ import argparse
 import glob
 import json
 import os
+import random
 import sys
 import warnings
 
@@ -209,6 +210,9 @@ def main():
                         help='Comma-separated hidden layer sizes (default: 64,64)')
     parser.add_argument('--activation', type=str, default='tanh', choices=['tanh', 'relu'],
                         help='Activation function for policy/value networks (default: tanh)')
+    parser.add_argument('--shuffle-split', action='store_true', default=False,
+                        help='Shuffle files before train/val/test split (random instead of chronological)')
+    parser.add_argument('--seed', type=int, default=42, help='Random seed for shuffle-split')
     args = parser.parse_args()
 
     # Validate mutual exclusivity
@@ -238,11 +242,17 @@ def main():
         all_files = [(os.path.splitext(os.path.basename(f))[0], f, 0) for f in npz_files]
         print(f"Loaded {len(all_files)} cached days from {args.cache_dir}")
 
+        if args.shuffle_split:
+            random.Random(args.seed).shuffle(all_files)
+
         train_files = all_files[:args.train_days]
         val_files = all_files[args.train_days:args.train_days + 5]
         test_files = all_files[args.train_days + 5:]
 
         print(f"Train: {len(train_files)} days, Val: {len(val_files)} days, Test: {len(test_files)} days")
+        print(f"Train dates: {[f[0] for f in train_files]}")
+        print(f"Val dates: {[f[0] for f in val_files]}")
+        print(f"Test dates: {[f[0] for f in test_files]}")
 
         if len(train_files) == 0:
             print("ERROR: No training files!")
@@ -268,11 +278,17 @@ def main():
         all_files = load_manifest(args.data_dir)
         print(f"Loaded {len(all_files)} days of data")
 
+        if args.shuffle_split:
+            random.Random(args.seed).shuffle(all_files)
+
         train_files = all_files[:args.train_days]
         val_files = all_files[args.train_days:args.train_days + 5]
         test_files = all_files[args.train_days + 5:]
 
         print(f"Train: {len(train_files)} days, Val: {len(val_files)} days, Test: {len(test_files)} days")
+        print(f"Train dates: {[f[0] for f in train_files]}")
+        print(f"Val dates: {[f[0] for f in val_files]}")
+        print(f"Test dates: {[f[0] for f in test_files]}")
 
         if len(train_files) == 0:
             print("ERROR: No training files!")

@@ -1,8 +1,9 @@
 ## Current State (updated 2026-02-07)
 
-- **Build:** `build-release/` is current. 403 C++ tests pass (`./lob_tests`). 1013 Python tests pass. **1416 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
+- **Build:** `build-release/` is current. 403 C++ tests pass (`./lob_tests`). 1091 Python tests pass. **1494 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent) all installed.
+- **Lazy loading DONE:** `MultiDayEnv` lazy-loads `.npz` files on `reset()` instead of holding all days in memory. New `cache_files=` parameter for explicit file lists. `train.py` passes train-split paths via `cache_files` instead of full `cache_dir`. Memory: ~300 MB instead of ~100 GB for 200+ day training. PR #13 merged.
 - **Contract boundary guard DONE:** Forced flatten on terminal step (position → 0, no PnL, spread/2 close cost). `instrument_id` stored in `.npz` cache. `MultiDayEnv` tracks contract boundaries, reports `contract_roll` in info. PR #12 merged.
 - **Native DBN source DONE:** `DbnFileSource` reads `.dbn.zst` directly via databento-cpp. `map_mbo_to_message()` shared mapper. `instrument_id` parameter on `precompute()` and `LOBEnv`. `BinaryFileSource` and `convert_dbn.py` deleted. PR #11 merged.
 - **Bar-level env DONE:** `BarLevelEnv` aggregates ticks into N-tick bars (21-dim obs). `aggregate_bars()`, `MultiDayEnv(bar_size=500)`, `train.py --bar-size 500 --policy-arch 256,256 --activation relu`. PR #10 merged.

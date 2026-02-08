@@ -3,6 +3,10 @@
 #include "warmup.h"
 #include <cmath>
 
+// MBO record flag bits (Databento spec)
+static constexpr uint8_t FLAG_LAST     = 0x80;  // Last message in event
+static constexpr uint8_t FLAG_SNAPSHOT = 0x20;  // Snapshot record (not a real event)
+
 static bool has_valid_bbo(double bid, double ask) {
     return std::isfinite(bid) && std::isfinite(ask);
 }
@@ -96,8 +100,8 @@ PrecomputedDay precompute(IMessageSource& source, const SessionConfig& cfg) {
 
         for (size_t idx = 0; idx < rth.size(); ++idx) {
             auto& msg = rth[idx];
-            bool is_f_last     = (msg.flags & 0x80) != 0;
-            bool is_snapshot   = (msg.flags & 0x20) != 0;
+            bool is_f_last     = (msg.flags & FLAG_LAST) != 0;
+            bool is_snapshot   = (msg.flags & FLAG_SNAPSHOT) != 0;
 
             // Skip snapshot records entirely (don't apply to book)
             if (is_snapshot) continue;

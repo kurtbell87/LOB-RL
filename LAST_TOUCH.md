@@ -42,13 +42,14 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 
 ### What was just completed
 
-**Contract boundary guard (this session, PR #12).** Prevents the agent from holding positions across contract roll boundaries:
-- **Forced flatten on terminal step:** Both `PrecomputedEnv` and `BarLevelEnv` force position to 0 on the last step. Reward = `-spread/2 * |prev_position|` (close cost only, no PnL). Agent's action is ignored on terminal step. Info dict includes `forced_flatten=True`, `forced_flatten_cost`, `intended_action`.
-- **`instrument_id` in `.npz` cache:** `precompute_cache.py` now saves `instrument_id` as uint32 in each `.npz`.
-- **`MultiDayEnv` contract boundary tracking:** Loads `instrument_id` per day, exposes `contract_ids` property. `reset()` info includes `instrument_id` and `contract_roll=True/False`.
-- **Backward compat:** Legacy `.npz` files without `instrument_id` still work (contract_id = None).
-- **Refactoring:** Consolidated `_create_synthetic_cache_dir` into conftest.py, replaced magic obs indices with FeatureBuilder constants in C++ tests, extended `make_msg()` with flags parameter.
-- 403 C++ + 1013 Python = 1416 tests pass
+**Lazy loading for MultiDayEnv (this session, PR #13).** Fixed OOM crash (~100 GB RAM) when training on 200+ days with 8 SubprocVecEnv workers:
+- **Lazy loading:** `MultiDayEnv` stores file paths at init, loads one `.npz` on each `reset()`, releases previous day. Memory: ~300 MB instead of ~100 GB.
+- **`cache_files` parameter:** New `MultiDayEnv(cache_files=[...])` accepts explicit list of `.npz` paths. Three-way mutual exclusivity with `file_paths` and `cache_dir`.
+- **Train-split filtering:** `train.py` now passes only train-split `.npz` paths via `cache_files` to workers, not the full `cache_dir`.
+- **Refactoring:** Fixed 11 stale flattening-penalty tests (matched to forced-flatten from PR #12). Named constants in `bar_aggregation.py`. Broke down `_precompute_temporal_features()` into focused methods.
+- 403 C++ + 1091 Python = 1494 tests pass
+
+**Contract boundary guard (prior session, PR #12).** Forced flatten on terminal step, `instrument_id` in cache, contract boundary tracking.
 
 **Native DBN source (prior session, PR #11).** Replaced custom `.bin` pipeline with direct `.dbn.zst` reading via databento-cpp.
 
