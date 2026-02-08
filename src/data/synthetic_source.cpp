@@ -17,7 +17,12 @@ void SyntheticSource::reset() {
 }
 
 void SyntheticSource::generate() {
+    static constexpr int NUM_INITIAL_LEVELS = 5;
+    static constexpr int NUM_RANDOM_MESSAGES = 90;
+    static constexpr int TOTAL_MESSAGES = 2 * NUM_INITIAL_LEVELS + NUM_RANDOM_MESSAGES;  // 100
+
     messages_.clear();
+    messages_.reserve(TOTAL_MESSAGES);
     std::mt19937_64 rng(seed_);
 
     const double mid = 1000.0;
@@ -28,7 +33,7 @@ void SyntheticSource::generate() {
     // Phase 1: Build initial book — 5 bid levels + 5 ask levels (10 messages)
     // Bids: mid - 1*tick, mid - 2*tick, ..., mid - 5*tick
     // Asks: mid + 1*tick, mid + 2*tick, ..., mid + 5*tick
-    for (int i = 1; i <= 5; ++i) {
+    for (int i = 1; i <= NUM_INITIAL_LEVELS; ++i) {
         Message bid;
         bid.order_id = next_id++;
         bid.side = Message::Side::Bid;
@@ -77,7 +82,7 @@ void SyntheticSource::generate() {
         return {idx, live_orders[idx]};
     };
 
-    for (int i = 0; i < 90; ++i) {
+    for (int i = 0; i < NUM_RANDOM_MESSAGES; ++i) {
         int act = action_dist(rng);
         Message msg;
         msg.ts_ns = ts;
