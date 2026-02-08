@@ -4,22 +4,17 @@
 
 ### Immediate next step
 
-**Ingest new data from `data/GLBX-20260207-L953CAPU5B.zip`, cache it, retrain, and validate.**
+**Precompute cache with roll calendar, then retrain and validate.**
 
-1. **Unzip and place `.dbn.zst` files** in `data/mes/`:
-```bash
-cd data && unzip GLBX-20260207-L953CAPU5B.zip -d mes/
-```
+Data is extracted: 312 `.mbo.dbn.zst` files in `data/mes/` (57GB, Jan–Dec 2022). Roll calendar at `data/mes/roll_calendar.json`.
 
-2. **Find the instrument ID** for /MES front-month. Check `symbology.json` in the zip or use Databento docs. Example: `/MES` continuous front = instrument_id `42005347` (verify).
-
-3. **Precompute cache** for the new data (`--instrument-id` is now required):
+1. **Precompute cache** using the roll calendar (ensures one contract per day):
 ```bash
 cd build-release && PYTHONPATH=.:../python uv run python ../scripts/precompute_cache.py \
-  --data-dir ../data/mes/ --out ../cache/mes/ --instrument-id <ID> --force
+  --data-dir ../data/mes/ --out ../cache/mes/ --roll-calendar ../data/mes/roll_calendar.json --force
 ```
 
-4. **Retrain with the winning config** on the full dataset:
+2. **Retrain with the winning config** on the full dataset:
 ```bash
 cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py \
   --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost \
@@ -28,9 +23,22 @@ cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py \
   --train-days 170
 ```
 
-5. **Validate on proper OOS split** — with ~250 days, use 170 train / 40 val / 40 test (adjust `--train-days`). The current 21-day dataset only has 1 OOS day.
+3. **Validate on proper OOS split** — with ~250 trading days, use 170 train / 40 val / 40 test (adjust `--train-days`). The old 21-day dataset only had 1 OOS day.
 
-6. **Consider longer training** — with 170 train days (vs 20), may need more than 2M steps. Try 5M or 10M.
+4. **Consider longer training** — with 170 train days (vs 20), may need more than 2M steps. Try 5M or 10M.
+
+### Roll calendar
+
+`data/mes/roll_calendar.json` maps each date to the front-month instrument_id. `precompute_cache.py --roll-calendar` uses this to filter each day's `.dbn.zst` to exactly ONE contract (no spreads, no back months).
+
+| Period | Contract | Instrument ID |
+|--------|----------|--------------|
+| Jan 1 – Mar 11 | MESH2 | 11355 |
+| Mar 12 – Jun 10 | MESM2 | 13615 |
+| Jun 11 – Sep 9 | MESU2 | 10039 |
+| Sep 10 – Dec 31 | MESZ2 | 10299 |
+
+Source: `data/symbology.json` from Databento download. Roll dates are ~1 week before CME 3rd-Friday expiry.
 
 ### What was just completed
 
@@ -92,14 +100,15 @@ cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py \
 | File | Role |
 |---|---|
 | `scripts/train.py` | Training entry point — `--bar-size`, `--policy-arch`, `--activation`, `--cache-dir`, `--train-days` |
-| `scripts/precompute_cache.py` | CLI tool to build `.npz` cache from `.dbn.zst` files. Requires `--instrument-id`. |
+| `scripts/precompute_cache.py` | CLI tool to build `.npz` cache. Use `--roll-calendar` or `--instrument-id`. |
+| `data/mes/roll_calendar.json` | Maps each date → front-month instrument_id. Used by `--roll-calendar`. |
+| `data/mes/*.mbo.dbn.zst` | 312 daily files, Jan–Dec 2022, 57GB. All /MES instruments per file. |
 | `src/data/dbn_file_source.h/.cpp` | `DbnFileSource` — reads `.dbn.zst` (or `.bin`) via databento-cpp |
-| `src/data/dbn_message_map.h/.cpp` | `map_mbo_to_message()` — MBO record → Message mapping (shared with future live source) |
-| `python/lob_rl/bar_aggregation.py` | `aggregate_bars()` — tick → bar feature aggregation |
+| `src/data/dbn_message_map.h/.cpp` | `map_mbo_to_message()` — MBO record → Message mapping |
 | `python/lob_rl/bar_level_env.py` | `BarLevelEnv` — bar-level gymnasium env (21-dim obs) |
 | `python/lob_rl/precomputed_env.py` | `PrecomputedEnv` — tick-level env (54-dim obs) |
 | `python/lob_rl/multi_day_env.py` | `MultiDayEnv` — wraps multiple days, supports `bar_size=` |
-| `data/GLBX-20260207-L953CAPU5B.zip` | New 1-year dataset (not yet extracted) |
+| `scripts/train.py` | Training entry point — `--bar-size`, `--cache-dir`, `--train-days` |
 
 ## Don't waste time on
 
@@ -117,7 +126,7 @@ cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py \
 ## Architecture overview
 
 ```
-data/mes/*.mbo.dbn.zst  →  precompute_cache.py --instrument-id  →  cache/mes/*.npz
+data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes/*.npz
                                   (DbnFileSource + map_mbo_to_message)
                                                    ↓
                               ┌─── bar_size=0: PrecomputedEnv (54-dim, tick-level)
@@ -143,7 +152,8 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --instrument-id  →  cache/mes
 |---|---|---|
 | ~~Hyperparameter sweep~~ | ~~Done~~ | Best: bar=1000, ent=0.05, lr=1e-3, return 139.5. |
 | ~~Native DBN source~~ | ~~Done~~ | PR #11. `.dbn.zst` reading, `instrument_id`, deleted `.bin` pipeline. |
-| **Ingest new data** | **Critical** | Unzip `data/GLBX-20260207-L953CAPU5B.zip`, find instrument_id, precompute cache. |
+| ~~Extract new data~~ | ~~Done~~ | 312 files in `data/mes/`, 57GB. Roll calendar created. |
+| **Precompute cache** | **Critical** | Run `precompute_cache.py --roll-calendar` on the 312 days. |
 | **Retrain on full dataset** | **Critical** | 170/40/40 split, winning config, possibly 5M+ steps. |
 | **Proper OOS validation** | **Critical** | Current results are almost entirely in-sample. |
 | Bar-level supervised diagnostic | Low | Script lacks `--bar-size` support. Nice-to-have. |

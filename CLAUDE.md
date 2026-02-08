@@ -5,7 +5,7 @@
 - **Dependencies:** SB3, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent) all installed.
 - **Native DBN source DONE:** `DbnFileSource` reads `.dbn.zst` directly via databento-cpp. `map_mbo_to_message()` shared mapper. `instrument_id` parameter on `precompute()` and `LOBEnv`. `BinaryFileSource` and `convert_dbn.py` deleted. PR #11 merged.
 - **Bar-level env DONE:** `BarLevelEnv` aggregates ticks into N-tick bars (21-dim obs). `aggregate_bars()`, `MultiDayEnv(bar_size=500)`, `train.py --bar-size 500 --policy-arch 256,256 --activation relu`. PR #10 merged.
-- **Precompute cache DONE:** `scripts/precompute_cache.py` saves precomputed arrays to `.npz` files. Now requires `--instrument-id`. `PrecomputedEnv.from_cache()`, `MultiDayEnv(cache_dir=...)`, `train.py --cache-dir`. PR #9 merged.
+- **Precompute cache DONE:** `scripts/precompute_cache.py` saves precomputed arrays to `.npz` files. Requires `--instrument-id` or `--roll-calendar`. `PrecomputedEnv.from_cache()`, `MultiDayEnv(cache_dir=...)`, `train.py --cache-dir`. PR #9 merged.
 - **Step interval DONE:** `--step-interval N` subsamples precomputed data. PR #8 merged.
 - **Fix precompute events DONE:** Flag-aware snapshotting in precompute(). PR #7 merged.
 - **Temporal features DONE:** Obs expanded 44→54 dims. PR #6 merged.
@@ -14,9 +14,9 @@
 - **Execution cost DONE:** `--execution-cost`. PR #3 merged.
 - **Walk-forward/lookahead audited CLEAN.** Spread verified CLEAN.
 - **Hyperparameter sweep DONE:** 7 configs tested. Best: `bar_size=1000, ent_coef=0.05, lr=1e-3` → **return 139.5**, entropy -0.48 (stable), explained_var 0.98. 21/21 days positive (but only 1 true OOS day).
-- **Cache built:** 21 days cached in `cache/mes/` (1.07 GB). 6 holidays skipped. **Needs rebuild** with `--instrument-id` after data ingestion.
-- **Next task:** Ingest new data from `data/GLBX-20260207-L953CAPU5B.zip`, cache it with `--instrument-id`, retrain, validate. See `LAST_TOUCH.md`.
-- **Data:** New 1-year dataset in `data/GLBX-20260207-L953CAPU5B.zip` (not yet extracted). Old 27 days in `data/mes/` (`.bin` format, still readable by DbnFileSource).
+- **Data extracted:** 312 `.mbo.dbn.zst` files in `data/mes/` (57GB, Jan–Dec 2022). Roll calendar at `data/mes/roll_calendar.json`.
+- **Old cache stale:** `cache/mes/` has 21 days from old `.bin` data. **Must rebuild** with `--roll-calendar` on new data.
+- **Next task:** Precompute cache with roll calendar, retrain on ~250 days, validate OOS. See `LAST_TOUCH.md`.
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
 - **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001`
 
