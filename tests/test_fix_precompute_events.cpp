@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include <cmath>
 #include <vector>
-#include <algorithm>
 #include "lob/precompute.h"
 #include "lob/feature_builder.h"
 #include "lob/book.h"
@@ -9,20 +8,7 @@
 #include "binary_file_source.h"
 #include "test_helpers.h"
 
-// Databento flag constants (from the spec)
-static constexpr uint8_t F_LAST     = 0x80;
-static constexpr uint8_t F_SNAPSHOT  = 0x20;
-static constexpr uint8_t F_PUB_SPEC = 0x02;  // PUBLISHER_SPECIFIC
-
-// Common real-world flag combos
-static constexpr uint8_t FLAGS_EVENT_TERMINAL = F_LAST | F_PUB_SPEC;  // 0x82
-static constexpr uint8_t FLAGS_MID_EVENT     = 0x00;
-static constexpr uint8_t FLAGS_SNAPSHOT_REC  = F_SNAPSHOT | 0x08;     // 0x28
-
-// ===========================================================================
-// A ScriptedSource variant that supports flagged messages.
-// Reuses the existing ScriptedSource since Message now has flags.
-// ===========================================================================
+// Flag constants (F_LAST, F_SNAPSHOT, etc.) are defined in test_helpers.h
 
 // ===========================================================================
 // SECTION 1: Message struct has flags field

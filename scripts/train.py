@@ -101,7 +101,7 @@ def make_train_env(file_paths=None, session_config=None, reward_mode='pnl_delta'
 
 def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False,
                      vec_normalize_path=None, participation_bonus=0.0, step_interval=1,
-                     cache_path=None, bar_size=0, frame_stack=1):
+                     cache_path=None, bar_size=0, frame_stack=1, is_recurrent=False):
     """Evaluate model on held-out data and compute Sortino ratio."""
     all_returns = []
 
@@ -152,13 +152,22 @@ def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False
 
         obs = venv.reset()
 
+        lstm_states = None
+        episode_start = np.ones((1,), dtype=bool)
+
         episode_reward = 0
         done = False
         while not done:
-            action, _ = model.predict(obs, deterministic=True)
+            if is_recurrent:
+                action, lstm_states = model.predict(obs, deterministic=True,
+                                                    state=lstm_states,
+                                                    episode_start=episode_start)
+            else:
+                action, _ = model.predict(obs, deterministic=True)
             obs, reward, dones, infos = venv.step(action)
             episode_reward += reward[0]
             done = dones[0]
+            episode_start = dones
 
         all_returns.append(episode_reward)
 
@@ -218,9 +227,13 @@ def main():
     parser.add_argument('--seed', type=int, default=42, help='Random seed for shuffle-split')
     parser.add_argument('--frame-stack', type=int, default=1,
                         help='Number of frames to stack (1 = no stacking)')
+    parser.add_argument('--recurrent', action='store_true', default=False,
+                        help='Use LSTM-based recurrent policy instead of MLP')
     args = parser.parse_args()
 
     # Validate mutual exclusivity
+    if args.recurrent and args.frame_stack > 1:
+        parser.error("--recurrent and --frame-stack > 1 are mutually exclusive")
     if args.cache_dir and args.data_dir:
         parser.error("--cache-dir and --data-dir are mutually exclusive")
     if not args.cache_dir and not args.data_dir:
@@ -315,22 +328,41 @@ def main():
         env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.0)
 
     # Create model
-    model = PPO(
-        'MlpPolicy',
-        env,
-        verbose=1,
-        learning_rate=args.learning_rate,
-        n_steps=2048,
-        batch_size=args.batch_size,
-        n_epochs=args.n_epochs,
-        gamma=0.99,
-        ent_coef=args.ent_coef,
-        vf_coef=0.5,
-        max_grad_norm=0.5,
-        clip_range=0.2,
-        policy_kwargs=policy_kwargs,
-        tensorboard_log=os.path.join(args.output_dir, 'tb_logs'),
-    )
+    if args.recurrent:
+        from sb3_contrib import RecurrentPPO
+        model = RecurrentPPO(
+            'MlpLstmPolicy',
+            env,
+            verbose=1,
+            learning_rate=args.learning_rate,
+            n_steps=2048,
+            batch_size=args.batch_size,
+            n_epochs=args.n_epochs,
+            gamma=0.99,
+            ent_coef=args.ent_coef,
+            vf_coef=0.5,
+            max_grad_norm=0.5,
+            clip_range=0.2,
+            policy_kwargs=policy_kwargs,
+            tensorboard_log=os.path.join(args.output_dir, 'tb_logs'),
+        )
+    else:
+        model = PPO(
+            'MlpPolicy',
+            env,
+            verbose=1,
+            learning_rate=args.learning_rate,
+            n_steps=2048,
+            batch_size=args.batch_size,
+            n_epochs=args.n_epochs,
+            gamma=0.99,
+            ent_coef=args.ent_coef,
+            vf_coef=0.5,
+            max_grad_norm=0.5,
+            clip_range=0.2,
+            policy_kwargs=policy_kwargs,
+            tensorboard_log=os.path.join(args.output_dir, 'tb_logs'),
+        )
 
     # Train
     print(f"Training for {args.total_timesteps} timesteps...")
@@ -359,7 +391,8 @@ def main():
                                        step_interval=args.step_interval,
                                        cache_path=cache_path,
                                        bar_size=args.bar_size,
-                                       frame_stack=args.frame_stack)
+                                       frame_stack=args.frame_stack,
+                                       is_recurrent=args.recurrent)
         print(f"Validation metrics: {val_metrics}")
 
     # Evaluate on test set
@@ -371,7 +404,8 @@ def main():
                                         step_interval=args.step_interval,
                                         cache_path=cache_path,
                                         bar_size=args.bar_size,
-                                        frame_stack=args.frame_stack)
+                                        frame_stack=args.frame_stack,
+                                        is_recurrent=args.recurrent)
         print(f"Test metrics: {test_metrics}")
 
     return 0
