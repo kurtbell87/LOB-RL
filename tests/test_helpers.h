@@ -19,7 +19,8 @@
 
 // Helper to create messages easily in tests.
 inline Message make_msg(uint64_t id, Message::Side side, Message::Action action,
-                        double price, uint32_t qty, uint64_t ts = 0) {
+                        double price, uint32_t qty, uint64_t ts = 0,
+                        uint8_t flags = 0) {
     Message m;
     m.order_id = id;
     m.side = side;
@@ -27,6 +28,7 @@ inline Message make_msg(uint64_t id, Message::Side side, Message::Action action,
     m.price = price;
     m.qty = qty;
     m.ts_ns = ts;
+    m.flags = flags;
     return m;
 }
 

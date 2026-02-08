@@ -23,26 +23,7 @@ from gymnasium import spaces
 
 from lob_rl.multi_day_env import MultiDayEnv
 
-from conftest import make_realistic_obs
-
-
-# ===========================================================================
-# Helper
-# ===========================================================================
-
-
-def _create_synthetic_cache_dir(tmpdir, n_days=3, n_rows=500):
-    """Create a cache directory with synthetic .npz files."""
-    cache_dir = os.path.join(tmpdir, "cache")
-    os.makedirs(cache_dir, exist_ok=True)
-
-    dates = [f"2025-01-{i + 10:02d}" for i in range(n_days)]
-    for i, date in enumerate(dates):
-        obs, mid, spread = make_realistic_obs(n_rows, mid_start=100.0 + i * 10)
-        np.savez(os.path.join(cache_dir, f"{date}.npz"),
-                 obs=obs, mid=mid, spread=spread)
-
-    return cache_dir, dates
+from conftest import make_realistic_obs, create_synthetic_cache_dir
 
 
 # ===========================================================================
@@ -56,14 +37,14 @@ class TestMultiDayEnvBarSizeParam:
     def test_bar_size_param_accepted(self):
         """MultiDayEnv(cache_dir=..., bar_size=100) should not raise."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=500)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=500)
             env = MultiDayEnv(cache_dir=cache_dir, bar_size=100)
             assert env is not None
 
     def test_bar_size_default_is_zero(self):
         """Default bar_size should be 0 (tick-level, existing behavior)."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=50)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=50)
             env = MultiDayEnv(cache_dir=cache_dir)
             # Default = 0 means tick-level, obs shape should be (54,)
             assert env.observation_space.shape == (54,)
@@ -80,14 +61,14 @@ class TestBarSizeZeroBackwardCompat:
     def test_tick_level_obs_shape(self):
         """bar_size=0 should give observation_space shape (54,)."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=50)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=50)
             env = MultiDayEnv(cache_dir=cache_dir, bar_size=0)
             assert env.observation_space.shape == (54,)
 
     def test_tick_level_episode_length(self):
         """bar_size=0 should give tick-level episode length."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_days=1, n_rows=50)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_days=1, n_rows=50)
             env = MultiDayEnv(cache_dir=cache_dir, bar_size=0)
             env.reset()
             steps = 0
@@ -110,14 +91,14 @@ class TestBarSizePositiveUsesBarEnv:
     def test_bar_level_obs_shape_21(self):
         """bar_size>0 should give observation_space shape (21,)."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=500)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=500)
             env = MultiDayEnv(cache_dir=cache_dir, bar_size=100)
             assert env.observation_space.shape == (21,)
 
     def test_bar_level_action_space(self):
         """bar_size>0 should still have Discrete(3) action space."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=500)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=500)
             env = MultiDayEnv(cache_dir=cache_dir, bar_size=100)
             assert isinstance(env.action_space, spaces.Discrete)
             assert env.action_space.n == 3
@@ -125,7 +106,7 @@ class TestBarSizePositiveUsesBarEnv:
     def test_reset_returns_correct_shape(self):
         """reset() with bar_size>0 should return (21,) obs."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=500)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=500)
             env = MultiDayEnv(cache_dir=cache_dir, bar_size=100)
             obs, info = env.reset()
             assert obs.shape == (21,)
@@ -133,7 +114,7 @@ class TestBarSizePositiveUsesBarEnv:
     def test_step_returns_correct_shape(self):
         """step() with bar_size>0 should return (21,) obs."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=500)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=500)
             env = MultiDayEnv(cache_dir=cache_dir, bar_size=100)
             env.reset()
             obs, _, _, _, _ = env.step(1)
@@ -142,7 +123,7 @@ class TestBarSizePositiveUsesBarEnv:
     def test_bar_level_episode_shorter_than_tick(self):
         """bar_size>0 episodes should be much shorter than tick-level."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_days=1, n_rows=500)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_days=1, n_rows=500)
 
             # Tick-level
             env_tick = MultiDayEnv(cache_dir=cache_dir, bar_size=0)
@@ -181,7 +162,7 @@ class TestStepIntervalIgnoredWithBarSize:
     def test_step_interval_ignored(self):
         """bar_size=100 with step_interval=10 should behave same as step_interval=1."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_days=1, n_rows=500)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_days=1, n_rows=500)
 
             env1 = MultiDayEnv(cache_dir=cache_dir, bar_size=100, step_interval=1)
             env10 = MultiDayEnv(cache_dir=cache_dir, bar_size=100, step_interval=10)
@@ -195,7 +176,7 @@ class TestStepIntervalIgnoredWithBarSize:
     def test_step_interval_warning(self):
         """Setting step_interval with bar_size>0 should produce a warning."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=500)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=500)
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 env = MultiDayEnv(cache_dir=cache_dir, bar_size=100,
@@ -220,7 +201,7 @@ class TestMultiDayBarCycling:
     def test_cycles_through_days(self):
         """Multiple resets should cycle through different days."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_days=3, n_rows=200)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_days=3, n_rows=200)
             env = MultiDayEnv(cache_dir=cache_dir, bar_size=50)
 
             obs_list = []
@@ -237,7 +218,7 @@ class TestMultiDayBarCycling:
     def test_day_index_in_info(self):
         """reset() info should contain day_index."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_days=3, n_rows=200)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_days=3, n_rows=200)
             env = MultiDayEnv(cache_dir=cache_dir, bar_size=50)
             _, info = env.reset()
             assert "day_index" in info
@@ -254,7 +235,7 @@ class TestRewardParamsForwarded:
     def test_execution_cost_forwarded(self):
         """execution_cost=True should affect rewards."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_days=1, n_rows=200)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_days=1, n_rows=200)
 
             env_no_cost = MultiDayEnv(cache_dir=cache_dir, bar_size=50,
                                        execution_cost=False)
@@ -276,7 +257,7 @@ class TestRewardParamsForwarded:
     def test_participation_bonus_forwarded(self):
         """participation_bonus>0 should affect rewards."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_days=1, n_rows=200)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_days=1, n_rows=200)
 
             env_no = MultiDayEnv(cache_dir=cache_dir, bar_size=50,
                                   participation_bonus=0.0)
@@ -308,7 +289,7 @@ class TestBarSizeLargerThanDay:
         """If all days produce 0 bars, should raise ValueError."""
         with tempfile.TemporaryDirectory() as tmpdir:
             # 10 ticks per day, bar_size=100: 10 < 100//4=25, so 0 bars
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_days=2, n_rows=10)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_days=2, n_rows=10)
             with pytest.raises(ValueError):
                 MultiDayEnv(cache_dir=cache_dir, bar_size=100)
 
@@ -347,21 +328,21 @@ class TestMultiDayBarIsGymEnv:
     def test_is_gym_env(self):
         """Should be an instance of gymnasium.Env."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=500)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=500)
             env = MultiDayEnv(cache_dir=cache_dir, bar_size=100)
             assert isinstance(env, gym.Env)
 
     def test_has_observation_space(self):
         """Should have observation_space attribute."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=500)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=500)
             env = MultiDayEnv(cache_dir=cache_dir, bar_size=100)
             assert hasattr(env, 'observation_space')
 
     def test_has_action_space(self):
         """Should have action_space attribute."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=500)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=500)
             env = MultiDayEnv(cache_dir=cache_dir, bar_size=100)
             assert hasattr(env, 'action_space')
 
@@ -377,7 +358,7 @@ class TestMultiDayBarShuffle:
     def test_shuffle_produces_different_order(self):
         """With shuffle=True, day order should differ across epochs."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_days=5, n_rows=200)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_days=5, n_rows=200)
             env = MultiDayEnv(cache_dir=cache_dir, bar_size=50, shuffle=True,
                               seed=42)
 
