@@ -13,9 +13,24 @@ Gymnasium wrappers and utilities on top of the C++ `lob_rl_core` module.
 | `multi_day_env.py` | `MultiDayEnv` — cycles through multiple day files. **Lazy-loads** `.npz` on `reset()` (cache modes). Supports `cache_files=` for explicit file lists. **This is what `train.py` uses.** |
 | `bar_aggregation.py` | `aggregate_bars(obs, mid, spread, bar_size)` — tick → bar feature aggregation. Returns (bar_features, bar_mid_close, bar_spread_close). |
 | `bar_level_env.py` | `BarLevelEnv` — bar-level `gymnasium.Env`. 21-dim obs (13 intra-bar + 7 temporal + 1 position). `from_cache()`, `from_file()`. |
+| `_obs_layout.py` | C++ observation layout constants (index slices, sizes). Shared by `precomputed_env.py` and `bar_aggregation.py`. |
+| `_reward.py` | Shared reward/flatten logic: `compute_forced_flatten()`, `compute_step_reward()`. Used by `precomputed_env.py` and `bar_level_env.py`. |
 | ~~`convert_dbn.py`~~ | Deleted (PR #11). |
 
 ## API Signatures
+
+### Reward helpers (`_reward.py`)
+
+```python
+compute_forced_flatten(spread, prev_position, action)
+# Returns (reward, info_dict). reward = -spread/2 * |prev_position|.
+# info_dict = {"forced_flatten": True, "forced_flatten_cost": float, "intended_action": int}
+
+compute_step_reward(position, prev_position, mid_now, mid_prev,
+                    spread_prev, reward_mode, lambda_,
+                    execution_cost, participation_bonus)
+# Returns reward (float). PnL delta with optional penalty, exec cost, bonus.
+```
 
 ### PrecomputedEnv (`precomputed_env.py`)
 

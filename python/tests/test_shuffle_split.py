@@ -21,16 +21,7 @@ import sys
 
 import pytest
 
-# Path to the train.py script
-TRAIN_SCRIPT = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "train.py")
-)
-
-
-def _load_train_source():
-    """Read train.py source as a string."""
-    with open(TRAIN_SCRIPT) as f:
-        return f.read()
+from conftest import load_train_source
 
 
 # ===========================================================================
@@ -43,7 +34,7 @@ class TestShuffleSplitFlag:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_shuffle_split_flag_exists(self):
         """--shuffle-split flag should be defined in train.py."""
@@ -80,7 +71,7 @@ class TestSeedFlag:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_seed_flag_exists(self):
         """--seed flag should be defined in train.py."""
@@ -111,7 +102,7 @@ class TestRandomImport:
 
     def test_import_random_present(self):
         """train.py should contain 'import random'."""
-        source = _load_train_source()
+        source = load_train_source()
         # Match standalone `import random` (not `from random import ...` which is also ok,
         # but the spec says `import random`)
         pattern = r"^\s*import\s+random\b"
@@ -131,7 +122,7 @@ class TestShuffleImplementation:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_uses_random_random_class(self):
         """Shuffle should use random.Random() (seeded instance, not global state)."""
@@ -182,7 +173,7 @@ class TestShuffleConditional:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_shuffle_gated_by_shuffle_split_flag(self):
         """Shuffle logic should be conditional on args.shuffle_split."""
@@ -215,7 +206,7 @@ class TestBothCodePaths:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_shuffle_in_cache_dir_path(self):
         """Shuffle should occur in the cache_dir branch (if args.cache_dir:)."""
@@ -252,7 +243,7 @@ class TestDatePrinting:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_train_dates_printed(self):
         """'Train dates:' should be printed after the split."""
@@ -376,7 +367,7 @@ class TestSeedWithoutShuffleSplit:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_no_error_on_seed_alone(self):
         """No validation should reject --seed when --shuffle-split is not set."""
@@ -407,7 +398,7 @@ class TestExistingFlagsPreserved:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_cache_dir_flag_preserved(self):
         assert "--cache-dir" in self.source
@@ -444,7 +435,7 @@ class TestAcceptanceCriteria:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_ac1_shuffle_split_flag_store_true(self):
         """AC1: --shuffle-split flag exists with action='store_true'."""

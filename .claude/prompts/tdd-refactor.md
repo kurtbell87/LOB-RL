@@ -42,7 +42,13 @@ This is a C++20/Python project:
    - Build and run the FULL test suite
    - If all pass, continue
    - If any fail, revert and try differently
-6. **Print a summary** of all changes made.
+6. **Update directory README.md files.** After refactoring, check every directory you touched:
+   - Compare the file listing in the README against actual files on disk. Add missing files, remove deleted files.
+   - Update test counts if tests were added/removed/reorganized.
+   - Update API signatures if you changed function signatures.
+   - Update constants (obs dims, enum values) if they changed.
+   - See `CLAUDE.md` "Directory README.md Format" for the required sections.
+7. **Print a summary** of all changes made (including README updates).
 
 ## What NOT To Do
 - Do NOT add new features or new behavior.

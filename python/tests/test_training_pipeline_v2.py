@@ -32,20 +32,7 @@ from unittest import mock
 import numpy as np
 import pytest
 
-# Path to the train.py script
-TRAIN_SCRIPT = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "train.py")
-)
-
-
-# ===========================================================================
-# Helper: parse the argument parser from train.py
-# ===========================================================================
-
-def _load_train_source():
-    """Read train.py source as a string."""
-    with open(TRAIN_SCRIPT) as f:
-        return f.read()
+from conftest import TRAIN_SCRIPT, load_train_source
 
 
 def _build_parser_from_train():
@@ -61,7 +48,7 @@ def _build_parser_from_train():
     sys.path.insert(0, os.path.join(project_root, "build-release"))
     sys.path.insert(0, os.path.join(project_root, "build"))
 
-    source = _load_train_source()
+    source = load_train_source()
     tree = ast.parse(source)
 
     # Find the main() function and extract parser setup
@@ -85,7 +72,7 @@ class TestCLINewFlags:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_ent_coef_flag_exists(self):
         """--ent-coef flag should be defined in train.py."""
@@ -204,7 +191,7 @@ class TestCLIExistingFlags:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_data_dir_flag(self):
         """--data-dir flag should still exist."""
@@ -245,7 +232,7 @@ class TestEntropyCoefficient:
 
     def test_ent_coef_used_in_ppo_constructor(self):
         """PPO constructor should include ent_coef parameter."""
-        source = _load_train_source()
+        source = load_train_source()
         # The PPO() call should reference ent_coef (from args)
         assert "ent_coef" in source, (
             "PPO constructor should include ent_coef"
@@ -253,7 +240,7 @@ class TestEntropyCoefficient:
 
     def test_ent_coef_not_hardcoded_zero(self):
         """ent_coef should be present in PPO call and not hardcoded to 0.0."""
-        source = _load_train_source()
+        source = load_train_source()
         # First, ent_coef must be present in the PPO constructor
         assert "ent_coef" in source, "PPO constructor should include ent_coef"
         # And it should not be hardcoded to 0.0
@@ -265,7 +252,7 @@ class TestEntropyCoefficient:
 
     def test_ent_coef_references_args(self):
         """ent_coef should reference args (CLI-tunable), not a hardcoded value."""
-        source = _load_train_source()
+        source = load_train_source()
         # Look for ent_coef=args.ent_coef or similar pattern
         pattern = r"ent_coef\s*=\s*args\."
         match = re.search(pattern, source)
@@ -284,7 +271,7 @@ class TestVecNormalizeTraining:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_imports_vec_normalize(self):
         """train.py should import VecNormalize."""
@@ -336,7 +323,7 @@ class TestVecNormalizeSave:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_saves_vec_normalize_pkl(self):
         """After training, vec_normalize.pkl should be saved."""
@@ -364,7 +351,7 @@ class TestNoNormFlag:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_no_norm_conditionally_skips_vec_normalize(self):
         """When --no-norm is set, VecNormalize wrapping should be skipped."""
@@ -399,7 +386,7 @@ class TestParallelEnvironments:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_imports_subproc_vec_env(self):
         """train.py should import SubprocVecEnv."""
@@ -458,7 +445,7 @@ class TestNEnvsOne:
 
     def test_n_envs_one_accepted(self):
         """n_envs=1 should be a valid value (no minimum > 1 check)."""
-        source = _load_train_source()
+        source = load_train_source()
         # There should be no hard lower bound preventing n_envs=1
         # Check that there's no assertion like assert n_envs > 1
         pattern = r"(assert.*n_envs\s*>\s*1|n_envs\s*<\s*2.*raise)"
@@ -478,7 +465,7 @@ class TestEvalExecutionCost:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_evaluate_sortino_has_execution_cost_param(self):
         """evaluate_sortino() signature should include execution_cost."""
@@ -534,7 +521,7 @@ class TestEvalVecNormalize:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_vec_normalize_load_in_eval(self):
         """Evaluation should load VecNormalize stats."""
@@ -585,7 +572,7 @@ class TestPPOHyperparameters:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_batch_size_not_64(self):
         """PPO batch_size should not be the old default of 64."""
@@ -657,7 +644,7 @@ class TestTrainingEnvExecutionCost:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_multiday_env_receives_execution_cost(self):
         """MultiDayEnv in training should receive execution_cost."""
@@ -680,7 +667,7 @@ class TestMainEvalCallsForwardExecutionCost:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_val_eval_passes_execution_cost(self):
         """Validation evaluate_sortino() call should include execution_cost."""
@@ -709,7 +696,7 @@ class TestAcceptanceCriteria:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_ac1_all_new_flags_present(self):
         """AC1: All 6 new CLI flags should be defined."""
@@ -772,7 +759,7 @@ class TestNoNormWithEvaluation:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_eval_skips_vec_normalize_when_no_norm(self):
         """Eval should conditionally skip VecNormalize.load when --no-norm."""
@@ -811,7 +798,7 @@ class TestDummyVecEnvReplaced:
         DummyVecEnv should only appear in evaluation context, not
         as the main training env (spec says to replace with SubprocVecEnv).
         """
-        source = _load_train_source()
+        source = load_train_source()
 
         # The main() function should use SubprocVecEnv for training,
         # not DummyVecEnv. DummyVecEnv([lambda: MultiDayEnv(...)]) is

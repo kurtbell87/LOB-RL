@@ -7,10 +7,10 @@ Message sources that feed the Book engine. All implement `IMessageSource` (see `
 | File | Role |
 |---|---|
 | `synthetic_source.h/cpp` | `SyntheticSource` — deterministic ~100 message generator for testing. Timestamps are not realistic (start at ~1ms epoch). Cannot be used with session-aware constructors. |
-| `binary_file_source.h/cpp` | `BinaryFileSource(path)` — reads flat binary files (16-byte header + 36-byte records). Created by `convert_dbn.py`. Loads entire file into memory. |
+| `dbn_file_source.h/cpp` | `DbnFileSource(path, instrument_id)` — reads native `.mbo.dbn.zst` files via databento-cpp. Streams messages without loading entire file into memory. |
+| `dbn_message_map.h/cpp` | `map_mbo_to_message(MboMsg)` — converts Databento MBO records to internal `Message` format. Maps Databento actions (Add/Cancel/Modify/Trade/Fill) to engine actions. |
 
-## Binary file format
+## Dependencies
 
-- Magic: "LOBR", version 1
-- Header: 16 bytes (magic + version + instrument_id + record_count)
-- Records: 36 bytes each (timestamp, order_id, price, qty, action, side)
+- **Depends on:** `include/lob/source.h`, `include/lob/message.h`, databento-cpp (FetchContent)
+- **Depended on by:** `src/env/precompute.cpp`, `src/bindings/bindings.cpp`, C++ tests

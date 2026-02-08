@@ -23,10 +23,7 @@ import textwrap
 import numpy as np
 import pytest
 
-# Path to the train.py script
-TRAIN_SCRIPT = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "train.py")
-)
+from conftest import TRAIN_SCRIPT
 
 
 # ===========================================================================

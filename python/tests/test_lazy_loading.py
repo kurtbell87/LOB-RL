@@ -987,9 +987,7 @@ class TestDummyVecEnvLazyLoading:
 # ===========================================================================
 
 
-TRAIN_SCRIPT = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "train.py")
-)
+from conftest import TRAIN_SCRIPT
 
 
 class TestTrainScriptTrainSplitFiltering:

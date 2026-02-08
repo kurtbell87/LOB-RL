@@ -4,28 +4,12 @@
 
 ### Immediate next step
 
-**Precompute cache with roll calendar, then retrain and validate.**
+**Set up RunPod for GPU training.** Local CPU training is too slow for LSTM (~422 fps vs ~4200 fps for MLP) and results so far are negative OOS. Need GPU compute to run longer experiments (5M–10M steps) and LSTM.
 
-Data is extracted: 312 `.mbo.dbn.zst` files in `data/mes/` (57GB, Jan–Dec 2022). Roll calendar at `data/mes/roll_calendar.json`.
-
-1. **Precompute cache** using the roll calendar (ensures one contract per day):
-```bash
-cd build-release && PYTHONPATH=.:../python uv run python ../scripts/precompute_cache.py \
-  --data-dir ../data/mes/ --out ../cache/mes/ --roll-calendar ../data/mes/roll_calendar.json --force
-```
-
-2. **Retrain with the winning config** on the full dataset:
-```bash
-cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py \
-  --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost \
-  --policy-arch 256,256 --activation relu --total-timesteps 2000000 \
-  --ent-coef 0.05 --learning-rate 0.001 \
-  --train-days 170
-```
-
-3. **Validate on proper OOS split** — with ~250 trading days, use 170 train / 40 val / 40 test (adjust `--train-days`). The old 21-day dataset only had 1 OOS day.
-
-4. **Consider longer training** — with 170 train days (vs 20), may need more than 2M steps. Try 5M or 10M.
+1. **RunPod setup** — containerize the training pipeline, push cache to cloud storage, configure GPU instances.
+2. **Run LSTM experiment on RunPod** — killed locally at 15% (too slow). Needs GPU.
+3. **Run longer experiments** — 2M steps isn't enough. Try 5M–10M with all 3 architectures on GPU.
+4. **Investigate negative OOS** — both MLP and frame-stack are negative on shuffle-split too, so it's not just chronological regime shift. The agent is not generalizing. Consider: reward shaping, observation normalization debugging, different architectures, or more data.
 
 ### Roll calendar
 
@@ -42,42 +26,32 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 
 ### What was just completed
 
-**Lazy loading for MultiDayEnv (this session, PR #13).** Fixed OOM crash (~100 GB RAM) when training on 200+ days with 8 SubprocVecEnv workers:
-- **Lazy loading:** `MultiDayEnv` stores file paths at init, loads one `.npz` on each `reset()`, releases previous day. Memory: ~300 MB instead of ~100 GB.
-- **`cache_files` parameter:** New `MultiDayEnv(cache_files=[...])` accepts explicit list of `.npz` paths. Three-way mutual exclusivity with `file_paths` and `cache_dir`.
-- **Train-split filtering:** `train.py` now passes only train-split `.npz` paths via `cache_files` to workers, not the full `cache_dir`.
-- **Refactoring:** Fixed 11 stale flattening-penalty tests (matched to forced-flatten from PR #12). Named constants in `bar_aggregation.py`. Broke down `_precompute_temporal_features()` into focused methods.
-- 403 C++ + 1091 Python = 1494 tests pass
+**Local comparative experiments (2M steps, shuffle-split, seed 42).** Both completed runs are negative OOS:
 
-**Contract boundary guard (prior session, PR #12).** Forced flatten on terminal step, `instrument_id` in cache, contract boundary tracking.
+| Model | Val Return | Test Return | Val Sortino | Test Sortino | Notes |
+|-------|-----------|-------------|-------------|--------------|-------|
+| Baseline MLP | -51.5 | -62.5 | -2.09 | -1.51 | 0/10 positive test episodes |
+| Frame Stack (4) | -48.4 | -50.2 | -1.82 | -1.08 | 2/10 positive test episodes |
+| LSTM | — | — | — | — | Killed at 15% — 422 fps too slow for local CPU |
 
-**Native DBN source (prior session, PR #11).** Replaced custom `.bin` pipeline with direct `.dbn.zst` reading via databento-cpp.
+**Key finding:** Shuffle-split doesn't fix OOS. The negative results aren't just chronological regime shift — the agent genuinely isn't generalizing at 2M steps.
 
-**Hyperparameter sweep (prior session).** 7 configs tested, all 2M steps:
+**Shuffle split, frame stacking, and RecurrentPPO (prior session, PRs #14–16).** Three features to improve OOS evaluation and give the agent temporal context:
 
-| # | Config | Return | Entropy | Wall time |
-|---|--------|--------|---------|-----------|
-| 0 | Baseline (ent=0.01, bar=500, lr=3e-4) | 67.5 | -0.20 | ~6 min |
-| 1 | ent_coef=0.05 | 111.0 | -0.55 | 382s |
-| 2 | ent_coef=0.1 | 101.0 | -0.77 | 379s |
-| 3 | bar_size=200 | 3.75 | -0.21 | 372s |
-| 4 | bar_size=1000 | 128.0 | -0.16 | 415s |
-| 5 | lr=1e-3 | 116.25 | -0.30 | 387s |
-| 6 | lr=1e-4 | 18.0 | -0.20 | 386s |
-| **7** | **bar=1000 + ent=0.05 + lr=1e-3** | **139.5** | **-0.48** | **432s** |
+- **Shuffle split (PR #14):** `--shuffle-split` and `--seed 42` on `train.py`. Reproducible random train/val/test splits instead of chronological. Valid because episodes (days) are independent — no cross-day state. 42 new tests.
+- **Frame stacking (PR #15):** `--frame-stack N` on `train.py`. `VecFrameStack` wrapper between SubprocVecEnv and VecNormalize. Eval also wraps with VecFrameStack. bar_size=1000 + frame_stack=4 → 84-dim obs. 40 new tests.
+- **RecurrentPPO (PR #16):** `--recurrent` flag on `train.py`. `RecurrentPPO('MlpLstmPolicy')` from sb3-contrib. LSTM state tracking in eval (lstm_states, episode_start). Mutually exclusive with `--frame-stack > 1`. 59 new tests.
+- **Shared reward module:** Extracted `compute_forced_flatten()` and `compute_step_reward()` into `python/lob_rl/_reward.py`.
+- **Refactoring:** `conftest.py` shared helpers (`make_tick_data`, `save_cache_with_instrument_id`), `test_helpers.h` flag constants, `SyntheticSource` named constants, `precompute.cpp` extracted `process_rth_legacy()` / `process_rth_flag_aware()`.
+- 418 C++ + 1304 Python = 1722 tests pass.
 
-**Key findings:**
-- **Best config: `bar_size=1000, ent_coef=0.05, lr=1e-3`** — 139.5 return, stable entropy (-0.48), explained_var 0.98.
-- **21/21 days positive** on full-dataset eval (but only 1 true OOS day).
-- `bar_size=200` is a dud (too noisy). `bar_size=1000` (coarser bars) works best.
-- Higher `ent_coef` (0.05) keeps entropy healthy and improves returns.
-- Higher `lr` (1e-3) learns faster in 2M steps.
-- Inventory penalty deemed unnecessary — the entropy fix solved the "sits flat" problem.
-- **Training runs on Apple silicon CPU at ~5,650 FPS, ~7 min per 2M-step run.**
+**Prior session context:** Model trained on 170 days (5M steps, winning config) showed return 139.5 in-sample but -53.8 val / -36.6 test OOS on chronological split. Hypothesis: chronological split conflates overfitting with regime shift (2022 H1 vs H2 were different markets).
 
-**Saved models** in `build-release/runs/`:
-- `sweep_ent005/`, `sweep_ent01/`, `sweep_bar200/`, `sweep_bar1000/`, `sweep_lr1e3/`, `sweep_lr1e4/`, `sweep_combined/`
-- Each contains `ppo_lob.zip`, `vec_normalize.pkl`, `tb_logs/`
+**Lazy loading (PR #13).** OOM fix for 200+ day training.
+
+**Contract boundary guard (PR #12).** Forced flatten on terminal step.
+
+**Hyperparameter sweep.** Best: bar=1000, ent=0.05, lr=1e-3 → return 139.5.
 
 ### Training history
 
@@ -97,34 +71,34 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 | Sweep: lr=1e-3 | 2M, bar_size=500, lr=1e-3 | Return 116.25. Entropy -0.30. |
 | Sweep: lr=1e-4 | 2M, bar_size=500, lr=1e-4 | Return 18.0. Too slow. |
 | **Combined best** | **2M, bar=1000, ent=0.05, lr=1e-3** | **Return 139.5. Entropy -0.48. Best result.** |
+| **Full dataset (chrono)** | **5M, 170 train / 40 val / 40 test** | **139.5 in-sample, -53.8 val, -36.6 test** |
+| **MLP shuffle-split** | **2M, 170 train, shuffle, seed 42** | **Val -51.5, Test -62.5. Sortino -1.51.** |
+| **Frame-stack shuffle** | **2M, frame_stack=4, shuffle, seed 42** | **Val -48.4, Test -50.2. Sortino -1.08.** |
+| **LSTM shuffle** | **2M, recurrent, shuffle, seed 42** | **Killed at 15% — too slow locally (422 fps).** |
 
 ## Key files for current task
 
 | File | Role |
 |---|---|
-| `scripts/train.py` | Training entry point — `--bar-size`, `--policy-arch`, `--activation`, `--cache-dir`, `--train-days` |
+| `scripts/train.py` | Training entry point — `--bar-size`, `--cache-dir`, `--train-days`, `--shuffle-split`, `--seed`, `--frame-stack`, `--recurrent` |
 | `scripts/precompute_cache.py` | CLI tool to build `.npz` cache. Use `--roll-calendar` or `--instrument-id`. |
 | `data/mes/roll_calendar.json` | Maps each date → front-month instrument_id. Used by `--roll-calendar`. |
 | `data/mes/*.mbo.dbn.zst` | 312 daily files, Jan–Dec 2022, 57GB. All /MES instruments per file. |
-| `src/data/dbn_file_source.h/.cpp` | `DbnFileSource` — reads `.dbn.zst` (or `.bin`) via databento-cpp |
-| `src/data/dbn_message_map.h/.cpp` | `map_mbo_to_message()` — MBO record → Message mapping |
 | `python/lob_rl/bar_level_env.py` | `BarLevelEnv` — bar-level gymnasium env (21-dim obs) |
 | `python/lob_rl/precomputed_env.py` | `PrecomputedEnv` — tick-level env (54-dim obs) |
-| `python/lob_rl/multi_day_env.py` | `MultiDayEnv` — wraps multiple days, supports `bar_size=` |
-| `scripts/train.py` | Training entry point — `--bar-size`, `--cache-dir`, `--train-days` |
+| `python/lob_rl/multi_day_env.py` | `MultiDayEnv` — wraps multiple days, lazy-loads `.npz` |
+| `python/lob_rl/_reward.py` | Shared `compute_forced_flatten()`, `compute_step_reward()` |
 
 ## Don't waste time on
 
-- **Build verification** — `build-release/` is current, 403 C++ + 1013 Python = 1416 tests pass.
-- **Dependency checks** — SB3, gymnasium, numpy, tensorboard, torch, databento-cpp all installed.
+- **Build verification** — `build-release/` is current, 418 C++ + 1304 Python = 1722 tests pass.
+- **Dependency checks** — SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp all installed.
 - **Reading PRD.md** — everything relevant is in this file.
 - **Codebase exploration** — read directory `README.md` files instead.
 - **Investigating lookahead/leakage** — fully audited, all clean.
 - **Hyperparameter sweep** — done, best config identified.
-- **Inventory penalty** — decided against; entropy fix solved the flat-agent problem.
-- **bar_size=200** — confirmed too noisy, return near zero.
-- **Native DBN source** — done (PR #11). `.bin` pipeline replaced with `.dbn.zst`.
-- **Contract boundary guard** — done (PR #12). Forced flatten, instrument_id in cache, contract boundary tracking.
+- **Shuffle split, frame stacking, RecurrentPPO** — all done (PRs #14–16).
+- **Lazy loading, contract boundary guard, native DBN source** — all done (PRs #11–13).
 - **Precompute fix, spread verification, precompute cache, bar-level env** — all done.
 
 ## Architecture overview
@@ -141,26 +115,34 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
                                        ↑
                                   aggregate_bars() + cross-bar temporal
                                                    ↓
-                                          SB3 PPO (scripts/train.py)
+                           SubprocVecEnv → [VecFrameStack] → VecNormalize
+                                                   ↓
+                                  SB3 PPO / RecurrentPPO (scripts/train.py)
 ```
 
 ## Test coverage
 
-- **403 C++ tests** — `cd build-release && ./lob_tests` (15 skipped: need `.dbn.zst` fixture)
-- **1013 Python tests** — `PYTHONPATH=build-release:python uv run pytest python/tests/` (4 skipped: fixture-dependent)
-- **1416 total**, all passing.
+- **418 C++ tests** — `cd build-release && ./lob_tests` (15 skipped: need `.dbn.zst` fixture)
+- **1304 Python tests** — `PYTHONPATH=build-release:python uv run pytest python/tests/` (4 skipped: fixture-dependent)
+- **1722 total**, all passing.
 
 ## Remaining work
 
 | Item | Priority | Notes |
 |---|---|---|
 | ~~Hyperparameter sweep~~ | ~~Done~~ | Best: bar=1000, ent=0.05, lr=1e-3, return 139.5. |
-| ~~Native DBN source~~ | ~~Done~~ | PR #11. `.dbn.zst` reading, `instrument_id`, deleted `.bin` pipeline. |
-| ~~Extract new data~~ | ~~Done~~ | 312 files in `data/mes/`, 57GB. Roll calendar created. |
-| ~~Contract boundary guard~~ | ~~Done~~ | PR #12. Forced flatten, instrument_id in cache, contract boundary tracking. |
-| **Precompute cache** | **Critical** | Run `precompute_cache.py --roll-calendar` on the 312 days. |
-| **Retrain on full dataset** | **Critical** | 170/40/40 split, winning config, possibly 5M+ steps. |
-| **Proper OOS validation** | **Critical** | Current results are almost entirely in-sample. |
+| ~~Native DBN source~~ | ~~Done~~ | PR #11. |
+| ~~Extract new data~~ | ~~Done~~ | 312 files in `data/mes/`, 57GB. |
+| ~~Contract boundary guard~~ | ~~Done~~ | PR #12. |
+| ~~Lazy loading~~ | ~~Done~~ | PR #13. |
+| ~~Shuffle split~~ | ~~Done~~ | PR #14. `--shuffle-split --seed 42`. |
+| ~~Frame stacking~~ | ~~Done~~ | PR #15. `--frame-stack N`. |
+| ~~RecurrentPPO~~ | ~~Done~~ | PR #16. `--recurrent`. |
+| ~~Precompute cache~~ | ~~Done~~ | 249 `.npz` in `cache/mes/`, built with `--roll-calendar`. Use `--workers 8` if rebuilding. |
+| ~~Comparative experiments~~ | ~~Done (partial)~~ | MLP and frame-stack done locally (both negative OOS). LSTM killed — needs GPU. |
+| ~~Proper OOS validation~~ | ~~Done~~ | Shuffle-split also negative. Not just regime shift — agent doesn't generalize at 2M steps. |
+| **RunPod GPU training** | **Critical** | LSTM too slow locally (422 fps). Need GPU for LSTM + longer runs (5M–10M steps). |
+| **Investigate negative OOS** | **Critical** | Consider: reward shaping, obs normalization debugging, different architectures, more data. |
 | Bar-level supervised diagnostic | Low | Script lacks `--bar-size` support. Nice-to-have. |
 | More data (second year) | Low | 2023-2024 as complement if 2022 generalizes well. |
 
