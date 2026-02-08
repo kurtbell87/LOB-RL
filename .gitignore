@@ -14,8 +14,10 @@ compile_commands.json
 dist/
 .claude/settings.local.json
 .venv/
-data/mes/*.bin
-data/mes/manifest.json
+data/mes/
+data/*.zip
+data/*.json
+cache/
 runs/
 /lob_rl
 LOB-RL.code-workspace
