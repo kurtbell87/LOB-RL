@@ -21,32 +21,7 @@ import re
 
 import pytest
 
-# Path to the train.py script
-TRAIN_SCRIPT = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "train.py")
-)
-
-
-def _load_train_source():
-    """Read train.py source as a string."""
-    with open(TRAIN_SCRIPT) as f:
-        return f.read()
-
-
-def _extract_main_body(source):
-    """Extract the main() function body from source."""
-    pattern = r"def\s+main\s*\(\s*\).*?(?=\ndef\s|\Z)"
-    match = re.search(pattern, source, re.DOTALL)
-    assert match is not None, "main() function not found"
-    return match.group(0)
-
-
-def _extract_evaluate_sortino_body(source):
-    """Extract the evaluate_sortino() function body from source."""
-    pattern = r"def\s+evaluate_sortino\s*\(.*?\n(?=def\s|\Z)"
-    match = re.search(pattern, source, re.DOTALL)
-    assert match is not None, "evaluate_sortino() function not found"
-    return match.group(0)
+from conftest import load_train_source, extract_main_body, extract_evaluate_sortino_body
 
 
 # ===========================================================================
@@ -59,7 +34,7 @@ class TestRecurrentFlag:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_recurrent_flag_exists(self):
         """--recurrent flag should be defined in train.py."""
@@ -91,8 +66,8 @@ class TestMutualExclusivity:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
-        self.main_body = _extract_main_body(self.source)
+        self.source = load_train_source()
+        self.main_body = extract_main_body(self.source)
 
     def test_mutual_exclusivity_check_exists(self):
         """There should be a check for --recurrent + --frame-stack > 1."""
@@ -141,8 +116,8 @@ class TestConditionalImport:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
-        self.main_body = _extract_main_body(self.source)
+        self.source = load_train_source()
+        self.main_body = extract_main_body(self.source)
 
     def test_sb3_contrib_not_imported_at_top_level(self):
         """sb3_contrib should NOT be imported at the top level of train.py."""
@@ -191,8 +166,8 @@ class TestModelCreation:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
-        self.main_body = _extract_main_body(self.source)
+        self.source = load_train_source()
+        self.main_body = extract_main_body(self.source)
 
     def test_recurrent_ppo_uses_mlp_lstm_policy(self):
         """When --recurrent, model should use 'MlpLstmPolicy'."""
@@ -282,8 +257,8 @@ class TestEvalIsRecurrentParam:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
-        self.eval_body = _extract_evaluate_sortino_body(self.source)
+        self.source = load_train_source()
+        self.eval_body = extract_evaluate_sortino_body(self.source)
 
     def test_evaluate_sortino_has_is_recurrent_param(self):
         """evaluate_sortino() signature should include is_recurrent."""
@@ -312,8 +287,8 @@ class TestEvalLSTMStateTracking:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
-        self.eval_body = _extract_evaluate_sortino_body(self.source)
+        self.source = load_train_source()
+        self.eval_body = extract_evaluate_sortino_body(self.source)
 
     def test_lstm_states_variable_exists(self):
         """evaluate_sortino should initialize lstm_states variable."""
@@ -405,8 +380,8 @@ class TestEvalCallsForwardIsRecurrent:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
-        self.main_body = _extract_main_body(self.source)
+        self.source = load_train_source()
+        self.main_body = extract_main_body(self.source)
 
     def test_val_eval_call_forwards_is_recurrent(self):
         """Validation evaluate_sortino() call should include is_recurrent=."""
@@ -534,7 +509,7 @@ class TestExistingFlagsPreserved:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_cache_dir_flag_preserved(self):
         assert "--cache-dir" in self.source
@@ -571,8 +546,8 @@ class TestEdgeCases:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
-        self.main_body = _extract_main_body(self.source)
+        self.source = load_train_source()
+        self.main_body = extract_main_body(self.source)
 
     def test_recurrent_without_frame_stack_works(self):
         """--recurrent without --frame-stack should work (frame_stack defaults to 1).
@@ -613,9 +588,9 @@ class TestAcceptanceCriteria:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
-        self.main_body = _extract_main_body(self.source)
-        self.eval_body = _extract_evaluate_sortino_body(self.source)
+        self.source = load_train_source()
+        self.main_body = extract_main_body(self.source)
+        self.eval_body = extract_evaluate_sortino_body(self.source)
 
     def test_ac1_recurrent_flag_store_true(self):
         """AC1: --recurrent flag exists with action='store_true'."""

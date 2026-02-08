@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'build'))
 
 import numpy as np
 from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFrameStack, VecNormalize
 
 from lob_rl.multi_day_env import MultiDayEnv
@@ -59,34 +60,17 @@ def make_train_env(file_paths=None, session_config=None, reward_mode='pnl_delta'
                    lambda_=0.0, execution_cost=False, participation_bonus=0.0,
                    step_interval=1, cache_dir=None, bar_size=0, cache_files=None):
     """Factory that returns a closure for SubprocVecEnv (avoids lambda late-binding)."""
+    # Build the data-source kwarg (exactly one of these will be non-None)
+    if cache_files is not None:
+        source_kwargs = dict(cache_files=cache_files)
+    elif cache_dir is not None:
+        source_kwargs = dict(cache_dir=cache_dir)
+    else:
+        source_kwargs = dict(file_paths=file_paths, session_config=session_config)
+
     def _init():
-        if cache_files is not None:
-            return MultiDayEnv(
-                cache_files=cache_files,
-                steps_per_episode=0,
-                reward_mode=reward_mode,
-                lambda_=lambda_,
-                shuffle=True,
-                execution_cost=execution_cost,
-                participation_bonus=participation_bonus,
-                step_interval=step_interval,
-                bar_size=bar_size,
-            )
-        if cache_dir is not None:
-            return MultiDayEnv(
-                cache_dir=cache_dir,
-                steps_per_episode=0,
-                reward_mode=reward_mode,
-                lambda_=lambda_,
-                shuffle=True,
-                execution_cost=execution_cost,
-                participation_bonus=participation_bonus,
-                step_interval=step_interval,
-                bar_size=bar_size,
-            )
         return MultiDayEnv(
-            file_paths=file_paths,
-            session_config=session_config,
+            **source_kwargs,
             steps_per_episode=0,
             reward_mode=reward_mode,
             lambda_=lambda_,
@@ -229,6 +213,10 @@ def main():
                         help='Number of frames to stack (1 = no stacking)')
     parser.add_argument('--recurrent', action='store_true', default=False,
                         help='Use LSTM-based recurrent policy instead of MLP')
+    parser.add_argument('--checkpoint-freq', type=int, default=0,
+                        help='Save a checkpoint every N timesteps (0 = disabled)')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='Path to a checkpoint .zip file to resume training from')
     args = parser.parse_args()
 
     # Validate mutual exclusivity
@@ -327,8 +315,24 @@ def main():
     if not args.no_norm:
         env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.0)
 
-    # Create model
-    if args.recurrent:
+    # Resume: auto-load VecNormalize stats if available
+    if args.resume and not args.no_norm:
+        vecnormalize_path = args.resume.replace('.zip', '_vecnormalize.pkl')
+        if os.path.exists(vecnormalize_path):
+            env = VecNormalize.load(vecnormalize_path, env)
+            print(f"Loaded VecNormalize stats from: {vecnormalize_path}")
+        else:
+            print(f"Warning: VecNormalize file not found: {vecnormalize_path}, skipping")
+
+    # Create or resume model
+    if args.resume:
+        from sb3_contrib import RecurrentPPO
+        if args.recurrent:
+            model = RecurrentPPO.load(args.resume, env=env)
+        else:
+            model = PPO.load(args.resume, env=env)
+        print(f"Resumed model from: {args.resume}")
+    elif args.recurrent:
         from sb3_contrib import RecurrentPPO
         model = RecurrentPPO(
             'MlpLstmPolicy',
@@ -364,9 +368,47 @@ def main():
             tensorboard_log=os.path.join(args.output_dir, 'tb_logs'),
         )
 
+    # Set up checkpoint callbacks
+    callback = None
+    if args.checkpoint_freq > 0:
+        checkpoint_dir = os.path.join(args.output_dir, "checkpoints")
+        checkpoint_cb = CheckpointCallback(
+            save_freq=args.checkpoint_freq,
+            save_path=checkpoint_dir,
+        )
+        callbacks = [checkpoint_cb]
+        if not args.no_norm:
+            class VecNormalizeSaveCallback(BaseCallback):
+                def __init__(self, save_freq, save_path, env, verbose=0):
+                    super().__init__(verbose)
+                    self.save_freq = save_freq
+                    self.save_path = save_path
+                    self.env = env
+
+                def _on_step(self):
+                    if self.n_calls % self.save_freq == 0:
+                        path = os.path.join(
+                            self.save_path,
+                            f"rl_model_{self.num_timesteps}_steps_vecnormalize.pkl",
+                        )
+                        self.env.save(path)
+                    return True
+
+            vec_norm_cb = VecNormalizeSaveCallback(
+                save_freq=args.checkpoint_freq,
+                save_path=checkpoint_dir,
+                env=env,
+            )
+            callbacks.append(vec_norm_cb)
+        callback = CallbackList(callbacks)
+
     # Train
     print(f"Training for {args.total_timesteps} timesteps...")
-    model.learn(total_timesteps=args.total_timesteps)
+    model.learn(
+        total_timesteps=args.total_timesteps,
+        callback=callback,
+        reset_num_timesteps=False if args.resume else True,
+    )
 
     # Save model
     os.makedirs(args.output_dir, exist_ok=True)

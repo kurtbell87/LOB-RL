@@ -1,4 +1,5 @@
 import os
+import re
 
 import numpy as np
 import pytest
@@ -6,6 +7,37 @@ import pytest
 import lob_rl_core
 
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
+
+# ---------------------------------------------------------------------------
+# train.py source helpers — shared across test_shuffle_split, test_frame_stacking,
+# test_recurrent_ppo, test_checkpointing, test_training_pipeline_v2, etc.
+# ---------------------------------------------------------------------------
+
+TRAIN_SCRIPT = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "train.py")
+)
+
+
+def load_train_source():
+    """Read train.py source as a string."""
+    with open(TRAIN_SCRIPT) as f:
+        return f.read()
+
+
+def extract_main_body(source):
+    """Extract the main() function body from source."""
+    pattern = r"def\s+main\s*\(\s*\).*?(?=\ndef\s|\Z)"
+    match = re.search(pattern, source, re.DOTALL)
+    assert match is not None, "main() function not found"
+    return match.group(0)
+
+
+def extract_evaluate_sortino_body(source):
+    """Extract the evaluate_sortino() function body from source."""
+    pattern = r"def\s+evaluate_sortino\s*\(.*?\n(?=def\s|\Z)"
+    match = re.search(pattern, source, re.DOTALL)
+    assert match is not None, "evaluate_sortino() function not found"
+    return match.group(0)
 EPISODE_FILE = os.path.join(FIXTURE_DIR, "episode_200records.bin")
 SESSION_FILE = os.path.join(FIXTURE_DIR, "session_180records.bin")
 PRECOMPUTE_EPISODE_FILE = os.path.join(FIXTURE_DIR, "precompute_session.bin")
