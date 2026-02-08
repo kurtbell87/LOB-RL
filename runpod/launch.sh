@@ -19,8 +19,10 @@
 #     --resume /workspace/runs/checkpoints/rl_model_2000000_steps.zip \
 #     --recurrent --total-timesteps 5000000
 #
-#   # Use a different GPU
-#   GPU_TYPE="NVIDIA A100 80GB PCIe" ./runpod/launch.sh --recurrent ...
+#   # Use a specific GPU
+#   GPU_TYPE="NVIDIA L40" ./runpod/launch.sh --recurrent ...
+#
+# Default GPU: NVIDIA GeForce RTX 4090 (US-NC-1, $0.59/hr, 24GB)
 #
 # The pod runs train.py with:
 #   --cache-dir /workspace/cache/mes/
@@ -31,8 +33,9 @@ set -euo pipefail
 
 VOLUME_ID="${RUNPOD_VOLUME_ID:?Set RUNPOD_VOLUME_ID to your network volume ID}"
 DOCKER_USER="${DOCKERHUB_USER:?Set DOCKERHUB_USER to your Docker Hub username}"
-GPU_TYPE="${GPU_TYPE:-NVIDIA A40}"
 IMAGE="${DOCKER_USER}/lob-rl:latest"
+
+GPU_TYPE="${GPU_TYPE:-NVIDIA GeForce RTX 4090}"
 
 # Build the training command
 # --cache-dir and --output-dir are always set to volume paths
@@ -55,7 +58,8 @@ POD_ID=$(runpodctl create pod \
     2>&1 | grep -oP 'pod_[a-zA-Z0-9]+' | head -1)
 
 if [ -z "$POD_ID" ]; then
-    echo "ERROR: Failed to create pod. Check runpodctl config, volume ID, and image name."
+    echo "ERROR: Failed to create pod. Check runpodctl config, volume ID, and GPU availability."
+    echo "GPU requested: $GPU_TYPE"
     exit 1
 fi
 
