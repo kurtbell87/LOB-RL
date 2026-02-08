@@ -5,6 +5,7 @@
 #include "lob/source.h"
 #include <vector>
 #include <string>
+#include <cstdint>
 
 struct PrecomputedDay {
     int num_steps = 0;
@@ -14,4 +15,5 @@ struct PrecomputedDay {
 };
 
 PrecomputedDay precompute(IMessageSource& source, const SessionConfig& cfg);
-PrecomputedDay precompute(const std::string& path, const SessionConfig& cfg);
+PrecomputedDay precompute(const std::string& path, const SessionConfig& cfg,
+                          uint32_t instrument_id = 0);
