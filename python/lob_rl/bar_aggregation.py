@@ -2,6 +2,13 @@
 
 import numpy as np
 
+# C++ observation layout indices (must match precomputed_env.py)
+_BID_PRICES = slice(0, 10)
+_BID_SIZES = slice(10, 20)
+_ASK_PRICES = slice(20, 30)
+_ASK_SIZES = slice(30, 40)
+_IMBALANCE = 41
+_TIME_LEFT = 42
 
 # Number of intra-bar features
 NUM_BAR_FEATURES = 13
@@ -78,17 +85,17 @@ def aggregate_bars(obs, mid, spread, bar_size):
         bar_features[b, 4] = float(spread_chunk[-1])
 
         # 5: imbalance_mean
-        bar_features[b, 5] = float(np.mean(obs_chunk[:, 41]))
+        bar_features[b, 5] = float(np.mean(obs_chunk[:, _IMBALANCE]))
 
         # 6: imbalance_close
-        bar_features[b, 6] = float(obs_chunk[-1, 41])
+        bar_features[b, 6] = float(obs_chunk[-1, _IMBALANCE])
 
         # 7: bid_volume_mean
-        bid_sums = np.sum(obs_chunk[:, 10:20], axis=1)
+        bid_sums = np.sum(obs_chunk[:, _BID_SIZES], axis=1)
         bar_features[b, 7] = float(np.mean(bid_sums))
 
         # 8: ask_volume_mean
-        ask_sums = np.sum(obs_chunk[:, 30:40], axis=1)
+        ask_sums = np.sum(obs_chunk[:, _ASK_SIZES], axis=1)
         bar_features[b, 8] = float(np.mean(ask_sums))
 
         # 9: volume_imbalance
@@ -98,10 +105,10 @@ def aggregate_bars(obs, mid, spread, bar_size):
         bar_features[b, 9] = float(np.mean(vi_per_tick))
 
         # 10: microprice_offset
-        bid0 = obs_chunk[-1, 0]
-        bidsize0 = obs_chunk[-1, 10]
-        ask0 = obs_chunk[-1, 20]
-        asksize0 = obs_chunk[-1, 30]
+        bid0 = obs_chunk[-1, _BID_PRICES.start]
+        bidsize0 = obs_chunk[-1, _BID_SIZES.start]
+        ask0 = obs_chunk[-1, _ASK_PRICES.start]
+        asksize0 = obs_chunk[-1, _ASK_SIZES.start]
         denom_mp = bidsize0 + asksize0
         if denom_mp > 0:
             microprice = (ask0 * bidsize0 + bid0 * asksize0) / denom_mp
@@ -110,7 +117,7 @@ def aggregate_bars(obs, mid, spread, bar_size):
             bar_features[b, 10] = 0.0
 
         # 11: time_remaining
-        bar_features[b, 11] = float(obs_chunk[-1, 42])
+        bar_features[b, 11] = float(obs_chunk[-1, _TIME_LEFT])
 
         # 12: n_ticks_norm
         bar_features[b, 12] = float(n_ticks / bar_size)

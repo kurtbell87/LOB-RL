@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'python'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'build'))
@@ -59,6 +60,19 @@ def _load_roll_calendar(path):
     return date_to_id
 
 
+def _precompute_one(data_path, npz_path, date_norm, instrument_id):
+    """Precompute a single day. Returns a status string or None if skipped."""
+    cfg = lob_rl_core.SessionConfig.default_rth()
+    obs, mid, spread, num_steps = lob_rl_core.precompute(
+        data_path, cfg, instrument_id
+    )
+    if num_steps < 2:
+        return None
+    np.savez(npz_path, obs=obs, mid=mid, spread=spread)
+    return (f"  Cached {date_norm} (inst={instrument_id}): "
+            f"obs={obs.shape}, mid={mid.shape}, spread={spread.shape}")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Precompute and cache LOB data as .npz files')
     parser.add_argument('--data-dir', required=True, help='Directory with .dbn.zst files')
@@ -72,6 +86,8 @@ def main():
 
     parser.add_argument('--force', action='store_true', default=False,
                         help='Re-cache even if .npz already exists')
+    parser.add_argument('--workers', type=int, default=1,
+                        help='Number of parallel worker processes (default: 1)')
     args = parser.parse_args()
 
     # Load roll calendar if provided
@@ -85,10 +101,9 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
 
-    cfg = lob_rl_core.SessionConfig.default_rth()
-    cached = 0
+    # Build work items (filter before dispatching to workers)
+    work_items = []
     skipped_exist = 0
-    skipped_empty = 0
     skipped_no_roll = 0
 
     for data_path in data_files:
@@ -99,7 +114,6 @@ def main():
 
         date_norm = _normalize_date(date)
 
-        # Resolve instrument_id for this date
         if roll_map is not None:
             if date_norm not in roll_map:
                 skipped_no_roll += 1
@@ -115,19 +129,36 @@ def main():
             print(f"  Skipping {date_norm}: already cached")
             continue
 
-        obs, mid, spread, num_steps = lob_rl_core.precompute(
-            data_path, cfg, instrument_id
-        )
+        work_items.append((data_path, npz_path, date_norm, instrument_id))
 
-        if num_steps < 2:
-            skipped_empty += 1
-            print(f"  Skipping {date_norm}: only {num_steps} BBO snapshots (need >= 2)")
-            continue
+    print(f"Dispatching {len(work_items)} files to {args.workers} workers "
+          f"({skipped_exist} already cached, {skipped_no_roll} not in roll calendar)")
 
-        np.savez(npz_path, obs=obs, mid=mid, spread=spread)
-        cached += 1
-        print(f"  Cached {date_norm} (inst={instrument_id}): "
-              f"obs={obs.shape}, mid={mid.shape}, spread={spread.shape}")
+    cached = 0
+    skipped_empty = 0
+
+    if args.workers > 1:
+        with ProcessPoolExecutor(max_workers=args.workers) as executor:
+            futures = {
+                executor.submit(_precompute_one, data_path, npz_path, date_norm, inst_id): date_norm
+                for data_path, npz_path, date_norm, inst_id in work_items
+            }
+            for future in as_completed(futures):
+                date_norm = futures[future]
+                result = future.result()
+                if result is None:
+                    skipped_empty += 1
+                else:
+                    cached += 1
+                    print(result, flush=True)
+    else:
+        for data_path, npz_path, date_norm, inst_id in work_items:
+            result = _precompute_one(data_path, npz_path, date_norm, inst_id)
+            if result is None:
+                skipped_empty += 1
+            else:
+                cached += 1
+                print(result, flush=True)
 
     total_size = sum(
         os.path.getsize(os.path.join(args.out, f))

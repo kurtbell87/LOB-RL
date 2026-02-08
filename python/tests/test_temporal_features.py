@@ -825,19 +825,18 @@ class TestRewardUnchanged:
         expected = 1.0 * (mid[1] - mid[0])
         assert reward == pytest.approx(float(expected), rel=1e-5)
 
-    def test_flattening_penalty_still_works(self):
-        """Terminal flattening penalty should still apply."""
+    def test_forced_flatten_still_works(self):
+        """Terminal step applies forced flatten (close cost only, no PnL)."""
         obs, mid, spread = make_realistic_obs(3)
         env = PrecomputedEnv(obs, mid, spread)
         env.reset()
         env.step(2)  # go long, non-terminal
-        _, reward, terminated, _, _ = env.step(2)  # stay long, terminal
+        _, reward, terminated, _, info = env.step(2)  # terminal — forced flatten
         assert terminated
-        # reward = pos * delta_mid - |pos| * spread[t] / 2
-        expected_pnl = 1.0 * (mid[2] - mid[1])
-        expected_flat = -1.0 * spread[2] / 2.0
-        expected = expected_pnl + expected_flat
+        # reward = -spread[t]/2 * |prev_position| = -spread[2]/2 * 1
+        expected = -spread[2] / 2.0
         assert reward == pytest.approx(float(expected), rel=1e-5)
+        assert info["forced_flatten"] is True
 
 
 # ===========================================================================
