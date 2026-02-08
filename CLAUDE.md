@@ -1,10 +1,11 @@
-## Current State (updated 2026-02-06)
+## Current State (updated 2026-02-07)
 
-- **Build:** `build-release/` is current. 489 C++ tests pass (`./lob_tests`). 1001 Python tests pass. **1490 total.**
+- **Build:** `build-release/` is current. 403 C++ tests pass (`./lob_tests`). 949 Python tests pass. **1352 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
-- **Dependencies:** SB3, gymnasium, numpy, tensorboard, torch all installed in uv environment.
+- **Dependencies:** SB3, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent) all installed.
+- **Native DBN source DONE:** `DbnFileSource` reads `.dbn.zst` directly via databento-cpp. `map_mbo_to_message()` shared mapper. `instrument_id` parameter on `precompute()` and `LOBEnv`. `BinaryFileSource` and `convert_dbn.py` deleted. PR #11 merged.
 - **Bar-level env DONE:** `BarLevelEnv` aggregates ticks into N-tick bars (21-dim obs). `aggregate_bars()`, `MultiDayEnv(bar_size=500)`, `train.py --bar-size 500 --policy-arch 256,256 --activation relu`. PR #10 merged.
-- **Precompute cache DONE:** `scripts/precompute_cache.py` saves precomputed arrays to `.npz` files. `PrecomputedEnv.from_cache()`, `MultiDayEnv(cache_dir=...)`, `train.py --cache-dir`. PR #9 merged.
+- **Precompute cache DONE:** `scripts/precompute_cache.py` saves precomputed arrays to `.npz` files. Now requires `--instrument-id`. `PrecomputedEnv.from_cache()`, `MultiDayEnv(cache_dir=...)`, `train.py --cache-dir`. PR #9 merged.
 - **Step interval DONE:** `--step-interval N` subsamples precomputed data. PR #8 merged.
 - **Fix precompute events DONE:** Flag-aware snapshotting in precompute(). PR #7 merged.
 - **Temporal features DONE:** Obs expanded 44→54 dims. PR #6 merged.
@@ -12,10 +13,12 @@
 - **Training pipeline v2 DONE:** VecNormalize, SubprocVecEnv, ent_coef. PR #4 merged.
 - **Execution cost DONE:** `--execution-cost`. PR #3 merged.
 - **Walk-forward/lookahead audited CLEAN.** Spread verified CLEAN.
-- **Next task:** Build cache, run supervised diagnostic on bar features, then train with bar-level env. See `LAST_TOUCH.md`.
-- **Data:** 27 days of /MES MBO data in `data/mes/`, manifest at `data/mes/manifest.json`.
+- **Hyperparameter sweep DONE:** 7 configs tested. Best: `bar_size=1000, ent_coef=0.05, lr=1e-3` → **return 139.5**, entropy -0.48 (stable), explained_var 0.98. 21/21 days positive (but only 1 true OOS day).
+- **Cache built:** 21 days cached in `cache/mes/` (1.07 GB). 6 holidays skipped. **Needs rebuild** with `--instrument-id` after data ingestion.
+- **Next task:** Ingest new data from `data/GLBX-20260207-L953CAPU5B.zip`, cache it with `--instrument-id`, retrain, validate. See `LAST_TOUCH.md`.
+- **Data:** New 1-year dataset in `data/GLBX-20260207-L953CAPU5B.zip` (not yet extracted). Old 27 days in `data/mes/` (`.bin` format, still readable by DbnFileSource).
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
-- **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 500 --execution-cost --policy-arch 256,256 --activation relu`
+- **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001`
 
 ## Don't
 
