@@ -101,6 +101,28 @@ def run_episode(env, max_steps=5000):
     return steps
 
 
+def make_tick_data(n, mid_start=100.0, mid_step=0.25, spread=0.50):
+    """Create (obs, mid, spread) arrays with n ticks."""
+    obs, mid, spread_arr = make_realistic_obs(n, mid_start=mid_start,
+                                               mid_step=mid_step, spread=spread)
+    return obs, mid, spread_arr
+
+
+def save_cache_with_instrument_id(tmpdir, filename, obs, mid, spread, instrument_id):
+    """Save an .npz cache file with instrument_id included."""
+    path = os.path.join(tmpdir, filename)
+    np.savez(path, obs=obs, mid=mid, spread=spread,
+             instrument_id=np.array([instrument_id], dtype=np.uint32))
+    return path
+
+
+def save_cache_without_instrument_id(tmpdir, filename, obs, mid, spread):
+    """Save an .npz cache file without instrument_id (legacy format)."""
+    path = os.path.join(tmpdir, filename)
+    np.savez(path, obs=obs, mid=mid, spread=spread)
+    return path
+
+
 def create_synthetic_cache_dir(tmpdir, n_days=3, n_rows=50):
     """Create a cache directory with synthetic .npz files.
 

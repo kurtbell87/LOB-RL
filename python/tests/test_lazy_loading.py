@@ -39,27 +39,9 @@ from conftest import (
     make_realistic_obs,
     create_synthetic_cache_dir,
     run_episode,
+    save_cache_with_instrument_id as _save_cache_with_instrument_id,
+    save_cache_without_instrument_id as _save_cache_without_instrument_id,
 )
-
-
-# ===========================================================================
-# Helpers
-# ===========================================================================
-
-
-def _save_cache_with_instrument_id(tmpdir, filename, obs, mid, spread, instrument_id):
-    """Save an .npz cache file with instrument_id included."""
-    path = os.path.join(tmpdir, filename)
-    np.savez(path, obs=obs, mid=mid, spread=spread,
-             instrument_id=np.array([instrument_id], dtype=np.uint32))
-    return path
-
-
-def _save_cache_without_instrument_id(tmpdir, filename, obs, mid, spread):
-    """Save an .npz cache file without instrument_id (legacy format)."""
-    path = os.path.join(tmpdir, filename)
-    np.savez(path, obs=obs, mid=mid, spread=spread)
-    return path
 
 
 def _make_npz_files(tmpdir, n_days=5, n_rows=50, with_instrument_id=False):

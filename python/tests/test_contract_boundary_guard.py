@@ -24,34 +24,15 @@ import tempfile
 import numpy as np
 import pytest
 
-from conftest import make_obs as _make_obs, make_mid as _make_mid, make_spread as _make_spread, make_realistic_obs
-
-
-# ===========================================================================
-# Helpers
-# ===========================================================================
-
-
-def _make_tick_data(n, mid_start=100.0, mid_step=0.25, spread=0.50):
-    """Create (obs, mid, spread) arrays with n ticks."""
-    obs, mid, spread_arr = make_realistic_obs(n, mid_start=mid_start,
-                                               mid_step=mid_step, spread=spread)
-    return obs, mid, spread_arr
-
-
-def _save_cache_with_instrument_id(tmpdir, filename, obs, mid, spread, instrument_id):
-    """Save an .npz cache file with instrument_id included."""
-    path = os.path.join(tmpdir, filename)
-    np.savez(path, obs=obs, mid=mid, spread=spread,
-             instrument_id=np.array([instrument_id], dtype=np.uint32))
-    return path
-
-
-def _save_cache_without_instrument_id(tmpdir, filename, obs, mid, spread):
-    """Save an .npz cache file without instrument_id (legacy format)."""
-    path = os.path.join(tmpdir, filename)
-    np.savez(path, obs=obs, mid=mid, spread=spread)
-    return path
+from conftest import (
+    make_obs as _make_obs,
+    make_mid as _make_mid,
+    make_spread as _make_spread,
+    make_realistic_obs,
+    make_tick_data as _make_tick_data,
+    save_cache_with_instrument_id as _save_cache_with_instrument_id,
+    save_cache_without_instrument_id as _save_cache_without_instrument_id,
+)
 
 
 # ===========================================================================
