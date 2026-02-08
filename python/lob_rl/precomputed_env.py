@@ -74,30 +74,40 @@ class PrecomputedEnv(gym.Env):
     def step(self, action):
         self._position = self._ACTION_MAP[action]
 
-        reward = self._position * (self._mid[self._t + 1] - self._mid[self._t])
-
-        if self._reward_mode == "pnl_delta_penalized":
-            reward -= self._lambda * abs(self._position)
-
-        # Execution cost: spread/2 * |delta_pos|
-        if self._execution_cost:
-            spread = self._spread[self._t]
-            if np.isfinite(spread):
-                reward -= spread / 2.0 * abs(self._position - self._prev_position)
-        self._prev_position = self._position
-
-        # Participation bonus: bonus * |position|
-        if self._participation_bonus != 0.0:
-            reward += self._participation_bonus * abs(self._position)
-
         self._t += 1
         terminated = self._t >= self._obs.shape[0] - 1
 
+        info = {}
+
         if terminated:
-            reward -= abs(self._position) * self._spread[self._t] / 2.0
+            # Forced flatten: reward = -spread/2 * |prev_position| only
+            # No PnL, no execution cost, no participation bonus
+            close_cost = self._spread[self._t] / 2.0 * abs(self._prev_position)
+            reward = -close_cost
+            self._position = 0.0
+            info["forced_flatten"] = True
+            info["forced_flatten_cost"] = float(close_cost)
+            info["intended_action"] = action
+        else:
+            reward = self._position * (self._mid[self._t] - self._mid[self._t - 1])
+
+            if self._reward_mode == "pnl_delta_penalized":
+                reward -= self._lambda * abs(self._position)
+
+            # Execution cost: spread/2 * |delta_pos|
+            if self._execution_cost:
+                spread = self._spread[self._t - 1]
+                if np.isfinite(spread):
+                    reward -= spread / 2.0 * abs(self._position - self._prev_position)
+
+            # Participation bonus: bonus * |position|
+            if self._participation_bonus != 0.0:
+                reward += self._participation_bonus * abs(self._position)
+
+        self._prev_position = self._position
 
         obs = self._build_obs()
-        return obs, float(reward), bool(terminated), False, {}
+        return obs, float(reward), bool(terminated), False, info
 
     def _precompute_temporal_features(self):
         N = self._obs.shape[0]

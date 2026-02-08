@@ -138,36 +138,43 @@ class BarLevelEnv(gym.Env):
         self._position = self._ACTION_MAP[action]
 
         self._bar_index += 1
+        terminated = self._bar_index >= self._num_bars - 1
 
-        # Reward: position * (bar_mid_close[t] - bar_mid_close[t-1])
-        reward = self._position * (
-            self._bar_mid_close[self._bar_index] -
-            self._bar_mid_close[self._bar_index - 1]
-        )
+        info = {}
 
-        if self._reward_mode == "pnl_delta_penalized":
-            reward -= self._lambda * abs(self._position)
+        if terminated:
+            # Forced flatten: reward = -bar_spread_close/2 * |prev_position| only
+            # No bar PnL, no execution cost, no participation bonus
+            close_cost = self._bar_spread_close[self._bar_index] / 2.0 * abs(self._prev_position)
+            reward = -close_cost
+            self._position = 0.0
+            info["forced_flatten"] = True
+            info["forced_flatten_cost"] = float(close_cost)
+            info["intended_action"] = action
+        else:
+            # Reward: position * (bar_mid_close[t] - bar_mid_close[t-1])
+            reward = self._position * (
+                self._bar_mid_close[self._bar_index] -
+                self._bar_mid_close[self._bar_index - 1]
+            )
 
-        # Execution cost: spread/2 * |delta_pos|
-        if self._execution_cost:
-            spread = self._bar_spread_close[self._bar_index - 1]
-            if np.isfinite(spread):
-                reward -= spread / 2.0 * abs(self._position - self._prev_position)
+            if self._reward_mode == "pnl_delta_penalized":
+                reward -= self._lambda * abs(self._position)
+
+            # Execution cost: spread/2 * |delta_pos|
+            if self._execution_cost:
+                spread = self._bar_spread_close[self._bar_index - 1]
+                if np.isfinite(spread):
+                    reward -= spread / 2.0 * abs(self._position - self._prev_position)
+
+            # Participation bonus
+            if self._participation_bonus != 0.0:
+                reward += self._participation_bonus * abs(self._position)
 
         self._prev_position = self._position
 
-        # Participation bonus
-        if self._participation_bonus != 0.0:
-            reward += self._participation_bonus * abs(self._position)
-
-        terminated = self._bar_index >= self._num_bars - 1
-
-        # Flattening penalty at terminal
-        if terminated and self._position != 0.0:
-            reward -= self._bar_spread_close[self._bar_index] / 2.0 * abs(self._position)
-
         obs = self._build_obs()
-        return obs, float(reward), bool(terminated), False, {}
+        return obs, float(reward), bool(terminated), False, info
 
     @classmethod
     def from_cache(cls, npz_path, bar_size=500, reward_mode="pnl_delta",

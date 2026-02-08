@@ -80,6 +80,7 @@ class MultiDayEnv(gym.Env):
         self.action_space = spaces.Discrete(3)
 
         self._precomputed_days = []  # list of (obs, mid, spread) tuples
+        self._contract_ids = []  # list of instrument_id (int or None) per day
 
         if cache_dir is not None:
             self._load_from_cache_dir(cache_dir)
@@ -95,6 +96,8 @@ class MultiDayEnv(gym.Env):
                 "No valid day files: all files produced < 2 BBO snapshots"
             )
 
+        self._prev_contract_id = None  # for roll detection
+
         # RNG for shuffle ordering
         self._rng = np.random.RandomState(seed)
         self._order = list(range(len(self._precomputed_days)))
@@ -103,21 +106,29 @@ class MultiDayEnv(gym.Env):
         self._day_index = 0
         self._inner_env = None
 
+    @property
+    def contract_ids(self):
+        """List of instrument_id (int or None) per day, in load order."""
+        return list(self._contract_ids)
+
     def _filter_days_for_bar_size(self):
         """Remove days that produce < 2 bars with the given bar_size."""
         from lob_rl.bar_aggregation import aggregate_bars
 
         filtered = []
-        for obs, mid, spread in self._precomputed_days:
+        filtered_ids = []
+        for i, (obs, mid, spread) in enumerate(self._precomputed_days):
             bar_features, _, _ = aggregate_bars(obs, mid, spread, self._bar_size)
             if bar_features.shape[0] >= 2:
                 filtered.append((obs, mid, spread))
+                filtered_ids.append(self._contract_ids[i])
             else:
                 warnings.warn(
                     f"Skipping day with {obs.shape[0]} ticks: "
                     f"only {bar_features.shape[0]} bars with bar_size={self._bar_size}"
                 )
         self._precomputed_days = filtered
+        self._contract_ids = filtered_ids
 
     def _load_from_file_paths(self, file_paths, session_config):
         """Load days from raw .bin files via C++ precompute."""
@@ -136,6 +147,7 @@ class MultiDayEnv(gym.Env):
                 )
                 continue
             self._precomputed_days.append((obs, mid, spread))
+            self._contract_ids.append(None)
 
     def _load_from_cache_dir(self, cache_dir):
         """Load days from pre-cached .npz files in a directory."""
@@ -158,6 +170,11 @@ class MultiDayEnv(gym.Env):
                     )
                     continue
                 self._precomputed_days.append((obs, mid, spread))
+                # Extract instrument_id if present
+                if "instrument_id" in data:
+                    self._contract_ids.append(int(data["instrument_id"][0]))
+                else:
+                    self._contract_ids.append(None)
             except Exception as e:
                 warnings.warn(f"Skipping {npz_path}: {e}")
 
@@ -206,6 +223,21 @@ class MultiDayEnv(gym.Env):
             )
         obs_out, info = self._inner_env.reset()
         info["day_index"] = file_idx
+
+        # Contract boundary tracking
+        current_contract_id = self._contract_ids[file_idx]
+        info["instrument_id"] = current_contract_id
+
+        # Detect contract roll: both must be non-None and different
+        if (self._prev_contract_id is not None and
+                current_contract_id is not None and
+                self._prev_contract_id != current_contract_id):
+            info["contract_roll"] = True
+        else:
+            info["contract_roll"] = False
+
+        self._prev_contract_id = current_contract_id
+
         return obs_out, info
 
     def step(self, action):

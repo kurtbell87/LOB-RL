@@ -99,3 +99,21 @@ def run_episode(env, max_steps=5000):
         obs, reward, terminated, truncated, info = env.step(1)
         steps += 1
     return steps
+
+
+def create_synthetic_cache_dir(tmpdir, n_days=3, n_rows=50):
+    """Create a cache directory with synthetic .npz files.
+
+    Each day gets a unique mid_start offset (100 + i*10) so days are
+    distinguishable. Returns (cache_dir, dates).
+    """
+    cache_dir = os.path.join(tmpdir, "cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    dates = [f"2025-01-{i + 10:02d}" for i in range(n_days)]
+    for i, date in enumerate(dates):
+        obs, mid, spread = make_realistic_obs(n_rows, mid_start=100.0 + i * 10)
+        np.savez(os.path.join(cache_dir, f"{date}.npz"),
+                 obs=obs, mid=mid, spread=spread)
+
+    return cache_dir, dates

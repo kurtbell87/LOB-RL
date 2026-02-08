@@ -26,7 +26,7 @@ import lob_rl_core
 from lob_rl.multi_day_env import MultiDayEnv
 from lob_rl.precomputed_env import PrecomputedEnv
 
-from conftest import FIXTURE_DIR, DAY_FILES, run_episode, make_realistic_obs
+from conftest import FIXTURE_DIR, DAY_FILES, run_episode, make_realistic_obs, create_synthetic_cache_dir
 
 
 def _create_cache_dir(tmpdir, day_files, dates=None):
@@ -47,20 +47,6 @@ def _create_cache_dir(tmpdir, day_files, dates=None):
     return cache_dir, dates
 
 
-def _create_synthetic_cache_dir(tmpdir, n_days=3, n_rows=50):
-    """Create a cache directory with synthetic .npz files."""
-    cache_dir = os.path.join(tmpdir, "cache")
-    os.makedirs(cache_dir, exist_ok=True)
-
-    dates = [f"2025-01-{i + 10:02d}" for i in range(n_days)]
-    for i, date in enumerate(dates):
-        obs, mid, spread = make_realistic_obs(n_rows, mid_start=100.0 + i * 10)
-        np.savez(os.path.join(cache_dir, f"{date}.npz"),
-                 obs=obs, mid=mid, spread=spread)
-
-    return cache_dir, dates
-
-
 # ===========================================================================
 # Test 1: Mutual exclusivity — exactly one of file_paths or cache_dir
 # ===========================================================================
@@ -72,7 +58,7 @@ class TestMutualExclusivity:
     def test_both_raises_value_error(self):
         """Providing both file_paths and cache_dir should raise ValueError."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir)
             with pytest.raises(ValueError):
                 MultiDayEnv(file_paths=DAY_FILES[:1], cache_dir=cache_dir)
 
@@ -90,7 +76,7 @@ class TestMutualExclusivity:
     def test_cache_dir_only_works(self):
         """Providing only cache_dir should work."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir)
             env = MultiDayEnv(cache_dir=cache_dir, shuffle=False)
             obs, info = env.reset()
             assert obs.shape == (54,)
@@ -109,7 +95,7 @@ class TestCacheDirSorting:
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create files with dates that sort differently than insertion order
             dates = ["2025-01-15", "2025-01-10", "2025-01-12"]
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_days=3)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_days=3)
             # Rename to use specific dates
             existing_files = sorted(os.listdir(cache_dir))
             for old_name, new_date in zip(existing_files, dates):
@@ -143,28 +129,28 @@ class TestCacheDirEnv:
     def test_observation_space_shape(self):
         """observation_space should be (54,)."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir)
             env = MultiDayEnv(cache_dir=cache_dir, shuffle=False)
             assert env.observation_space.shape == (54,)
 
     def test_action_space_n_is_3(self):
         """action_space should be Discrete(3)."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir)
             env = MultiDayEnv(cache_dir=cache_dir, shuffle=False)
             assert env.action_space.n == 3
 
     def test_is_gymnasium_env(self):
         """Instance should be a gymnasium.Env."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir)
             env = MultiDayEnv(cache_dir=cache_dir, shuffle=False)
             assert isinstance(env, gym.Env)
 
     def test_reset_returns_correct_tuple(self):
         """reset() should return (obs, info)."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir)
             env = MultiDayEnv(cache_dir=cache_dir, shuffle=False)
             result = env.reset()
             assert isinstance(result, tuple)
@@ -176,7 +162,7 @@ class TestCacheDirEnv:
     def test_step_returns_correct_tuple(self):
         """step() should return (obs, reward, terminated, truncated, info)."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir)
             env = MultiDayEnv(cache_dir=cache_dir, shuffle=False)
             env.reset()
             result = env.step(1)
@@ -186,7 +172,7 @@ class TestCacheDirEnv:
     def test_full_episode_runs(self):
         """A full episode should complete without errors."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir)
             env = MultiDayEnv(cache_dir=cache_dir, shuffle=False)
             env.reset()
             steps = run_episode(env)
@@ -196,7 +182,7 @@ class TestCacheDirEnv:
         """gymnasium check_env should pass."""
         from gymnasium.utils.env_checker import check_env
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=30)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=30)
             env = MultiDayEnv(cache_dir=cache_dir, shuffle=False)
             check_env(env, skip_render_check=True)
 
@@ -326,7 +312,7 @@ class TestCacheDirShuffle:
     def test_shuffle_with_seed_deterministic(self):
         """Same seed should produce same day ordering."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_days=5, n_rows=30)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_days=5, n_rows=30)
 
             def collect_indices(seed):
                 env = MultiDayEnv(cache_dir=cache_dir, shuffle=True, seed=seed)
@@ -344,7 +330,7 @@ class TestCacheDirShuffle:
     def test_sequential_visits_all_days(self):
         """Sequential mode should visit all days in order."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_days=3, n_rows=30)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_days=3, n_rows=30)
             env = MultiDayEnv(cache_dir=cache_dir, shuffle=False)
 
             day_indices = []
@@ -369,7 +355,7 @@ class TestCacheDirForwardsParams:
     def test_forwards_reward_mode(self):
         """reward_mode should be forwarded to inner env."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir)
             env = MultiDayEnv(
                 cache_dir=cache_dir, shuffle=False,
                 reward_mode="pnl_delta_penalized", lambda_=0.5,
@@ -381,7 +367,7 @@ class TestCacheDirForwardsParams:
     def test_forwards_execution_cost(self):
         """execution_cost should be forwarded to inner env."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir)
             env = MultiDayEnv(
                 cache_dir=cache_dir, shuffle=False, execution_cost=True,
             )
@@ -392,7 +378,7 @@ class TestCacheDirForwardsParams:
     def test_forwards_step_interval(self):
         """step_interval should be forwarded to inner env."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=100)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=100)
 
             env_1 = MultiDayEnv(cache_dir=cache_dir, shuffle=False, step_interval=1)
             env_10 = MultiDayEnv(cache_dir=cache_dir, shuffle=False, step_interval=10)
@@ -411,7 +397,7 @@ class TestCacheDirForwardsParams:
     def test_forwards_participation_bonus(self):
         """participation_bonus should be forwarded to inner env."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir)
             env = MultiDayEnv(
                 cache_dir=cache_dir, shuffle=False, participation_bonus=0.01,
             )
@@ -431,7 +417,7 @@ class TestSessionConfigIgnored:
     def test_session_config_ignored_with_cache_dir(self):
         """Passing session_config with cache_dir should not crash or error."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir)
             # This should not raise — session_config should be silently ignored
             env = MultiDayEnv(
                 cache_dir=cache_dir, shuffle=False,
@@ -494,7 +480,7 @@ class TestDummyVecEnvCompatibility:
         """DummyVecEnv should wrap cache_dir-based MultiDayEnv."""
         from stable_baselines3.common.vec_env import DummyVecEnv
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=30)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=30)
             vec_env = DummyVecEnv([
                 lambda: MultiDayEnv(cache_dir=cache_dir, shuffle=False)
             ])
@@ -505,7 +491,7 @@ class TestDummyVecEnvCompatibility:
         """step() through DummyVecEnv should work."""
         from stable_baselines3.common.vec_env import DummyVecEnv
         with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir, _ = _create_synthetic_cache_dir(tmpdir, n_rows=30)
+            cache_dir, _ = create_synthetic_cache_dir(tmpdir, n_rows=30)
             vec_env = DummyVecEnv([
                 lambda: MultiDayEnv(cache_dir=cache_dir, shuffle=False)
             ])
