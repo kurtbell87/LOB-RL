@@ -128,44 +128,36 @@ class MultiDayEnv(gym.Env):
         """Number of days available."""
         return len(self._npz_paths) if self._lazy else len(self._precomputed_days)
 
-    def _filter_days_for_bar_size(self):
-        """Remove days that produce < 2 bars with the given bar_size."""
+    def _has_enough_bars(self, obs, mid, spread):
+        """Return True if arrays produce >= 2 bars, warn and return False otherwise."""
         from lob_rl.bar_aggregation import aggregate_bars
 
+        bar_features, _, _ = aggregate_bars(obs, mid, spread, self._bar_size)
+        if bar_features.shape[0] >= 2:
+            return True
+        warnings.warn(
+            f"Skipping day with {obs.shape[0]} ticks: "
+            f"only {bar_features.shape[0]} bars with bar_size={self._bar_size}"
+        )
+        return False
+
+    def _filter_days_for_bar_size(self):
+        """Remove days that produce < 2 bars with the given bar_size."""
         if self._lazy:
-            filtered_paths = []
-            filtered_ids = []
+            keep = []
             for i, npz_path in enumerate(self._npz_paths):
                 data = np.load(npz_path)
-                obs = data["obs"]
-                mid = data["mid"]
-                spread = data["spread"]
-                bar_features, _, _ = aggregate_bars(obs, mid, spread, self._bar_size)
-                if bar_features.shape[0] >= 2:
-                    filtered_paths.append(npz_path)
-                    filtered_ids.append(self._contract_ids[i])
-                else:
-                    warnings.warn(
-                        f"Skipping day with {obs.shape[0]} ticks: "
-                        f"only {bar_features.shape[0]} bars with bar_size={self._bar_size}"
-                    )
-            self._npz_paths = filtered_paths
-            self._contract_ids = filtered_ids
+                if self._has_enough_bars(data["obs"], data["mid"], data["spread"]):
+                    keep.append(i)
+            self._npz_paths = [self._npz_paths[i] for i in keep]
+            self._contract_ids = [self._contract_ids[i] for i in keep]
         else:
-            filtered = []
-            filtered_ids = []
+            keep = []
             for i, (obs, mid, spread) in enumerate(self._precomputed_days):
-                bar_features, _, _ = aggregate_bars(obs, mid, spread, self._bar_size)
-                if bar_features.shape[0] >= 2:
-                    filtered.append((obs, mid, spread))
-                    filtered_ids.append(self._contract_ids[i])
-                else:
-                    warnings.warn(
-                        f"Skipping day with {obs.shape[0]} ticks: "
-                        f"only {bar_features.shape[0]} bars with bar_size={self._bar_size}"
-                    )
-            self._precomputed_days = filtered
-            self._contract_ids = filtered_ids
+                if self._has_enough_bars(obs, mid, spread):
+                    keep.append(i)
+            self._precomputed_days = [self._precomputed_days[i] for i in keep]
+            self._contract_ids = [self._contract_ids[i] for i in keep]
 
     def _validate_npz(self, npz_path):
         """Validate and extract metadata from an .npz file.
@@ -188,28 +180,26 @@ class MultiDayEnv(gym.Env):
             warnings.warn(f"Skipping {npz_path}: {e}")
             return False, None
 
-    def _init_lazy_from_cache_dir(self, cache_dir):
-        """Initialize lazy loading from a cache directory."""
-        npz_files = sorted(glob.glob(os.path.join(cache_dir, "*.npz")))
-        if not npz_files:
-            raise ValueError(f"No .npz files found in {cache_dir}")
-
+    def _add_valid_npz_files(self, npz_files):
+        """Validate and append valid .npz files to internal lists."""
         for npz_path in npz_files:
             is_valid, contract_id = self._validate_npz(npz_path)
             if is_valid:
                 self._npz_paths.append(npz_path)
                 self._contract_ids.append(contract_id)
 
+    def _init_lazy_from_cache_dir(self, cache_dir):
+        """Initialize lazy loading from a cache directory."""
+        npz_files = sorted(glob.glob(os.path.join(cache_dir, "*.npz")))
+        if not npz_files:
+            raise ValueError(f"No .npz files found in {cache_dir}")
+        self._add_valid_npz_files(npz_files)
+
     def _init_lazy_from_cache_files(self, cache_files):
         """Initialize lazy loading from an explicit list of .npz paths."""
         if not cache_files:
             raise ValueError("cache_files must be a non-empty list")
-
-        for npz_path in cache_files:
-            is_valid, contract_id = self._validate_npz(npz_path)
-            if is_valid:
-                self._npz_paths.append(npz_path)
-                self._contract_ids.append(contract_id)
+        self._add_valid_npz_files(cache_files)
 
     def _load_from_file_paths(self, file_paths, session_config):
         """Load days from raw .bin files via C++ precompute."""
