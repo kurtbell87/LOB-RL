@@ -31,7 +31,7 @@ runpodctl config --apiKey YOUR_API_KEY
 Go to RunPod console > Storage > Create Network Volume:
 - **Name:** `lob-rl-data`
 - **Size:** 50 GB (18GB cache + room for models/checkpoints)
-- **Region:** Pick the region with A40 availability (US-TX-3 recommended)
+- **Region:** **US-NC-1** (required — `upload-cache.sh` uses the S3-compatible API, and US-NC-1 has the best sub-$1 GPU availability among S3-enabled US regions)
 
 Note the volume ID (e.g., `vol_abc123`).
 
@@ -80,9 +80,9 @@ export DOCKERHUB_USER=yourusername
   --checkpoint-freq 500000
 ```
 
-Default GPU: A40 ($0.35/hr, 48GB VRAM). Override with `--gpu` flag:
+Default GPU: RTX 4090 ($0.59/hr, 24GB — sufficient for PPO/LSTM on 21-dim obs). Override with `GPU_TYPE`:
 ```bash
-./runpod/launch.sh --gpu "NVIDIA A100 80GB PCIe" --recurrent ...
+GPU_TYPE="NVIDIA L40" ./runpod/launch.sh --recurrent ...
 ```
 
 ### Monitor training
@@ -127,13 +127,14 @@ Data never moves again unless you add new cache files.
 
 ## GPU Options
 
-| GPU | $/hr | VRAM | Notes |
-|-----|------|------|-------|
-| **A40** | **$0.35** | 48GB | Best value for this model size |
-| A100 PCIe | $1.19 | 80GB | Overkill for PPO/LSTM on 21-dim obs |
-| H100 SXM | $2.69 | 80GB | Overkill |
+24GB VRAM is sufficient for PPO/LSTM on a 21-dim observation space.
 
-A40 is the right choice. 5M steps LSTM ~6-8hrs = ~$2-3.
+| GPU | $/hr | VRAM | Region | Stock | Notes |
+|-----|------|------|--------|-------|-------|
+| **RTX 4090** | **$0.59** | 24GB | US-NC-1 | Medium | **Default.** Fast clocks, good availability |
+| L40 | $0.99 | 48GB | US-KS-2 | Medium | Fallback if 4090 unavailable (different region — needs separate volume) |
+
+5M steps LSTM takes ~6-8hrs. At $0.59/hr (RTX 4090), that's ~$3.50-4.70. The 4090's faster clocks may reduce wall time vs slower datacenter GPUs.
 
 ## Volume Layout
 

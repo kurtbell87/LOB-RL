@@ -21,3 +21,4 @@ cache/
 runs/
 /lob_rl
 LOB-RL.code-workspace
+secrets/
