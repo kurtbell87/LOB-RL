@@ -1,0 +1,59 @@
+# Data and cache (mounted via network volume, not baked into image)
+data/
+cache/
+*.dbn.zst
+*.npz
+
+# Build artifacts
+build/
+build-release/
+build-debug/
+*.so
+*.dylib
+*.o
+
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+.eggs/
+
+# Tests (not needed in training image)
+tests/
+python/tests/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Docs and specs
+docs/
+*.md
+PRD.md
+CLAUDE.md
+LAST_TOUCH.md
+
+# C++ source (not needed — pure Python training)
+src/
+include/
+CMakeLists.txt
+references/
+
+# TDD tooling
+tdd.sh
+.claude/
+
+# RunPod scripts (used locally, not in container)
+runpod/
+
+# Misc
+*.log
+runs/
