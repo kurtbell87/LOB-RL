@@ -9,19 +9,6 @@
 #include "binary_file_source.h"
 #include "test_helpers.h"
 
-// ===========================================================================
-// Helper: make_msg with flags
-// Extends the existing make_msg helper with an additional flags parameter.
-// ===========================================================================
-
-static Message make_flagged_msg(uint64_t id, Message::Side side,
-                                Message::Action action, double price,
-                                uint32_t qty, uint64_t ts, uint8_t flags) {
-    Message m = make_msg(id, side, action, price, qty, ts);
-    m.flags = flags;
-    return m;
-}
-
 // Databento flag constants (from the spec)
 static constexpr uint8_t F_LAST     = 0x80;
 static constexpr uint8_t F_SNAPSHOT  = 0x20;
@@ -275,19 +262,19 @@ TEST(FixPrecomputeEvents, PrecomputeSkipsMidEventMessages) {
 
     // Pre-market warmup: establish book with bid=999.75, ask=1000.25
     // These use event-terminal flags so they're processed normally during warmup
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.75, 100, pre_start, FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.25, 100, pre_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
     // RTH message 1: mid-event (flags=0x00) — changes BBO but should NOT snapshot
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.00, 50, rth_start + NS_PER_MIN,
                                      FLAGS_MID_EVENT));
 
     // RTH message 2: event-terminal (flags=0x82) — changes BBO, SHOULD snapshot
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.125, 50, rth_start + 2 * NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
@@ -309,9 +296,9 @@ TEST(FixPrecomputeEvents, PrecomputeOnlySnapshotsOnFLast) {
     uint64_t rth_start = DAY_BASE_NS + RTH_OPEN_NS;
 
     // Pre-market warmup
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.75, 100, pre_start, FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.25, 100, pre_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
@@ -319,17 +306,17 @@ TEST(FixPrecomputeEvents, PrecomputeOnlySnapshotsOnFLast) {
     // All at the same nanosecond, mid-event flags until the last one
 
     // Mid-event Trade (would have changed BBO in buggy code)
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Trade,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Trade,
                                      1000.25, 50, rth_start + NS_PER_MIN,
                                      FLAGS_MID_EVENT));
 
     // Mid-event Cancel (removes old ask level)
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Cancel,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Cancel,
                                      1000.25, 50, rth_start + NS_PER_MIN,
                                      FLAGS_MID_EVENT));
 
     // Event-terminal Add (establishes new ask)
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.125, 100, rth_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
@@ -366,15 +353,15 @@ TEST(FixPrecomputeEvents, PrecomputeSkipsSnapshotMessages) {
     uint64_t rth_start = DAY_BASE_NS + RTH_OPEN_NS;
 
     // Pre-market warmup
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.75, 100, pre_start, FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.25, 100, pre_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
     // RTH: snapshot message (flags=0x28 = F_SNAPSHOT | BAD_TS_RECV)
     // Even though this changes BBO and has F_LAST, F_SNAPSHOT should prevent snapshot
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.00, 50, rth_start + NS_PER_MIN,
                                      FLAGS_SNAPSHOT_REC));
 
@@ -396,15 +383,15 @@ TEST(FixPrecomputeEvents, PrecomputeSkipsSnapshotWithFLast) {
     uint64_t rth_start = DAY_BASE_NS + RTH_OPEN_NS;
 
     // Pre-market warmup
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.75, 100, pre_start, FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.25, 100, pre_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
     // RTH: message with both F_LAST and F_SNAPSHOT (0xa8)
     uint8_t flags_last_and_snapshot = F_LAST | F_SNAPSHOT | 0x08;  // 0xa8
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.00, 50, rth_start + NS_PER_MIN,
                                      flags_last_and_snapshot));
 
@@ -430,16 +417,16 @@ TEST(FixPrecomputeEvents, PrecomputeRequiresPositiveSpread) {
     uint64_t rth_start = DAY_BASE_NS + RTH_OPEN_NS;
 
     // Pre-market warmup: establish book
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.75, 100, pre_start, FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.25, 100, pre_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
     // RTH: create crossed book (bid > ask) — spread <= 0
     // This is the defensive filter for the remaining ~0.007% edge cases.
     // Add a bid above the current ask
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.50, 50, rth_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
@@ -462,14 +449,14 @@ TEST(FixPrecomputeEvents, PrecomputeRejectsZeroSpread) {
     uint64_t rth_start = DAY_BASE_NS + RTH_OPEN_NS;
 
     // Pre-market warmup
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.75, 100, pre_start, FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.25, 100, pre_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
     // RTH: bid = ask (locked book), spread = 0
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.25, 50, rth_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
@@ -497,20 +484,20 @@ TEST(FixPrecomputeEvents, PrecomputeAllSpreadsPositive) {
     uint64_t rth_start = DAY_BASE_NS + RTH_OPEN_NS;
 
     // Pre-market warmup: build initial book
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.75, 100, pre_start, FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.25, 100, pre_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
     // RTH: several BBO-changing events, all event-terminal with positive spread
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.00, 50, rth_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.125, 50, rth_start + 2 * NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.0625, 50, rth_start + 3 * NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
@@ -540,17 +527,17 @@ TEST(FixPrecomputeEvents, PrecomputeMidPricesBetweenBidAndAsk) {
     uint64_t rth_start = DAY_BASE_NS + RTH_OPEN_NS;
 
     // Pre-market warmup
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.75, 100, pre_start, FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.25, 100, pre_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
     // RTH: several events
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.00, 50, rth_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.125, 50, rth_start + 2 * NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
@@ -590,17 +577,17 @@ TEST(FixPrecomputeEvents, EndToEndMultiMessageEvent) {
 
     // Pre-market: build full book
     // Bid side: 999.75 (100), 999.50 (100)
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.75, 100, pre_start, FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.50, 100, pre_start + NS_PER_SEC,
                                      FLAGS_EVENT_TERMINAL));
     // Ask side: 1000.25 (100, order_id=3), 1000.50 (100)
     uint64_t resting_ask_id = oid;
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.25, 100, pre_start + 2 * NS_PER_SEC,
                                      FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.50, 100, pre_start + 3 * NS_PER_SEC,
                                      FLAGS_EVENT_TERMINAL));
 
@@ -608,20 +595,20 @@ TEST(FixPrecomputeEvents, EndToEndMultiMessageEvent) {
     // This is a multi-message event:
 
     // Msg A: Trade (mid-event) — should be no-op on book
-    msgs.push_back(make_flagged_msg(resting_ask_id, Message::Side::Ask,
+    msgs.push_back(make_msg(resting_ask_id, Message::Side::Ask,
                                      Message::Action::Trade,
                                      1000.25, 100, rth_start + NS_PER_MIN,
                                      FLAGS_MID_EVENT));
 
     // Msg B: Cancel of the filled order (mid-event) — removes from book
     // During this mid-event state, the book may be temporarily inconsistent
-    msgs.push_back(make_flagged_msg(resting_ask_id, Message::Side::Ask,
+    msgs.push_back(make_msg(resting_ask_id, Message::Side::Ask,
                                      Message::Action::Cancel,
                                      1000.25, 100, rth_start + NS_PER_MIN,
                                      FLAGS_MID_EVENT));
 
     // Msg C: New order added (event-terminal) — book is now consistent
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.375, 50, rth_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
@@ -664,40 +651,40 @@ TEST(FixPrecomputeEvents, EndToEndSnapshotCountMatchesEventTerminals) {
     uint64_t rth_start = DAY_BASE_NS + RTH_OPEN_NS;
 
     // Pre-market warmup
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.75, 100, pre_start, FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.25, 100, pre_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
     // RTH: 3 event-terminal messages that change BBO (should snapshot)
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.00, 50, rth_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.125, 50, rth_start + 2 * NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.0625, 50, rth_start + 3 * NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
     // 2 mid-event messages that change BBO (should NOT snapshot)
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.09375, 50, rth_start + 4 * NS_PER_MIN,
                                      FLAGS_MID_EVENT));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.09, 50, rth_start + 4 * NS_PER_MIN,
                                      FLAGS_MID_EVENT));
 
     // 1 snapshot message (should NOT snapshot)
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.08, 50, rth_start + 5 * NS_PER_MIN,
                                      FLAGS_SNAPSHOT_REC));
 
     // 1 more event-terminal that DOES change BBO (should snapshot = 4th)
     // Mid-event msgs are orphaned (no F_LAST at same ts), so book state is:
     // best_bid=1000.0625, best_ask=1000.125. New ask must be < 1000.125 to change BBO.
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.10, 50, rth_start + 6 * NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
@@ -721,9 +708,9 @@ TEST(FixPrecomputeEvents, EndToEndNoNegativeSpreads) {
     uint64_t rth_start = DAY_BASE_NS + RTH_OPEN_NS;
 
     // Pre-market: establish book
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.75, 100, pre_start, FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.25, 100, pre_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
@@ -736,7 +723,7 @@ TEST(FixPrecomputeEvents, EndToEndNoNegativeSpreads) {
         if (event == 0) {
             // Already have initial ask from warmup
         } else {
-            msgs.push_back(make_flagged_msg(ask_order_id, Message::Side::Ask,
+            msgs.push_back(make_msg(ask_order_id, Message::Side::Ask,
                                              Message::Action::Add,
                                              1000.25 + event * 0.125, 100,
                                              event_ts - NS_PER_SEC,
@@ -744,20 +731,20 @@ TEST(FixPrecomputeEvents, EndToEndNoNegativeSpreads) {
         }
 
         // Trade (mid-event, no-op on book)
-        msgs.push_back(make_flagged_msg(event == 0 ? 2u : ask_order_id,
+        msgs.push_back(make_msg(event == 0 ? 2u : ask_order_id,
                                          Message::Side::Ask, Message::Action::Trade,
                                          1000.25 + event * 0.125, 50,
                                          event_ts, FLAGS_MID_EVENT));
 
         // Cancel (mid-event, removes from book)
-        msgs.push_back(make_flagged_msg(event == 0 ? 2u : ask_order_id,
+        msgs.push_back(make_msg(event == 0 ? 2u : ask_order_id,
                                          Message::Side::Ask, Message::Action::Cancel,
                                          1000.25 + event * 0.125, 50,
                                          event_ts, FLAGS_MID_EVENT));
 
         // Add replacement (event-terminal)
         uint64_t new_ask_id = oid++;
-        msgs.push_back(make_flagged_msg(new_ask_id, Message::Side::Ask,
+        msgs.push_back(make_msg(new_ask_id, Message::Side::Ask,
                                          Message::Action::Add,
                                          1000.25 + (event + 1) * 0.125, 100,
                                          event_ts, FLAGS_EVENT_TERMINAL));
@@ -790,14 +777,14 @@ TEST(FixPrecomputeEvents, WarmupProcessesAllMessagesFlagsIgnored) {
     uint64_t rth_start = DAY_BASE_NS + RTH_OPEN_NS;
 
     // Pre-market: some with snapshot flags, some with mid-event flags
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.75, 100, pre_start, FLAGS_SNAPSHOT_REC));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.25, 100, pre_start + NS_PER_MIN,
                                      FLAGS_MID_EVENT));
 
     // RTH: BBO change that should produce a snapshot
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.00, 50, rth_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
@@ -830,14 +817,14 @@ TEST(FixPrecomputeEvents, PrecomputeAcceptsFLastWithoutPublisherSpecific) {
     uint64_t rth_start = DAY_BASE_NS + RTH_OPEN_NS;
 
     // Pre-market warmup
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      999.75, 100, pre_start, FLAGS_EVENT_TERMINAL));
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Ask, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Ask, Message::Action::Add,
                                      1000.25, 100, pre_start + NS_PER_MIN,
                                      FLAGS_EVENT_TERMINAL));
 
     // RTH: message with flags=0x80 (just F_LAST)
-    msgs.push_back(make_flagged_msg(oid++, Message::Side::Bid, Message::Action::Add,
+    msgs.push_back(make_msg(oid++, Message::Side::Bid, Message::Action::Add,
                                      1000.00, 50, rth_start + NS_PER_MIN,
                                      F_LAST));  // 0x80 only
 
