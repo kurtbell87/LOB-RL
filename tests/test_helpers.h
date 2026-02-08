@@ -137,6 +137,17 @@ inline std::vector<Message> make_stable_bbo_messages(
     return msgs;
 }
 
+// Databento flag constants (from the spec).
+// Used by test_dbn_message_map.cpp and test_fix_precompute_events.cpp.
+static constexpr uint8_t F_LAST     = 0x80;
+static constexpr uint8_t F_SNAPSHOT  = 0x20;
+static constexpr uint8_t F_PUB_SPEC = 0x02;  // PUBLISHER_SPECIFIC
+
+// Common real-world flag combos
+static constexpr uint8_t FLAGS_EVENT_TERMINAL = F_LAST | F_PUB_SPEC;  // 0x82
+static constexpr uint8_t FLAGS_MID_EVENT     = 0x00;
+static constexpr uint8_t FLAGS_SNAPSHOT_REC  = F_SNAPSHOT | 0x08;     // 0x28
+
 // Path to test fixtures directory (relative to the source file that includes this).
 // Works from any test .cpp file in tests/.
 inline std::string fixture_path(const std::string& filename) {

@@ -5,6 +5,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from lob_rl.bar_aggregation import aggregate_bars
+from lob_rl._reward import compute_forced_flatten, compute_step_reward
 
 # Observation layout: 13 intra-bar + 7 cross-bar temporal + 1 position = 21
 _NUM_BAR_FEATURES = 13
@@ -142,33 +143,18 @@ class BarLevelEnv(gym.Env):
         info = {}
 
         if terminated:
-            # Forced flatten: reward = -bar_spread_close/2 * |prev_position| only
-            # No bar PnL, no execution cost, no participation bonus
-            close_cost = self._bar_spread_close[self._bar_index] / 2.0 * abs(self._prev_position)
-            reward = -close_cost
+            reward, info = compute_forced_flatten(
+                self._bar_spread_close[self._bar_index],
+                self._prev_position, action)
             self._position = 0.0
-            info["forced_flatten"] = True
-            info["forced_flatten_cost"] = float(close_cost)
-            info["intended_action"] = action
         else:
-            # Reward: position * (bar_mid_close[t] - bar_mid_close[t-1])
-            reward = self._position * (
-                self._bar_mid_close[self._bar_index] -
-                self._bar_mid_close[self._bar_index - 1]
-            )
-
-            if self._reward_mode == "pnl_delta_penalized":
-                reward -= self._lambda * abs(self._position)
-
-            # Execution cost: spread/2 * |delta_pos|
-            if self._execution_cost:
-                spread = self._bar_spread_close[self._bar_index - 1]
-                if np.isfinite(spread):
-                    reward -= spread / 2.0 * abs(self._position - self._prev_position)
-
-            # Participation bonus
-            if self._participation_bonus != 0.0:
-                reward += self._participation_bonus * abs(self._position)
+            reward = compute_step_reward(
+                self._position, self._prev_position,
+                self._bar_mid_close[self._bar_index],
+                self._bar_mid_close[self._bar_index - 1],
+                self._bar_spread_close[self._bar_index - 1],
+                self._reward_mode, self._lambda,
+                self._execution_cost, self._participation_bonus)
 
         self._prev_position = self._position
 
