@@ -104,28 +104,28 @@ TEST(FeatureBuilder, EmptyBookSpreadZero) {
     Book book;
     FeatureBuilder fb;
     auto obs = fb.build(book, 0.0f, 0.5f);
-    EXPECT_FLOAT_EQ(obs[40], 0.0f);
+    EXPECT_FLOAT_EQ(obs[FeatureBuilder::SPREAD], 0.0f);
 }
 
 TEST(FeatureBuilder, EmptyBookImbalanceZero) {
     Book book;
     FeatureBuilder fb;
     auto obs = fb.build(book, 0.0f, 0.5f);
-    EXPECT_FLOAT_EQ(obs[41], 0.0f);
+    EXPECT_FLOAT_EQ(obs[FeatureBuilder::IMBALANCE], 0.0f);
 }
 
 TEST(FeatureBuilder, EmptyBookTimeRemainingPreserved) {
     Book book;
     FeatureBuilder fb;
     auto obs = fb.build(book, 0.0f, 0.75f);
-    EXPECT_FLOAT_EQ(obs[42], 0.75f);
+    EXPECT_FLOAT_EQ(obs[FeatureBuilder::TIME_LEFT], 0.75f);
 }
 
 TEST(FeatureBuilder, EmptyBookPositionPreserved) {
     Book book;
     FeatureBuilder fb;
     auto obs = fb.build(book, -1.0f, 0.5f);
-    EXPECT_FLOAT_EQ(obs[43], -1.0f);
+    EXPECT_FLOAT_EQ(obs[FeatureBuilder::POSITION], -1.0f);
 }
 
 // ===========================================================================
@@ -374,14 +374,14 @@ TEST(FeatureBuilder, SpreadNormalizedByMid) {
 
     // spread = 2.0, mid = 101.0
     float expected = static_cast<float>(2.0 / 101.0);
-    EXPECT_NEAR(obs[40], expected, 1e-5f);
+    EXPECT_NEAR(obs[FeatureBuilder::SPREAD], expected, 1e-5f);
 }
 
 TEST(FeatureBuilder, SpreadIsNonNegative) {
     Book book = make_symmetric_book();
     FeatureBuilder fb;
     auto obs = fb.build(book, 0.0f, 0.5f);
-    EXPECT_GE(obs[40], 0.0f);
+    EXPECT_GE(obs[FeatureBuilder::SPREAD], 0.0f);
 }
 
 TEST(FeatureBuilder, SpreadTightBook) {
@@ -394,7 +394,7 @@ TEST(FeatureBuilder, SpreadTightBook) {
     auto obs = fb.build(book, 0.0f, 0.5f);
 
     float expected = static_cast<float>(0.25 / 100.125);
-    EXPECT_NEAR(obs[40], expected, 1e-5f);
+    EXPECT_NEAR(obs[FeatureBuilder::SPREAD], expected, 1e-5f);
 }
 
 // ===========================================================================
@@ -410,7 +410,7 @@ TEST(FeatureBuilder, ImbalanceEqualQtysIsZero) {
     FeatureBuilder fb;
     auto obs = fb.build(book, 0.0f, 0.5f);
 
-    EXPECT_NEAR(obs[41], 0.0f, 1e-5f)
+    EXPECT_NEAR(obs[FeatureBuilder::IMBALANCE], 0.0f, 1e-5f)
         << "Equal bid/ask top qty should give imbalance = 0";
 }
 
@@ -423,7 +423,7 @@ TEST(FeatureBuilder, ImbalanceBidHeavyIsPositive) {
     auto obs = fb.build(book, 0.0f, 0.5f);
 
     // (80 - 20) / (80 + 20) = 60/100 = 0.6
-    EXPECT_NEAR(obs[41], 0.6f, 1e-5f);
+    EXPECT_NEAR(obs[FeatureBuilder::IMBALANCE], 0.6f, 1e-5f);
 }
 
 TEST(FeatureBuilder, ImbalanceAskHeavyIsNegative) {
@@ -435,7 +435,7 @@ TEST(FeatureBuilder, ImbalanceAskHeavyIsNegative) {
     auto obs = fb.build(book, 0.0f, 0.5f);
 
     // (20 - 80) / (20 + 80) = -60/100 = -0.6
-    EXPECT_NEAR(obs[41], -0.6f, 1e-5f);
+    EXPECT_NEAR(obs[FeatureBuilder::IMBALANCE], -0.6f, 1e-5f);
 }
 
 TEST(FeatureBuilder, ImbalanceAllBidIsOne) {
@@ -454,7 +454,7 @@ TEST(FeatureBuilder, ImbalanceAllBidIsOne) {
     // But spec says if mid is NaN, return 0.0 for imbalance.
     // This tests the contract — implementation decides the edge case handling.
     // We expect 0.0 per the spec (empty/broken book = 0).
-    EXPECT_TRUE(obs[41] == 0.0f || obs[41] == 1.0f)
+    EXPECT_TRUE(obs[FeatureBuilder::IMBALANCE] == 0.0f || obs[FeatureBuilder::IMBALANCE] == 1.0f)
         << "With only bids, imbalance should be 0.0 (edge case) or 1.0 (formula)";
 }
 
@@ -463,8 +463,8 @@ TEST(FeatureBuilder, ImbalanceInRangeNeg1To1) {
     FeatureBuilder fb;
     auto obs = fb.build(book, 0.0f, 0.5f);
 
-    EXPECT_GE(obs[41], -1.0f);
-    EXPECT_LE(obs[41], 1.0f);
+    EXPECT_GE(obs[FeatureBuilder::IMBALANCE], -1.0f);
+    EXPECT_LE(obs[FeatureBuilder::IMBALANCE], 1.0f);
 }
 
 // ===========================================================================
@@ -476,13 +476,13 @@ TEST(FeatureBuilder, TimeRemainingPassedThrough) {
     FeatureBuilder fb;
 
     auto obs1 = fb.build(book, 0.0f, 1.0f);
-    EXPECT_FLOAT_EQ(obs1[42], 1.0f) << "time_remaining=1.0 at open";
+    EXPECT_FLOAT_EQ(obs1[FeatureBuilder::TIME_LEFT], 1.0f) << "time_remaining=1.0 at open";
 
     auto obs2 = fb.build(book, 0.0f, 0.0f);
-    EXPECT_FLOAT_EQ(obs2[42], 0.0f) << "time_remaining=0.0 at close";
+    EXPECT_FLOAT_EQ(obs2[FeatureBuilder::TIME_LEFT], 0.0f) << "time_remaining=0.0 at close";
 
     auto obs3 = fb.build(book, 0.0f, 0.5f);
-    EXPECT_FLOAT_EQ(obs3[42], 0.5f) << "time_remaining=0.5 mid-session";
+    EXPECT_FLOAT_EQ(obs3[FeatureBuilder::TIME_LEFT], 0.5f) << "time_remaining=0.5 mid-session";
 }
 
 TEST(FeatureBuilder, TimeRemainingNoSessionDefault) {
@@ -491,7 +491,7 @@ TEST(FeatureBuilder, TimeRemainingNoSessionDefault) {
     Book book = make_symmetric_book();
     FeatureBuilder fb;
     auto obs = fb.build(book, 0.0f, 0.5f);
-    EXPECT_FLOAT_EQ(obs[42], 0.5f);
+    EXPECT_FLOAT_EQ(obs[FeatureBuilder::TIME_LEFT], 0.5f);
 }
 
 // ===========================================================================
@@ -502,21 +502,21 @@ TEST(FeatureBuilder, PositionPassedThroughShort) {
     Book book = make_symmetric_book();
     FeatureBuilder fb;
     auto obs = fb.build(book, -1.0f, 0.5f);
-    EXPECT_FLOAT_EQ(obs[43], -1.0f);
+    EXPECT_FLOAT_EQ(obs[FeatureBuilder::POSITION], -1.0f);
 }
 
 TEST(FeatureBuilder, PositionPassedThroughFlat) {
     Book book = make_symmetric_book();
     FeatureBuilder fb;
     auto obs = fb.build(book, 0.0f, 0.5f);
-    EXPECT_FLOAT_EQ(obs[43], 0.0f);
+    EXPECT_FLOAT_EQ(obs[FeatureBuilder::POSITION], 0.0f);
 }
 
 TEST(FeatureBuilder, PositionPassedThroughLong) {
     Book book = make_symmetric_book();
     FeatureBuilder fb;
     auto obs = fb.build(book, 1.0f, 0.5f);
-    EXPECT_FLOAT_EQ(obs[43], 1.0f);
+    EXPECT_FLOAT_EQ(obs[FeatureBuilder::POSITION], 1.0f);
 }
 
 // ===========================================================================
@@ -678,16 +678,16 @@ TEST(FeatureBuilder, ExactLayoutWith2LevelBook) {
     EXPECT_NEAR(obs[31], 40.0f / max_size, 1e-5f);
     for (int i = 32; i < 40; ++i) EXPECT_FLOAT_EQ(obs[i], 0.0f);
 
-    // Spread [40]
-    EXPECT_NEAR(obs[40], static_cast<float>(spread / mid), 1e-5f);
+    // Spread
+    EXPECT_NEAR(obs[FeatureBuilder::SPREAD], static_cast<float>(spread / mid), 1e-5f);
 
-    // Imbalance [41]: (bid_qty_top - ask_qty_top) / (bid_qty_top + ask_qty_top)
+    // Imbalance: (bid_qty_top - ask_qty_top) / (bid_qty_top + ask_qty_top)
     // = (10 - 20) / (10 + 20) = -10/30 = -0.3333...
-    EXPECT_NEAR(obs[41], -10.0f / 30.0f, 1e-5f);
+    EXPECT_NEAR(obs[FeatureBuilder::IMBALANCE], -10.0f / 30.0f, 1e-5f);
 
-    // Time remaining [42]
-    EXPECT_FLOAT_EQ(obs[42], 0.3f);
+    // Time remaining
+    EXPECT_FLOAT_EQ(obs[FeatureBuilder::TIME_LEFT], 0.3f);
 
-    // Position [43]
-    EXPECT_FLOAT_EQ(obs[43], 1.0f);
+    // Position
+    EXPECT_FLOAT_EQ(obs[FeatureBuilder::POSITION], 1.0f);
 }
