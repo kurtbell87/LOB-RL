@@ -2,13 +2,14 @@
 
 import numpy as np
 
-# C++ observation layout indices (must match precomputed_env.py)
-_BID_PRICES = slice(0, 10)
-_BID_SIZES = slice(10, 20)
-_ASK_PRICES = slice(20, 30)
-_ASK_SIZES = slice(30, 40)
-_IMBALANCE = 41
-_TIME_LEFT = 42
+from lob_rl._obs_layout import (
+    BID_PRICES as _BID_PRICES,
+    BID_SIZES as _BID_SIZES,
+    ASK_PRICES as _ASK_PRICES,
+    ASK_SIZES as _ASK_SIZES,
+    IMBALANCE as _IMBALANCE,
+    TIME_LEFT as _TIME_LEFT,
+)
 
 # Number of intra-bar features
 NUM_BAR_FEATURES = 13

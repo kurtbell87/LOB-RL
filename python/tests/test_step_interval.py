@@ -31,16 +31,13 @@ from lob_rl.precomputed_env import PrecomputedEnv
 from conftest import (
     PRECOMPUTE_EPISODE_FILE,
     DAY_FILES,
+    TRAIN_SCRIPT,
     make_obs as _make_obs,
     make_mid as _make_mid,
     make_spread as _make_spread,
     make_realistic_obs,
     run_episode,
-)
-
-# Path to the train.py script
-TRAIN_SCRIPT = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "train.py")
+    load_train_source,
 )
 
 
@@ -738,20 +735,16 @@ class TestMultiDayEnvStepInterval:
 class TestTrainScriptCLI:
     """train.py should have --step-interval CLI flag."""
 
-    def _load_train_source(self):
-        with open(TRAIN_SCRIPT) as f:
-            return f.read()
-
     def test_step_interval_flag_in_source(self):
         """train.py should contain --step-interval argument definition."""
-        source = self._load_train_source()
+        source = load_train_source()
         assert "--step-interval" in source, (
             "train.py should define --step-interval CLI flag"
         )
 
     def test_step_interval_default_is_1(self):
         """--step-interval should default to 1."""
-        source = self._load_train_source()
+        source = load_train_source()
         # Should contain default=1 near --step-interval
         assert "default=1" in source or "default = 1" in source, (
             "--step-interval should have default=1"
@@ -759,7 +752,7 @@ class TestTrainScriptCLI:
 
     def test_step_interval_type_is_int(self):
         """--step-interval should have type=int in the same add_argument call."""
-        source = self._load_train_source()
+        source = load_train_source()
         # Find the add_argument line for --step-interval and verify type=int
         import re
         pattern = r"add_argument\(['\"]--step-interval['\"].*?type\s*=\s*int"

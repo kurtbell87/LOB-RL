@@ -1,26 +1,32 @@
-## Current State (updated 2026-02-07)
+## Current State (updated 2026-02-08)
 
-- **Build:** `build-release/` is current. 403 C++ tests pass (`./lob_tests`). 1091 Python tests pass. **1494 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
+- **Build:** `build-release/` is current. 418 C++ tests pass (`./lob_tests`). 1304 Python tests pass. **1722 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
-- **Dependencies:** SB3, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent) all installed.
-- **Lazy loading DONE:** `MultiDayEnv` lazy-loads `.npz` files on `reset()` instead of holding all days in memory. New `cache_files=` parameter for explicit file lists. `train.py` passes train-split paths via `cache_files` instead of full `cache_dir`. Memory: ~300 MB instead of ~100 GB for 200+ day training. PR #13 merged.
-- **Contract boundary guard DONE:** Forced flatten on terminal step (position → 0, no PnL, spread/2 close cost). `instrument_id` stored in `.npz` cache. `MultiDayEnv` tracks contract boundaries, reports `contract_roll` in info. PR #12 merged.
-- **Native DBN source DONE:** `DbnFileSource` reads `.dbn.zst` directly via databento-cpp. `map_mbo_to_message()` shared mapper. `instrument_id` parameter on `precompute()` and `LOBEnv`. `BinaryFileSource` and `convert_dbn.py` deleted. PR #11 merged.
-- **Bar-level env DONE:** `BarLevelEnv` aggregates ticks into N-tick bars (21-dim obs). `aggregate_bars()`, `MultiDayEnv(bar_size=500)`, `train.py --bar-size 500 --policy-arch 256,256 --activation relu`. PR #10 merged.
-- **Precompute cache DONE:** `scripts/precompute_cache.py` saves precomputed arrays to `.npz` files. Requires `--instrument-id` or `--roll-calendar`. `PrecomputedEnv.from_cache()`, `MultiDayEnv(cache_dir=...)`, `train.py --cache-dir`. PR #9 merged.
-- **Step interval DONE:** `--step-interval N` subsamples precomputed data. PR #8 merged.
-- **Fix precompute events DONE:** Flag-aware snapshotting in precompute(). PR #7 merged.
-- **Temporal features DONE:** Obs expanded 44→54 dims. PR #6 merged.
-- **Participation bonus DONE:** `--participation-bonus 0.01`. PR #5 merged.
-- **Training pipeline v2 DONE:** VecNormalize, SubprocVecEnv, ent_coef. PR #4 merged.
-- **Execution cost DONE:** `--execution-cost`. PR #3 merged.
+- **Dependencies:** SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent) all installed.
+- **Shuffle split DONE:** `--shuffle-split` and `--seed 42` on `train.py`. Reproducible random train/val/test splits. Episodes are independent days. PR #14 merged.
+- **Frame stacking DONE:** `--frame-stack N` on `train.py`. `VecFrameStack` inserted between SubprocVecEnv and VecNormalize. Eval wraps DummyVecEnv with VecFrameStack before VecNormalize. bar_size=1000 + frame_stack=4 → 84-dim obs. PR #15 merged.
+- **RecurrentPPO DONE:** `--recurrent` on `train.py`. Uses `RecurrentPPO('MlpLstmPolicy')` from sb3-contrib. LSTM state tracking in eval. Mutually exclusive with `--frame-stack > 1`. PR #16 merged.
+- **Shared reward module:** `python/lob_rl/_reward.py` — extracted `compute_forced_flatten()` and `compute_step_reward()` from precomputed_env.py and bar_level_env.py.
+- **Lazy loading DONE:** `MultiDayEnv` lazy-loads `.npz` files on `reset()`. `cache_files=` for explicit file lists. ~300 MB instead of ~100 GB. PR #13 merged.
+- **Contract boundary guard DONE:** Forced flatten on terminal step. `instrument_id` in cache. PR #12 merged.
+- **Native DBN source DONE:** `DbnFileSource` reads `.dbn.zst` via databento-cpp. PR #11 merged.
+- **Bar-level env DONE:** `BarLevelEnv` 21-dim obs. PR #10 merged.
+- **Precompute cache DONE:** `precompute_cache.py` → `.npz`. PR #9 merged.
+- **Step interval DONE:** `--step-interval N`. PR #8 merged.
+- **Fix precompute events DONE:** PR #7 merged.
+- **Temporal features DONE:** 54-dim obs. PR #6 merged.
+- **Participation bonus DONE:** PR #5 merged.
+- **Training pipeline v2 DONE:** VecNormalize, SubprocVecEnv. PR #4 merged.
+- **Execution cost DONE:** PR #3 merged.
 - **Walk-forward/lookahead audited CLEAN.** Spread verified CLEAN.
-- **Hyperparameter sweep DONE:** 7 configs tested. Best: `bar_size=1000, ent_coef=0.05, lr=1e-3` → **return 139.5**, entropy -0.48 (stable), explained_var 0.98. 21/21 days positive (but only 1 true OOS day).
+- **Hyperparameter sweep DONE:** Best: `bar_size=1000, ent_coef=0.05, lr=1e-3` → return 139.5, entropy -0.48. But OOS was negative (-53.8 val / -36.6 test on chronological split).
 - **Data extracted:** 312 `.mbo.dbn.zst` files in `data/mes/` (57GB, Jan–Dec 2022). Roll calendar at `data/mes/roll_calendar.json`.
-- **Old cache stale:** `cache/mes/` has 21 days from old `.bin` data. **Must rebuild** with `--roll-calendar` on new data. New cache will include `instrument_id` per `.npz`.
-- **Next task:** Precompute cache with roll calendar, retrain on ~250 days, validate OOS. See `LAST_TOUCH.md`.
+- **Cache ready:** `cache/mes/` has 249 `.npz` files (all trading days from 312 raw files). Built with `--roll-calendar`. No rebuild needed.
+- **Local experiments done:** MLP shuffle-split → val -51.5 / test -62.5. Frame-stack → val -48.4 / test -50.2. Both negative OOS. LSTM killed at 15% (too slow locally at 422 fps).
+- **Next task:** Set up RunPod for GPU training (LSTM + longer runs). Investigate why agent doesn't generalize. See `LAST_TOUCH.md`.
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
-- **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001`
+- **Precompute hint:** If cache needs rebuilding: `precompute_cache.py --roll-calendar ... --workers 8` (script supports `--workers N` via `ProcessPoolExecutor`).
+- **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42`
 
 ## Don't
 

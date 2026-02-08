@@ -18,16 +18,7 @@ import re
 
 import pytest
 
-# Path to the train.py script
-TRAIN_SCRIPT = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "train.py")
-)
-
-
-def _load_train_source():
-    """Read train.py source as a string."""
-    with open(TRAIN_SCRIPT) as f:
-        return f.read()
+from conftest import load_train_source
 
 
 # ===========================================================================
@@ -40,7 +31,7 @@ class TestFrameStackFlag:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_frame_stack_flag_exists(self):
         """--frame-stack flag should be defined in train.py."""
@@ -71,7 +62,7 @@ class TestVecFrameStackImport:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_vec_frame_stack_imported(self):
         """train.py should import VecFrameStack."""
@@ -114,7 +105,7 @@ class TestTrainingEnvChain:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_vec_frame_stack_conditional_on_frame_stack_gt_1(self):
         """VecFrameStack wrapping should be conditional on frame_stack > 1."""
@@ -197,7 +188,7 @@ class TestDefaultNoFrameStack:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_frame_stack_1_skips_wrapping(self):
         """The condition 'if args.frame_stack > 1' ensures frame_stack=1 skips wrapping."""
@@ -240,7 +231,7 @@ class TestEvalFrameStackParam:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_evaluate_sortino_has_frame_stack_param(self):
         """evaluate_sortino() signature should include frame_stack."""
@@ -269,7 +260,7 @@ class TestEvalVecFrameStack:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
         # Extract evaluate_sortino function body
         pattern = r"def\s+evaluate_sortino\s*\(.*?\n(?=def\s|\Z)"
         match = re.search(pattern, self.source, re.DOTALL)
@@ -331,7 +322,7 @@ class TestEvalCallsForwardFrameStack:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
         # Extract main() function body
         main_pattern = r"def\s+main\s*\(\s*\).*?(?=\ndef\s|\Z)"
         main_match = re.search(main_pattern, self.source, re.DOTALL)
@@ -428,7 +419,7 @@ class TestExistingFlagsPreserved:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_cache_dir_flag_preserved(self):
         assert "--cache-dir" in self.source
@@ -462,7 +453,7 @@ class TestAcceptanceCriteria:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = _load_train_source()
+        self.source = load_train_source()
 
     def test_ac1_frame_stack_flag_int_default_1(self):
         """AC1: --frame-stack flag exists with type=int, default=1."""

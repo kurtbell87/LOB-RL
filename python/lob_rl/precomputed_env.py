@@ -4,7 +4,19 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
+from lob_rl._obs_layout import (
+    BID_PRICES as _BID_PRICES,
+    BID_SIZES as _BID_SIZES,
+    ASK_PRICES as _ASK_PRICES,
+    ASK_SIZES as _ASK_SIZES,
+    REL_SPREAD as _REL_SPREAD,
+    IMBALANCE as _IMBALANCE,
+    BASE_OBS_SIZE as _BASE_OBS_SIZE,
+)
 from lob_rl._reward import compute_forced_flatten, compute_step_reward
+
+_FULL_OBS_SIZE = 54
+_POSITION_IDX = 53
 
 
 def _lagged_diff(arr, lag):
@@ -13,19 +25,6 @@ def _lagged_diff(arr, lag):
     if len(arr) > lag:
         result[lag:] = arr[lag:] - arr[:-lag]
     return result
-
-
-# C++ observation layout (43 features per timestep)
-_BID_PRICES = slice(0, 10)
-_BID_SIZES = slice(10, 20)
-_ASK_PRICES = slice(20, 30)
-_ASK_SIZES = slice(30, 40)
-_REL_SPREAD = 40
-_IMBALANCE = 41
-_TIME_LEFT = 42
-_BASE_OBS_SIZE = 43
-_FULL_OBS_SIZE = 54
-_POSITION_IDX = 53
 
 
 class PrecomputedEnv(gym.Env):
