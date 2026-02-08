@@ -23,7 +23,9 @@
 - **Data extracted:** 312 `.mbo.dbn.zst` files in `data/mes/` (57GB, Jan–Dec 2022). Roll calendar at `data/mes/roll_calendar.json`.
 - **Cache ready:** `cache/mes/` has 249 `.npz` files (all trading days from 312 raw files). Built with `--roll-calendar`. No rebuild needed.
 - **Local experiments done:** MLP shuffle-split → val -51.5 / test -62.5. Frame-stack → val -48.4 / test -50.2. Both negative OOS. LSTM killed at 15% (too slow locally at 422 fps).
-- **Next task:** Set up RunPod for GPU training (LSTM + longer runs). Investigate why agent doesn't generalize. See `LAST_TOUCH.md`.
+- **Checkpointing DONE:** `--checkpoint-freq N` and `--resume PATH` on `train.py`. `CheckpointCallback` + custom `VecNormalizeSaveCallback`. Resume with `reset_num_timesteps=False`. PR #17 merged.
+- **RunPod infrastructure DONE:** `Dockerfile`, `.dockerignore`, `runpod/` scripts (upload-cache, launch, fetch-results). Persistent network volume + ephemeral GPU pods.
+- **Next task:** Run LSTM experiment on RunPod GPU (A40). See `LAST_TOUCH.md` and `runpod/README.md`.
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
 - **Precompute hint:** If cache needs rebuilding: `precompute_cache.py --roll-calendar ... --workers 8` (script supports `--workers N` via `ProcessPoolExecutor`).
 - **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42`

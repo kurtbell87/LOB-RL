@@ -4,11 +4,11 @@
 
 ### Immediate next step
 
-**Set up RunPod for GPU training.** Local CPU training is too slow for LSTM (~422 fps vs ~4200 fps for MLP) and results so far are negative OOS. Need GPU compute to run longer experiments (5M–10M steps) and LSTM.
+**Run LSTM experiment on RunPod GPU.** Infrastructure is ready. Follow `runpod/README.md` for setup.
 
-1. **RunPod setup** — containerize the training pipeline, push cache to cloud storage, configure GPU instances.
-2. **Run LSTM experiment on RunPod** — killed locally at 15% (too slow). Needs GPU.
-3. **Run longer experiments** — 2M steps isn't enough. Try 5M–10M with all 3 architectures on GPU.
+1. **One-time setup** — Create RunPod account, get API key, install `runpodctl`. Create network volume and upload cache (`./runpod/upload-cache.sh`). Build & push Docker image.
+2. **Run LSTM experiment** — `./runpod/launch.sh --recurrent --bar-size 1000 --execution-cost --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42 --total-timesteps 5000000 --checkpoint-freq 500000`
+3. **Run longer MLP/frame-stack experiments** — 5M–10M steps on GPU to see if more training helps generalization.
 4. **Investigate negative OOS** — both MLP and frame-stack are negative on shuffle-split too, so it's not just chronological regime shift. The agent is not generalizing. Consider: reward shaping, observation normalization debugging, different architectures, or more data.
 
 ### Roll calendar
@@ -25,6 +25,12 @@
 Source: `data/symbology.json` from Databento download. Roll dates are ~1 week before CME 3rd-Friday expiry.
 
 ### What was just completed
+
+**RunPod GPU training infrastructure (PR #17 + infrastructure files).** Two deliverables:
+
+- **Checkpointing (PR #17):** `--checkpoint-freq N` and `--resume PATH` on `train.py`. Periodic model + VecNormalize saves via `CheckpointCallback` + custom `VecNormalizeSaveCallback`. Resume with `PPO.load()`/`RecurrentPPO.load()` and `reset_num_timesteps=False`. 72 new tests.
+- **RunPod infrastructure:** `Dockerfile` (PyTorch 2.5.1 + CUDA 12.4, pure Python, ~7GB), `.dockerignore`, `runpod/upload-cache.sh` (one-time cache upload), `runpod/launch.sh` (pod launcher), `runpod/fetch-results.sh` (result download). Pattern: persistent network volume (data) + ephemeral GPU pods (compute) + Docker image (code).
+- **Refactoring:** Extracted duplicate `TRAIN_SCRIPT`/`load_train_source()`/`extract_main_body()` into `conftest.py`. Extracted obs layout constants into `_obs_layout.py`. Deduplicated `make_train_env` branches in `train.py`.
 
 **Local comparative experiments (2M steps, shuffle-split, seed 42).** Both completed runs are negative OOS:
 
@@ -80,7 +86,12 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 
 | File | Role |
 |---|---|
-| `scripts/train.py` | Training entry point — `--bar-size`, `--cache-dir`, `--train-days`, `--shuffle-split`, `--seed`, `--frame-stack`, `--recurrent` |
+| `scripts/train.py` | Training entry point — `--bar-size`, `--cache-dir`, `--train-days`, `--shuffle-split`, `--seed`, `--frame-stack`, `--recurrent`, `--checkpoint-freq`, `--resume` |
+| `Dockerfile` | Training container image. PyTorch 2.5.1 + CUDA 12.4. Entrypoint: `train.py`. |
+| `runpod/README.md` | RunPod setup guide — volume creation, cache upload, pod launch, result fetch |
+| `runpod/launch.sh` | Launch a training pod: `./runpod/launch.sh [train.py args...]` |
+| `runpod/upload-cache.sh` | One-time upload of `cache/mes/` to RunPod network volume |
+| `runpod/fetch-results.sh` | Download trained model + logs from pod |
 | `scripts/precompute_cache.py` | CLI tool to build `.npz` cache. Use `--roll-calendar` or `--instrument-id`. |
 | `data/mes/roll_calendar.json` | Maps each date → front-month instrument_id. Used by `--roll-calendar`. |
 | `data/mes/*.mbo.dbn.zst` | 312 daily files, Jan–Dec 2022, 57GB. All /MES instruments per file. |
@@ -141,7 +152,8 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 | ~~Precompute cache~~ | ~~Done~~ | 249 `.npz` in `cache/mes/`, built with `--roll-calendar`. Use `--workers 8` if rebuilding. |
 | ~~Comparative experiments~~ | ~~Done (partial)~~ | MLP and frame-stack done locally (both negative OOS). LSTM killed — needs GPU. |
 | ~~Proper OOS validation~~ | ~~Done~~ | Shuffle-split also negative. Not just regime shift — agent doesn't generalize at 2M steps. |
-| **RunPod GPU training** | **Critical** | LSTM too slow locally (422 fps). Need GPU for LSTM + longer runs (5M–10M steps). |
+| ~~RunPod GPU training~~ | ~~Done~~ | PR #17 (checkpointing) + infrastructure files (Dockerfile, runpod/ scripts). |
+| **Run experiments on RunPod** | **Critical** | LSTM on GPU, longer MLP/frame-stack runs (5M–10M steps). See `runpod/README.md`. |
 | **Investigate negative OOS** | **Critical** | Consider: reward shaping, obs normalization debugging, different architectures, more data. |
 | Bar-level supervised diagnostic | Low | Script lacks `--bar-size` support. Nice-to-have. |
 | More data (second year) | Low | 2023-2024 as complement if 2022 generalizes well. |
