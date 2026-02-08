@@ -1,8 +1,9 @@
 """Precompute LOB data and cache as .npz files for fast training startup."""
 
 import argparse
-import json
+import glob
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'python'))
@@ -12,18 +13,31 @@ import numpy as np
 import lob_rl_core
 
 
+def _extract_date_from_filename(filename):
+    """Extract YYYYMMDD or YYYY-MM-DD date from filename."""
+    # Try YYYY-MM-DD pattern first
+    match = re.search(r'(\d{4}-\d{2}-\d{2})', filename)
+    if match:
+        return match.group(1)
+    # Try YYYYMMDD pattern (used by dbn files like glbx-mdp3-20240115.mbo.dbn.zst)
+    match = re.search(r'(\d{8})', filename)
+    if match:
+        return match.group(1)
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description='Precompute and cache LOB data as .npz files')
-    parser.add_argument('--data-dir', required=True, help='Directory with .bin files and manifest.json')
+    parser.add_argument('--data-dir', required=True, help='Directory with data files')
     parser.add_argument('--out', required=True, help='Output directory for cached .npz files')
+    parser.add_argument('--instrument-id', type=int, required=True,
+                        help='Instrument ID to filter records (uint32)')
     parser.add_argument('--force', action='store_true', default=False,
                         help='Re-cache even if .npz already exists')
     args = parser.parse_args()
 
-    # Load manifest
-    manifest_path = os.path.join(args.data_dir, 'manifest.json')
-    with open(manifest_path) as f:
-        manifest = json.load(f)
+    # Glob for .dbn.zst files
+    data_files = sorted(glob.glob(os.path.join(args.data_dir, '*.mbo.dbn.zst')))
 
     os.makedirs(args.out, exist_ok=True)
 
@@ -32,9 +46,12 @@ def main():
     skipped_exist = 0
     skipped_empty = 0
 
-    for entry in manifest['files']:
-        date = entry['date']
-        bin_path = os.path.join(args.data_dir, f"{date}.bin")
+    for data_path in data_files:
+        date = _extract_date_from_filename(os.path.basename(data_path))
+        if date is None:
+            print(f"  Skipping {data_path}: cannot extract date from filename")
+            continue
+
         npz_path = os.path.join(args.out, f"{date}.npz")
 
         if not args.force and os.path.exists(npz_path):
@@ -42,11 +59,9 @@ def main():
             print(f"  Skipping {date}: already cached")
             continue
 
-        if not os.path.exists(bin_path):
-            print(f"  Skipping {date}: .bin file not found")
-            continue
-
-        obs, mid, spread, num_steps = lob_rl_core.precompute(bin_path, cfg)
+        obs, mid, spread, num_steps = lob_rl_core.precompute(
+            data_path, cfg, args.instrument_id
+        )
 
         if num_steps < 2:
             skipped_empty += 1

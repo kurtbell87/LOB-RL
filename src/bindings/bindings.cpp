@@ -7,7 +7,7 @@
 #include "lob/precompute.h"
 #include "lob/feature_builder.h"
 #include "synthetic_source.h"
-#include "binary_file_source.h"
+#include "dbn_file_source.h"
 
 namespace py = pybind11;
 
@@ -50,8 +50,9 @@ static LOBEnv make_synthetic_env(int steps_per_episode,
 
 static LOBEnv make_file_env(const std::string& path, int steps_per_episode,
                              const std::string& reward_mode, float lambda_,
-                             bool execution_cost, float participation_bonus) {
-    return LOBEnv(std::make_unique<BinaryFileSource>(path), steps_per_episode,
+                             bool execution_cost, float participation_bonus,
+                             uint32_t instrument_id) {
+    return LOBEnv(std::make_unique<DbnFileSource>(path, instrument_id), steps_per_episode,
                   parse_reward_mode(reward_mode), lambda_, execution_cost,
                   participation_bonus);
 }
@@ -59,8 +60,9 @@ static LOBEnv make_file_env(const std::string& path, int steps_per_episode,
 static LOBEnv make_session_env(const std::string& path, const SessionConfig& cfg,
                                 int steps_per_episode,
                                 const std::string& reward_mode, float lambda_,
-                                bool execution_cost, float participation_bonus) {
-    return LOBEnv(std::make_unique<BinaryFileSource>(path), cfg, steps_per_episode,
+                                bool execution_cost, float participation_bonus,
+                                uint32_t instrument_id) {
+    return LOBEnv(std::make_unique<DbnFileSource>(path, instrument_id), cfg, steps_per_episode,
                   parse_reward_mode(reward_mode), lambda_, execution_cost,
                   participation_bonus);
 }
@@ -83,19 +85,23 @@ PYBIND11_MODULE(lob_rl_core, m) {
         .def(py::init(&make_session_env),
             py::arg("file_path"), py::arg("session_config"), py::arg("steps_per_episode"),
             py::arg("reward_mode") = "", py::arg("lambda_") = 0.0f,
-            py::arg("execution_cost") = false, py::arg("participation_bonus") = 0.0f)
+            py::arg("execution_cost") = false, py::arg("participation_bonus") = 0.0f,
+            py::arg("instrument_id") = 0u)
         // Constructor with file path + steps_per_episode
         .def(py::init(&make_file_env),
             py::arg("file_path"), py::arg("steps_per_episode"),
             py::arg("reward_mode") = "", py::arg("lambda_") = 0.0f,
-            py::arg("execution_cost") = false, py::arg("participation_bonus") = 0.0f)
+            py::arg("execution_cost") = false, py::arg("participation_bonus") = 0.0f,
+            py::arg("instrument_id") = 0u)
         // Constructor with file path only (default steps=50)
         .def(py::init([](const std::string& path, const std::string& reward_mode,
-                         float lambda_, bool execution_cost, float participation_bonus) {
-            return make_file_env(path, 50, reward_mode, lambda_, execution_cost, participation_bonus);
+                         float lambda_, bool execution_cost, float participation_bonus,
+                         uint32_t instrument_id) {
+            return make_file_env(path, 50, reward_mode, lambda_, execution_cost,
+                                 participation_bonus, instrument_id);
         }), py::arg("file_path"), py::arg("reward_mode") = "",
             py::arg("lambda_") = 0.0f, py::arg("execution_cost") = false,
-            py::arg("participation_bonus") = 0.0f)
+            py::arg("participation_bonus") = 0.0f, py::arg("instrument_id") = 0u)
         // Constructor with steps_per_episode (int) -> SyntheticSource
         .def(py::init(&make_synthetic_env),
             py::arg("steps_per_episode"),
@@ -119,9 +125,10 @@ PYBIND11_MODULE(lob_rl_core, m) {
             return py::make_tuple(r.obs, static_cast<double>(r.reward), r.done);
         });
 
-    // precompute(path, cfg) -> (obs, mid, spread, num_steps)
-    m.def("precompute", [](const std::string& path, const SessionConfig& cfg) {
-        PrecomputedDay day = precompute(path, cfg);
+    // precompute(path, cfg, instrument_id=0) -> (obs, mid, spread, num_steps)
+    m.def("precompute", [](const std::string& path, const SessionConfig& cfg,
+                            uint32_t instrument_id) {
+        PrecomputedDay day = precompute(path, cfg, instrument_id);
 
         const int N = day.num_steps;
         constexpr int COLS = FeatureBuilder::POSITION;  // 43: obs without position
@@ -131,5 +138,5 @@ PYBIND11_MODULE(lob_rl_core, m) {
         auto spread = to_numpy_1d(day.spread, N);
 
         return py::make_tuple(obs, mid, spread, N);
-    }, py::arg("path"), py::arg("session_config"));
+    }, py::arg("path"), py::arg("session_config"), py::arg("instrument_id") = 0u);
 }

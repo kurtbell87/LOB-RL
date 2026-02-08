@@ -21,6 +21,7 @@ class BarLevelEnv(gym.Env):
     """
 
     metadata = {"render_modes": []}
+    _ACTION_MAP = {0: -1.0, 1: 0.0, 2: 1.0}
 
     def __init__(self, obs, mid, spread, bar_size=500,
                  reward_mode="pnl_delta", lambda_=0.0,
@@ -68,35 +69,53 @@ class BarLevelEnv(gym.Env):
         imbalance_close = self._bar_features[:, 6]
         spread_close = self._bar_features[:, 4]
 
-        for t in range(B):
-            # 0: return_lag1
-            if t >= 1:
-                self._temporal[t, 0] = bar_return[t - 1]
+        # 0: return_lag1 — bar_return shifted by 1
+        if B > 1:
+            self._temporal[1:, 0] = bar_return[:-1]
 
-            # 1: return_lag3
-            if t >= 3:
-                self._temporal[t, 1] = bar_return[t - 3]
+        # 1: return_lag3 — bar_return shifted by 3
+        if B > 3:
+            self._temporal[3:, 1] = bar_return[:-3]
 
-            # 2: return_lag5
-            if t >= 5:
-                self._temporal[t, 2] = bar_return[t - 5]
+        # 2: return_lag5 — bar_return shifted by 5
+        if B > 5:
+            self._temporal[5:, 2] = bar_return[:-5]
 
-            # 3: cumulative_return_5
-            start = max(0, t - 5)
-            self._temporal[t, 3] = float(np.sum(bar_return[start:t]))
+        # 3: cumulative_return_5 — rolling sum of bar_return[max(0,t-5):t]
+        # Use cumulative sum: cum_ret[t] - cum_ret[max(0, t-5)]
+        cs = np.concatenate(([0.0], np.cumsum(bar_return)))
+        for t in range(1, min(B, 6)):
+            self._temporal[t, 3] = cs[t] - cs[0]
+        if B > 5:
+            self._temporal[5:, 3] = (cs[5:B] - cs[:B - 5]).astype(np.float32)
 
-            # 4: rolling_vol_5
-            if t >= 2:
-                vol_start = max(0, t - 5)
-                self._temporal[t, 4] = float(np.std(bar_return[vol_start:t]))
+        # 4: rolling_vol_5 — std of bar_return[max(0,t-5):t] for t >= 2
+        # Use cumulative sums for O(B) computation of rolling variance
+        cs2 = np.concatenate(([0.0], np.cumsum(bar_return.astype(np.float64) ** 2)))
+        cs_f64 = np.concatenate(([0.0], np.cumsum(bar_return.astype(np.float64))))
+        for t in range(2, min(B, 6)):
+            w = t  # window size: bar_return[0:t]
+            roll_sum = cs_f64[t]
+            roll_sum2 = cs2[t]
+            roll_mean = roll_sum / w
+            roll_var = roll_sum2 / w - roll_mean ** 2
+            self._temporal[t, 4] = np.sqrt(max(roll_var, 0.0))
+        if B > 5:
+            w = 5
+            roll_sum = cs_f64[5:B] - cs_f64[:B - 5]
+            roll_sum2 = cs2[5:B] - cs2[:B - 5]
+            roll_mean = roll_sum / w
+            roll_var = roll_sum2 / w - roll_mean ** 2
+            np.maximum(roll_var, 0.0, out=roll_var)
+            self._temporal[5:, 4] = np.sqrt(roll_var).astype(np.float32)
 
-            # 5: imb_delta_3
-            if t >= 3:
-                self._temporal[t, 5] = imbalance_close[t] - imbalance_close[t - 3]
+        # 5: imb_delta_3 — imbalance_close[t] - imbalance_close[t-3]
+        if B > 3:
+            self._temporal[3:, 5] = imbalance_close[3:] - imbalance_close[:-3]
 
-            # 6: spread_delta_3
-            if t >= 3:
-                self._temporal[t, 6] = spread_close[t] - spread_close[t - 3]
+        # 6: spread_delta_3 — spread_close[t] - spread_close[t-3]
+        if B > 3:
+            self._temporal[3:, 6] = spread_close[3:] - spread_close[:-3]
 
     def _build_obs(self):
         """Build 21-dim observation for current bar index."""
@@ -116,8 +135,7 @@ class BarLevelEnv(gym.Env):
         return obs, {}
 
     def step(self, action):
-        action_map = {0: -1.0, 1: 0.0, 2: 1.0}
-        self._position = action_map[action]
+        self._position = self._ACTION_MAP[action]
 
         self._bar_index += 1
 
