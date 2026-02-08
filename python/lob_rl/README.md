@@ -10,7 +10,7 @@ Gymnasium wrappers and utilities on top of the C++ `lob_rl_core` module.
 | `_config.py` | Shared `make_session_config(dict) -> SessionConfig` helper. |
 | `gym_env.py` | `LOBGymEnv` — single-day `gymnasium.Env` wrapping `lob_rl_core.LOBEnv`. |
 | `precomputed_env.py` | `PrecomputedEnv` — single-day env backed by precomputed numpy arrays. Zero C++ at runtime. |
-| `multi_day_env.py` | `MultiDayEnv` — cycles through multiple day files. Precomputes all at construction. **This is what `train.py` uses.** |
+| `multi_day_env.py` | `MultiDayEnv` — cycles through multiple day files. **Lazy-loads** `.npz` on `reset()` (cache modes). Supports `cache_files=` for explicit file lists. **This is what `train.py` uses.** |
 | `bar_aggregation.py` | `aggregate_bars(obs, mid, spread, bar_size)` — tick → bar feature aggregation. Returns (bar_features, bar_mid_close, bar_spread_close). |
 | `bar_level_env.py` | `BarLevelEnv` — bar-level `gymnasium.Env`. 21-dim obs (13 intra-bar + 7 temporal + 1 position). `from_cache()`, `from_file()`. |
 | ~~`convert_dbn.py`~~ | Deleted (PR #11). |
@@ -63,9 +63,10 @@ PrecomputedEnv.from_cache(npz_path,
 ### MultiDayEnv (`multi_day_env.py`)
 
 ```python
-MultiDayEnv(file_paths=None,           # list of .bin paths (mutually exclusive with cache_dir)
-            cache_dir=None,            # path to dir with .npz files (mutually exclusive with file_paths)
-            session_config=None,       # dict or None (uses default RTH); ignored when cache_dir is set
+MultiDayEnv(file_paths=None,           # list of .bin paths (eager load, C++ precompute)
+            cache_dir=None,            # path to dir with .npz files (lazy load)
+            cache_files=None,          # explicit list of .npz paths (lazy load)
+            session_config=None,       # dict or None (uses default RTH); ignored in cache modes
             steps_per_episode=50,      # 0 = run to session close
             reward_mode="pnl_delta",
             lambda_=0.0,
@@ -76,14 +77,16 @@ MultiDayEnv(file_paths=None,           # list of .bin paths (mutually exclusive 
             step_interval=1,           # forwarded to PrecomputedEnv
             bar_size=0)                # 0=tick-level, >0=bar-level
 
-# Exactly one of file_paths or cache_dir must be provided.
-# When cache_dir: globs *.npz sorted by name, loads via from_cache().
+# Exactly one of file_paths, cache_dir, or cache_files must be provided.
+# cache_dir/cache_files: LAZY LOADING — only file paths stored at init,
+#   one .npz loaded per reset(), previous day released. ~37 MB/worker.
+# file_paths: EAGER — arrays held in memory (legacy, not used in training).
 # Each reset() advances to next day.
 # observation_space: (54,) tick-level or (21,) bar-level
 # reset() info: {"day_index": int, "instrument_id": int|None, "contract_roll": bool}
 
 # Contract boundary tracking:
-env.contract_ids  # list[int|None] — instrument_id per day (None if not in .npz)
+env.contract_ids  # list[int|None] — instrument_id per day (extracted at init, not at reset)
 ```
 
 ### LOBGymEnv (`gym_env.py`)
