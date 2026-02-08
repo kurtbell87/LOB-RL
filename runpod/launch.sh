@@ -36,6 +36,7 @@ DOCKER_USER="${DOCKERHUB_USER:?Set DOCKERHUB_USER to your Docker Hub username}"
 IMAGE="${DOCKER_USER}/lob-rl:latest"
 
 GPU_TYPE="${GPU_TYPE:-NVIDIA GeForce RTX 4090}"
+CLOUD_TYPE="${CLOUD_TYPE:---secureCloud}"  # --secureCloud or --communityCloud
 
 # Build the training command
 # --cache-dir and --output-dir are always set to volume paths
@@ -48,14 +49,18 @@ echo "Volume:   $VOLUME_ID"
 echo "Args:     $TRAIN_ARGS"
 echo ""
 
-POD_ID=$(runpodctl create pod \
+CREATE_OUTPUT=$(runpodctl create pod \
     --name "lob-rl-train" \
     --gpuType "$GPU_TYPE" \
     --imageName "$IMAGE" \
-    --volumeId "$VOLUME_ID" \
-    --ports "22/tcp,6006/tcp" \
+    --networkVolumeId "$VOLUME_ID" \
+    --ports "22/tcp" --ports "6006/http" \
+    --startSSH \
+    $CLOUD_TYPE \
     --args "$TRAIN_ARGS" \
-    2>&1 | grep -oP 'pod_[a-zA-Z0-9]+' | head -1)
+    2>&1) || true
+echo "$CREATE_OUTPUT"
+POD_ID=$(echo "$CREATE_OUTPUT" | sed -n 's/^pod "\([^"]*\)".*/\1/p')
 
 if [ -z "$POD_ID" ]; then
     echo "ERROR: Failed to create pod. Check runpodctl config, volume ID, and GPU availability."
