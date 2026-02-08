@@ -1,5 +1,5 @@
 #include "lob/precompute.h"
-#include "binary_file_source.h"
+#include "dbn_file_source.h"
 #include "warmup.h"
 #include <cmath>
 
@@ -24,9 +24,8 @@ static void record_snapshot(PrecomputedDay& result, const Book& book,
     float time_remaining = 1.0f - progress;
 
     auto full_obs = fb.build(book, 0.0f, time_remaining);
-    for (int i = 0; i < FeatureBuilder::POSITION; ++i) {
-        result.obs.push_back(full_obs[i]);
-    }
+    result.obs.insert(result.obs.end(),
+                      full_obs.begin(), full_obs.begin() + FeatureBuilder::POSITION);
     result.mid.push_back(mid);
     result.spread.push_back(spread);
     result.num_steps++;
@@ -141,7 +140,8 @@ PrecomputedDay precompute(IMessageSource& source, const SessionConfig& cfg) {
     return result;
 }
 
-PrecomputedDay precompute(const std::string& path, const SessionConfig& cfg) {
-    BinaryFileSource source(path);
+PrecomputedDay precompute(const std::string& path, const SessionConfig& cfg,
+                          uint32_t instrument_id) {
+    DbnFileSource source(path, instrument_id);
     return precompute(source, cfg);
 }
