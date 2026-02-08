@@ -26,19 +26,7 @@ import pytest
 import gymnasium as gym
 from gymnasium import spaces
 
-from conftest import make_realistic_obs, PRECOMPUTE_EPISODE_FILE
-
-
-# ===========================================================================
-# Helper
-# ===========================================================================
-
-
-def _make_tick_data(n, mid_start=100.0, mid_step=0.25, spread=0.50):
-    """Create (obs, mid, spread) arrays with n ticks."""
-    obs, mid, spread_arr = make_realistic_obs(n, mid_start=mid_start,
-                                               mid_step=mid_step, spread=spread)
-    return obs, mid, spread_arr
+from conftest import make_realistic_obs, make_tick_data as _make_tick_data, PRECOMPUTE_EPISODE_FILE
 
 
 # ===========================================================================

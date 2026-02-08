@@ -18,18 +18,7 @@ These tests verify that:
 import numpy as np
 import pytest
 
-from conftest import make_realistic_obs
-
-
-# ===========================================================================
-# Helper: create deterministic tick data with known properties
-# ===========================================================================
-
-def _make_tick_data(n, mid_start=100.0, mid_step=0.25, spread=0.50):
-    """Create (obs, mid, spread) arrays with n ticks."""
-    obs, mid, spread_arr = make_realistic_obs(n, mid_start=mid_start,
-                                               mid_step=mid_step, spread=spread)
-    return obs, mid, spread_arr
+from conftest import make_realistic_obs, make_tick_data as _make_tick_data
 
 
 def _hand_compute_bar(obs_chunk, mid_chunk, spread_chunk, bar_size):
