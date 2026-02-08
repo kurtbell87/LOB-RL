@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'build'))
 
 import numpy as np
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFrameStack, VecNormalize
 
 from lob_rl.multi_day_env import MultiDayEnv
 from lob_rl.precomputed_env import PrecomputedEnv
@@ -101,7 +101,7 @@ def make_train_env(file_paths=None, session_config=None, reward_mode='pnl_delta'
 
 def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False,
                      vec_normalize_path=None, participation_bonus=0.0, step_interval=1,
-                     cache_path=None, bar_size=0):
+                     cache_path=None, bar_size=0, frame_stack=1):
     """Evaluate model on held-out data and compute Sortino ratio."""
     all_returns = []
 
@@ -141,6 +141,9 @@ def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False
             print(f"  Skipping {date}: {e}")
             continue
         venv = DummyVecEnv([lambda: env])
+
+        if frame_stack > 1:
+            venv = VecFrameStack(venv, n_stack=frame_stack)
 
         if vec_normalize_path is not None:
             venv = VecNormalize.load(vec_normalize_path, venv)
@@ -213,6 +216,8 @@ def main():
     parser.add_argument('--shuffle-split', action='store_true', default=False,
                         help='Shuffle files before train/val/test split (random instead of chronological)')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for shuffle-split')
+    parser.add_argument('--frame-stack', type=int, default=1,
+                        help='Number of frames to stack (1 = no stacking)')
     args = parser.parse_args()
 
     # Validate mutual exclusivity
@@ -303,6 +308,9 @@ def main():
             for _ in range(args.n_envs)
         ])
 
+    if args.frame_stack > 1:
+        env = VecFrameStack(env, n_stack=args.frame_stack)
+
     if not args.no_norm:
         env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.0)
 
@@ -350,7 +358,8 @@ def main():
                                        participation_bonus=args.participation_bonus,
                                        step_interval=args.step_interval,
                                        cache_path=cache_path,
-                                       bar_size=args.bar_size)
+                                       bar_size=args.bar_size,
+                                       frame_stack=args.frame_stack)
         print(f"Validation metrics: {val_metrics}")
 
     # Evaluate on test set
@@ -361,7 +370,8 @@ def main():
                                         participation_bonus=args.participation_bonus,
                                         step_interval=args.step_interval,
                                         cache_path=cache_path,
-                                        bar_size=args.bar_size)
+                                        bar_size=args.bar_size,
+                                        frame_stack=args.frame_stack)
         print(f"Test metrics: {test_metrics}")
 
     return 0

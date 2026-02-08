@@ -35,6 +35,76 @@ static void record_snapshot(PrecomputedDay& result, const Book& book,
     result.num_steps++;
 }
 
+// Legacy mode: snapshot on any BBO change (no flag filtering).
+static void process_rth_legacy(PrecomputedDay& result, Book& book,
+                               FeatureBuilder& fb, const SessionFilter& filter,
+                               const std::vector<Message>& rth,
+                               double prev_best_bid, double prev_best_ask) {
+    for (auto& msg : rth) {
+        book.apply(msg);
+
+        double cur_bid = book.best_bid();
+        double cur_ask = book.best_ask();
+
+        if (detect_bbo_change(cur_bid, cur_ask, prev_best_bid, prev_best_ask)) {
+            record_snapshot(result, book, fb, filter, msg.ts_ns);
+        }
+
+        prev_best_bid = cur_bid;
+        prev_best_ask = cur_ask;
+    }
+}
+
+// Flag-aware mode: buffer mid-event messages, apply complete events
+// (when F_LAST arrives at the same timestamp). Orphaned mid-event
+// messages and snapshot records are discarded.
+static void process_rth_flag_aware(PrecomputedDay& result, Book& book,
+                                   FeatureBuilder& fb, const SessionFilter& filter,
+                                   const std::vector<Message>& rth,
+                                   double prev_best_bid, double prev_best_ask) {
+    std::vector<Message> event_buf;
+    uint64_t event_ts = 0;
+
+    for (size_t idx = 0; idx < rth.size(); ++idx) {
+        auto& msg = rth[idx];
+        bool is_f_last     = (msg.flags & FLAG_LAST) != 0;
+        bool is_snapshot   = (msg.flags & FLAG_SNAPSHOT) != 0;
+
+        if (is_snapshot) continue;
+
+        // Timestamp changed: discard any orphaned mid-event messages
+        if (msg.ts_ns != event_ts) {
+            event_buf.clear();
+            event_ts = msg.ts_ns;
+        }
+
+        if (!is_f_last) {
+            event_buf.push_back(msg);
+            continue;
+        }
+
+        // F_LAST: apply buffered messages + this one to the book
+        for (auto& buffered : event_buf) {
+            book.apply(buffered);
+        }
+        event_buf.clear();
+        book.apply(msg);
+
+        double cur_bid = book.best_bid();
+        double cur_ask = book.best_ask();
+
+        if (detect_bbo_change(cur_bid, cur_ask, prev_best_bid, prev_best_ask)) {
+            double spread = book.spread();
+            if (spread > 0.0) {  // reject crossed/locked books
+                record_snapshot(result, book, fb, filter, msg.ts_ns);
+            }
+        }
+
+        prev_best_bid = cur_bid;
+        prev_best_ask = cur_ask;
+    }
+}
+
 PrecomputedDay precompute(IMessageSource& source, const SessionConfig& cfg) {
     PrecomputedDay result;
     Book book;
@@ -42,10 +112,6 @@ PrecomputedDay precompute(IMessageSource& source, const SessionConfig& cfg) {
     SessionFilter filter(cfg);
 
     Message m;
-
-    // Track previous BBO to detect changes
-    double prev_best_bid = std::numeric_limits<double>::quiet_NaN();
-    double prev_best_ask = std::numeric_limits<double>::quiet_NaN();
 
     // Separate messages into pre-market and RTH phase buffers
     std::vector<Message> pre_market;
@@ -58,87 +124,25 @@ PrecomputedDay precompute(IMessageSource& source, const SessionConfig& cfg) {
         } else if (phase == SessionFilter::Phase::RTH) {
             rth.push_back(m);
         }
-        // Post-market: skip
     }
 
-    // Apply warmup
     apply_warmup(book, pre_market, cfg.warmup_messages);
 
-    // Track initial BBO after warmup
-    prev_best_bid = book.best_bid();
-    prev_best_ask = book.best_ask();
+    double prev_best_bid = book.best_bid();
+    double prev_best_ask = book.best_ask();
 
-    // Auto-detect flag-aware mode: if any RTH message has non-zero flags,
-    // enable flag filtering. Otherwise, use legacy behavior (snapshot on BBO change).
+    // Auto-detect: if any RTH message has non-zero flags, use flag-aware mode
     bool flag_aware = false;
     for (const auto& msg : rth) {
         if (msg.flags != 0) { flag_aware = true; break; }
     }
 
-    // Phase 2: Process RTH messages, snapshot on BBO change
     if (!flag_aware) {
-        // Legacy mode: snapshot on any BBO change (no flag filtering)
-        for (auto& msg : rth) {
-            book.apply(msg);
-
-            double cur_bid = book.best_bid();
-            double cur_ask = book.best_ask();
-
-            if (detect_bbo_change(cur_bid, cur_ask, prev_best_bid, prev_best_ask)) {
-                record_snapshot(result, book, fb, filter, msg.ts_ns);
-            }
-
-            prev_best_bid = cur_bid;
-            prev_best_ask = cur_ask;
-        }
+        process_rth_legacy(result, book, fb, filter, rth,
+                           prev_best_bid, prev_best_ask);
     } else {
-        // Flag-aware mode: buffer mid-event messages and only apply
-        // complete events (when F_LAST arrives at the same timestamp).
-        // Orphaned mid-event messages (no F_LAST) are discarded.
-        std::vector<Message> event_buf;
-        uint64_t event_ts = 0;
-
-        for (size_t idx = 0; idx < rth.size(); ++idx) {
-            auto& msg = rth[idx];
-            bool is_f_last     = (msg.flags & FLAG_LAST) != 0;
-            bool is_snapshot   = (msg.flags & FLAG_SNAPSHOT) != 0;
-
-            // Skip snapshot records entirely (don't apply to book)
-            if (is_snapshot) continue;
-
-            // If timestamp changed, discard any orphaned mid-event messages
-            if (msg.ts_ns != event_ts) {
-                event_buf.clear();
-                event_ts = msg.ts_ns;
-            }
-
-            if (!is_f_last) {
-                // Mid-event message: buffer it
-                event_buf.push_back(msg);
-                continue;
-            }
-
-            // F_LAST message: apply buffered messages + this one to the book
-            for (auto& buffered : event_buf) {
-                book.apply(buffered);
-            }
-            event_buf.clear();
-            book.apply(msg);
-
-            double cur_bid = book.best_bid();
-            double cur_ask = book.best_ask();
-
-            if (detect_bbo_change(cur_bid, cur_ask, prev_best_bid, prev_best_ask)) {
-                double spread = book.spread();
-                if (spread > 0.0) {  // reject crossed/locked books
-                    record_snapshot(result, book, fb, filter, msg.ts_ns);
-                }
-            }
-
-            prev_best_bid = cur_bid;
-            prev_best_ask = cur_ask;
-        }
-        // Discard any remaining buffered mid-event messages (orphaned)
+        process_rth_flag_aware(result, book, fb, filter, rth,
+                               prev_best_bid, prev_best_ask);
     }
 
     return result;
