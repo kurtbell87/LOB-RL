@@ -42,13 +42,15 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 
 ### What was just completed
 
-**Native DBN source (this session, PR #11).** Replaced custom `.bin` pipeline with direct `.dbn.zst` reading via databento-cpp:
-- `DbnFileSource` reads `.dbn.zst` files natively (also auto-detects legacy `.bin`)
-- `map_mbo_to_message()` shared mapper (reusable for live data in Phase 4)
-- `instrument_id` parameter added to `precompute()`, `LOBEnv`, `precompute_cache.py`
-- Deleted: `BinaryFileSource`, `convert_dbn.py`, and all their tests
-- Vectorized `BarLevelEnv._precompute_temporal()` with numpy
-- 403 C++ + 949 Python = 1352 tests pass
+**Contract boundary guard (this session, PR #12).** Prevents the agent from holding positions across contract roll boundaries:
+- **Forced flatten on terminal step:** Both `PrecomputedEnv` and `BarLevelEnv` force position to 0 on the last step. Reward = `-spread/2 * |prev_position|` (close cost only, no PnL). Agent's action is ignored on terminal step. Info dict includes `forced_flatten=True`, `forced_flatten_cost`, `intended_action`.
+- **`instrument_id` in `.npz` cache:** `precompute_cache.py` now saves `instrument_id` as uint32 in each `.npz`.
+- **`MultiDayEnv` contract boundary tracking:** Loads `instrument_id` per day, exposes `contract_ids` property. `reset()` info includes `instrument_id` and `contract_roll=True/False`.
+- **Backward compat:** Legacy `.npz` files without `instrument_id` still work (contract_id = None).
+- **Refactoring:** Consolidated `_create_synthetic_cache_dir` into conftest.py, replaced magic obs indices with FeatureBuilder constants in C++ tests, extended `make_msg()` with flags parameter.
+- 403 C++ + 1013 Python = 1416 tests pass
+
+**Native DBN source (prior session, PR #11).** Replaced custom `.bin` pipeline with direct `.dbn.zst` reading via databento-cpp.
 
 **Hyperparameter sweep (prior session).** 7 configs tested, all 2M steps:
 
@@ -112,7 +114,7 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 
 ## Don't waste time on
 
-- **Build verification** — `build-release/` is current, 403 C++ + 949 Python = 1352 tests pass.
+- **Build verification** — `build-release/` is current, 403 C++ + 1013 Python = 1416 tests pass.
 - **Dependency checks** — SB3, gymnasium, numpy, tensorboard, torch, databento-cpp all installed.
 - **Reading PRD.md** — everything relevant is in this file.
 - **Codebase exploration** — read directory `README.md` files instead.
@@ -121,6 +123,7 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 - **Inventory penalty** — decided against; entropy fix solved the flat-agent problem.
 - **bar_size=200** — confirmed too noisy, return near zero.
 - **Native DBN source** — done (PR #11). `.bin` pipeline replaced with `.dbn.zst`.
+- **Contract boundary guard** — done (PR #12). Forced flatten, instrument_id in cache, contract boundary tracking.
 - **Precompute fix, spread verification, precompute cache, bar-level env** — all done.
 
 ## Architecture overview
@@ -143,8 +146,8 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 ## Test coverage
 
 - **403 C++ tests** — `cd build-release && ./lob_tests` (15 skipped: need `.dbn.zst` fixture)
-- **949 Python tests** — `PYTHONPATH=build-release:python uv run pytest python/tests/` (4 skipped: fixture-dependent)
-- **1352 total**, all passing.
+- **1013 Python tests** — `PYTHONPATH=build-release:python uv run pytest python/tests/` (4 skipped: fixture-dependent)
+- **1416 total**, all passing.
 
 ## Remaining work
 
@@ -153,6 +156,7 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 | ~~Hyperparameter sweep~~ | ~~Done~~ | Best: bar=1000, ent=0.05, lr=1e-3, return 139.5. |
 | ~~Native DBN source~~ | ~~Done~~ | PR #11. `.dbn.zst` reading, `instrument_id`, deleted `.bin` pipeline. |
 | ~~Extract new data~~ | ~~Done~~ | 312 files in `data/mes/`, 57GB. Roll calendar created. |
+| ~~Contract boundary guard~~ | ~~Done~~ | PR #12. Forced flatten, instrument_id in cache, contract boundary tracking. |
 | **Precompute cache** | **Critical** | Run `precompute_cache.py --roll-calendar` on the 312 days. |
 | **Retrain on full dataset** | **Critical** | 170/40/40 split, winning config, possibly 5M+ steps. |
 | **Proper OOS validation** | **Critical** | Current results are almost entirely in-sample. |

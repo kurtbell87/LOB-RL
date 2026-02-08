@@ -1,8 +1,9 @@
 ## Current State (updated 2026-02-07)
 
-- **Build:** `build-release/` is current. 403 C++ tests pass (`./lob_tests`). 949 Python tests pass. **1352 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
+- **Build:** `build-release/` is current. 403 C++ tests pass (`./lob_tests`). 1013 Python tests pass. **1416 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent) all installed.
+- **Contract boundary guard DONE:** Forced flatten on terminal step (position → 0, no PnL, spread/2 close cost). `instrument_id` stored in `.npz` cache. `MultiDayEnv` tracks contract boundaries, reports `contract_roll` in info. PR #12 merged.
 - **Native DBN source DONE:** `DbnFileSource` reads `.dbn.zst` directly via databento-cpp. `map_mbo_to_message()` shared mapper. `instrument_id` parameter on `precompute()` and `LOBEnv`. `BinaryFileSource` and `convert_dbn.py` deleted. PR #11 merged.
 - **Bar-level env DONE:** `BarLevelEnv` aggregates ticks into N-tick bars (21-dim obs). `aggregate_bars()`, `MultiDayEnv(bar_size=500)`, `train.py --bar-size 500 --policy-arch 256,256 --activation relu`. PR #10 merged.
 - **Precompute cache DONE:** `scripts/precompute_cache.py` saves precomputed arrays to `.npz` files. Requires `--instrument-id` or `--roll-calendar`. `PrecomputedEnv.from_cache()`, `MultiDayEnv(cache_dir=...)`, `train.py --cache-dir`. PR #9 merged.
@@ -15,7 +16,7 @@
 - **Walk-forward/lookahead audited CLEAN.** Spread verified CLEAN.
 - **Hyperparameter sweep DONE:** 7 configs tested. Best: `bar_size=1000, ent_coef=0.05, lr=1e-3` → **return 139.5**, entropy -0.48 (stable), explained_var 0.98. 21/21 days positive (but only 1 true OOS day).
 - **Data extracted:** 312 `.mbo.dbn.zst` files in `data/mes/` (57GB, Jan–Dec 2022). Roll calendar at `data/mes/roll_calendar.json`.
-- **Old cache stale:** `cache/mes/` has 21 days from old `.bin` data. **Must rebuild** with `--roll-calendar` on new data.
+- **Old cache stale:** `cache/mes/` has 21 days from old `.bin` data. **Must rebuild** with `--roll-calendar` on new data. New cache will include `instrument_id` per `.npz`.
 - **Next task:** Precompute cache with roll calendar, retrain on ~250 days, validate OOS. See `LAST_TOUCH.md`.
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
 - **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001`

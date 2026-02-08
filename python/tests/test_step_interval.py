@@ -522,7 +522,7 @@ class TestFlatteningWithInterval:
     """Flattening penalty at terminal step should work with step_interval."""
 
     def test_flattening_penalty_uses_subsampled_spread(self):
-        """Flattening penalty should use spread from subsampled array."""
+        """Forced flatten uses spread from subsampled array."""
         # 6 snapshots, interval=2: subsampled = [0, 2, 4] -> 3 rows, 2 steps
         mid = np.array([100.0, 100.0, 101.0, 101.0, 102.0, 102.0], dtype=np.float64)
         spread = np.array([0.5, 0.5, 1.0, 1.0, 2.0, 2.0], dtype=np.float64)
@@ -537,13 +537,13 @@ class TestFlatteningWithInterval:
         _, _, terminated, _, _ = env.step(2)
         assert not terminated
 
-        # Step 1: stay long (terminal)
-        # pnl = +1 * (102 - 101) = 1.0
-        # flattening = -|1| * 2.0 / 2 = -1.0  (uses subsampled spread[2]=2.0)
-        # total = 1.0 - 1.0 = 0.0
-        _, reward, terminated, _, _ = env.step(2)
+        # Step 1: terminal — forced flatten
+        # close_cost = subsampled_spread[2]/2 * |prev_position| = 2.0/2 * 1 = 1.0
+        # reward = -1.0
+        _, reward, terminated, _, info = env.step(2)
         assert terminated
-        assert reward == pytest.approx(0.0)
+        assert reward == pytest.approx(-1.0)
+        assert info["forced_flatten"] is True
 
 
 # ===========================================================================

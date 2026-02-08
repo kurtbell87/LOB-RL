@@ -180,7 +180,7 @@ class TestPrecomputedEnvExecutionCostEnabled:
         assert reward == pytest.approx(-0.25)
 
     def test_long_to_short_costs_full_spread(self):
-        """Going long->short (delta=2) should cost spread[t]/2 * 2."""
+        """Terminal step: forced flatten, reward = -spread/2 * |prev_pos|."""
         mid = np.array([100.0, 100.0, 100.0], dtype=np.float64)
         spread = np.array([0.5, 0.5, 0.5], dtype=np.float64)
 
@@ -194,14 +194,13 @@ class TestPrecomputedEnvExecutionCostEnabled:
         _, r1, _, _, _ = env.step(2)
         assert r1 == pytest.approx(-0.25)
 
-        # Step 2: go short (long->short, delta=2) [terminal step]
-        # pnl = -1*(100-100) = 0.0
-        # execution_cost = 0.5/2 * |(-1)-(1)| = 0.5/2 * 2 = 0.5
-        # flattening = -|-1| * 0.5/2 = -0.25
-        # reward = 0.0 - 0.5 - 0.25 = -0.75
-        _, r2, terminated, _, _ = env.step(0)
+        # Step 2: terminal — forced flatten (no PnL, no exec cost)
+        # close_cost = spread[t]/2 * |prev_position| = 0.5/2 * 1 = 0.25
+        # reward = -0.25
+        _, r2, terminated, _, info = env.step(0)
         assert terminated
-        assert r2 == pytest.approx(-0.75)
+        assert r2 == pytest.approx(-0.25)
+        assert info["forced_flatten"] is True
 
     def test_no_position_change_no_cost(self):
         """Holding the same position should not incur execution cost."""
@@ -405,11 +404,10 @@ class TestPrecomputedEnvExecutionCostEdgeCases:
         assert terminated1
         assert r1 == pytest.approx(-0.5)
 
-    def test_execution_cost_not_double_counted_with_flattening(self):
-        """Execution cost and flattening penalty are separate — not double-counted.
+    def test_execution_cost_not_applied_at_forced_flatten(self):
+        """Forced flatten on terminal overrides all costs — only close cost applies.
 
-        If the agent changes position on the terminal step AND has a position,
-        both costs apply independently.
+        The agent's action is ignored; the position is forced to 0.
         """
         mid = np.array([100.0, 100.0, 100.0], dtype=np.float64)
         spread = np.array([1.0, 1.0, 1.0], dtype=np.float64)
@@ -423,12 +421,13 @@ class TestPrecomputedEnvExecutionCostEdgeCases:
         _, r0, _, _, _ = env.step(1)
         assert r0 == pytest.approx(0.0)
 
-        # Step 1: go long (flat->long, delta=1, terminal)
-        # pnl=0, exec_cost=1.0/2*1=0.5, flattening=-|1|*1.0/2=-0.5
-        # reward = 0 - 0.5 - 0.5 = -1.0
-        _, r1, terminated, _, _ = env.step(2)
+        # Step 1: terminal — forced flatten
+        # prev_position is 0.0 (flat), so close_cost = 1.0/2 * 0 = 0.0
+        # reward = 0.0
+        _, r1, terminated, _, info = env.step(2)
         assert terminated
-        assert r1 == pytest.approx(-1.0)
+        assert r1 == pytest.approx(0.0)
+        assert info["forced_flatten"] is True
 
 
 # ===========================================================================

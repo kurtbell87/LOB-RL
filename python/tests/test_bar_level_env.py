@@ -540,27 +540,29 @@ class TestBarLevelEnvEpisodeLength:
 
 
 class TestBarLevelEnvFlatteningPenalty:
-    """Terminal step with position != 0 should incur flattening penalty."""
+    """Terminal step: forced flatten with close cost = -spread/2 * |prev_position|."""
 
     def test_long_at_terminal(self):
-        """Long at terminal: penalty = spread/2 * |position|."""
+        """Long at terminal: forced flatten, reward = -spread/2 * |prev_pos|."""
         from lob_rl.bar_level_env import BarLevelEnv
-        from lob_rl.bar_aggregation import aggregate_bars
-        obs, mid, spread = _make_tick_data(20, mid_start=100.0, mid_step=0.0,
+        # 30 ticks / bar_size=10 = 3 bars => 2 steps
+        obs, mid, spread = _make_tick_data(30, mid_start=100.0, mid_step=0.0,
                                             spread=0.50)
-        _, bar_mid_close, bar_spread_close = aggregate_bars(obs, mid, spread,
-                                                             bar_size=10)
 
         env = BarLevelEnv(obs, mid, spread, bar_size=10)
         env.reset()
-        _, reward, terminated, _, _ = env.step(2)  # long, terminal (2 bars)
+
+        # Step 0: go long (non-terminal, prev_pos becomes 1.0)
+        _, _, terminated, _, _ = env.step(2)
+        assert not terminated
+
+        # Step 1: terminal — forced flatten
+        # close_cost = bar_spread_close[2]/2 * |prev_position| = 0.5/2 * 1 = 0.25
+        # reward = -0.25
+        _, reward, terminated, _, info = env.step(2)
         assert terminated
-        # pnl = 1*(bmc[1]-bmc[0]) = 0 (constant mid)
-        # flattening = -|1| * bar_spread_close[1]/2 (or spread at last bar)
-        # With constant spread=0.5, penalty = -0.5/2 = -0.25
-        # Actually per spec: reward -= bar_spread_close[bar_index] / 2 * |position|
-        # bar_index is 1 after step
-        assert reward < 0, "Should have negative reward from flattening penalty"
+        assert reward < 0, "Should have negative reward from forced flatten"
+        assert info["forced_flatten"] is True
 
     def test_flat_at_terminal_no_penalty(self):
         """Flat at terminal: no flattening penalty."""

@@ -56,9 +56,21 @@ def make_env(file_path, reward_mode='pnl_delta', lambda_=0.0, execution_cost=Fal
 
 def make_train_env(file_paths=None, session_config=None, reward_mode='pnl_delta',
                    lambda_=0.0, execution_cost=False, participation_bonus=0.0,
-                   step_interval=1, cache_dir=None, bar_size=0):
+                   step_interval=1, cache_dir=None, bar_size=0, cache_files=None):
     """Factory that returns a closure for SubprocVecEnv (avoids lambda late-binding)."""
     def _init():
+        if cache_files is not None:
+            return MultiDayEnv(
+                cache_files=cache_files,
+                steps_per_episode=0,
+                reward_mode=reward_mode,
+                lambda_=lambda_,
+                shuffle=True,
+                execution_cost=execution_cost,
+                participation_bonus=participation_bonus,
+                step_interval=step_interval,
+                bar_size=bar_size,
+            )
         if cache_dir is not None:
             return MultiDayEnv(
                 cache_dir=cache_dir,
@@ -236,15 +248,12 @@ def main():
             print("ERROR: No training files!")
             return 1
 
-        # Build cache_dir for train split by using a temp dir with symlinks,
-        # or pass full cache_dir and let MultiDayEnv handle it
-        # For simplicity, pass the full cache_dir since train/val split uses
-        # different files for eval anyway
-        train_cache_dir = args.cache_dir
+        # Pass only train-split .npz paths to workers via cache_files
+        train_npz_paths = [f[1] for f in train_files]
 
         env = SubprocVecEnv([
             make_train_env(
-                cache_dir=train_cache_dir,
+                cache_files=train_npz_paths,
                 reward_mode=args.reward_mode,
                 lambda_=args.lambda_,
                 execution_cost=args.execution_cost,

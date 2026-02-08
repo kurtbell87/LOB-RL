@@ -13,7 +13,7 @@ Gymnasium wrappers and utilities on top of the C++ `lob_rl_core` module.
 | `multi_day_env.py` | `MultiDayEnv` — cycles through multiple day files. Precomputes all at construction. **This is what `train.py` uses.** |
 | `bar_aggregation.py` | `aggregate_bars(obs, mid, spread, bar_size)` — tick → bar feature aggregation. Returns (bar_features, bar_mid_close, bar_spread_close). |
 | `bar_level_env.py` | `BarLevelEnv` — bar-level `gymnasium.Env`. 21-dim obs (13 intra-bar + 7 temporal + 1 position). `from_cache()`, `from_file()`. |
-| `convert_dbn.py` | Converts Databento `.dbn.zst` to flat binary `.bin`. CLI entry point. |
+| ~~`convert_dbn.py`~~ | Deleted (PR #11). |
 
 ## API Signatures
 
@@ -41,6 +41,10 @@ PrecomputedEnv.from_file(path, session_config=None,
 # Gym interface
 obs, info = env.reset()                      # obs: ndarray(54,) float32
 obs, reward, terminated, truncated, info = env.step(action)  # action: 0=short, 1=flat, 2=long
+
+# Terminal step: forced flatten
+# Position forced to 0.0 regardless of action. Reward = -spread/2 * |prev_position|.
+# info = {"forced_flatten": True, "forced_flatten_cost": float, "intended_action": int}
 ```
 
 **Observation layout (54 dims):**
@@ -69,12 +73,17 @@ MultiDayEnv(file_paths=None,           # list of .bin paths (mutually exclusive 
             seed=None,
             execution_cost=False,
             participation_bonus=0.0,
-            step_interval=1)           # forwarded to PrecomputedEnv
+            step_interval=1,           # forwarded to PrecomputedEnv
+            bar_size=0)                # 0=tick-level, >0=bar-level
 
 # Exactly one of file_paths or cache_dir must be provided.
 # When cache_dir: globs *.npz sorted by name, loads via from_cache().
 # Each reset() advances to next day.
-# observation_space: (54,) — same as PrecomputedEnv
+# observation_space: (54,) tick-level or (21,) bar-level
+# reset() info: {"day_index": int, "instrument_id": int|None, "contract_roll": bool}
+
+# Contract boundary tracking:
+env.contract_ids  # list[int|None] — instrument_id per day (None if not in .npz)
 ```
 
 ### LOBGymEnv (`gym_env.py`)
