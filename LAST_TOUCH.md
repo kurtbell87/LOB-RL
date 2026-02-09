@@ -4,21 +4,27 @@
 
 ### Immediate next step
 
-**Investigate negative OOS results.** All three GPU experiments (5M steps) completed. All are negative OOS. LSTM is the best but still deeply unprofitable. Full analysis: `research/experiment_report.md`.
+**Run first experiment via the research pipeline.** The claude-research-kit is now installed and configured. Use `./experiment.sh` to investigate negative OOS results through the SURVEY-FRAME-RUN-READ-LOG cycle.
+
+**Start here:**
+```bash
+./experiment.sh survey "Does increasing training data from 20 to 199 days fix OOS generalization?"
+```
+
+Or run the full auto-advancing program:
+```bash
+./experiment.sh program --max-cycles 3
+```
+
+**Research agenda:** See `QUESTIONS.md` for 6 open questions (2x P0, 2x P1, 1x P2, 1x P3). See `RESEARCH_LOG.md` for 7 pre-experiments. See `DOMAIN_PRIORS.md` for LOB-RL domain knowledge.
+
+**OOS results summary (all negative):**
 
 | Model | Val Return | Test Return | Val Sortino | Test Sortino | Positive Eps |
 |-------|-----------|-------------|-------------|--------------|--------------|
 | **LSTM** | **-36.7** | **-33.4** | **-1.06** | -1.48 | 2/5 val, 2/10 test |
 | MLP | -62.9 | -44.0 | -1.67 | -2.22 | 0/5 val, 1/10 test |
 | Frame-stack | -82.3 | -49.4 | -1.37 | -1.10 | 0/5 val, 1/10 test |
-
-**Priority tasks:**
-1. **Increase training days** — current shuffle-split uses only 20 train days (8% of 249). Try 80% train (199 days). The model is memorizing 20 days.
-2. **Ablate execution cost** — run without `--execution-cost` to isolate signal vs cost. If OOS is positive without exec cost, the agent learns signal but can't overcome the spread.
-3. **Evaluate 4M checkpoints** — all three models have `checkpoints/rl_model_4000000_steps.zip`. Compare 4M vs 5M OOS to detect late-stage overfitting.
-4. **Use CPU for MLP/frame-stack** — SB3 warns GPU is wasted on MlpPolicy. Only LSTM benefits.
-5. **VecNormalize audit** — check if running statistics leak cross-day information.
-6. **Reward shaping** — consider reducing exec cost coefficient, per-day reward normalization.
 
 ### Roll calendar
 
@@ -35,7 +41,9 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 
 ### What was just completed
 
-**Removed SSH dependency from RunPod infrastructure (2026-02-09).** All three GPU experiments had their auto-fetch fail because `monitor.sh` and `fetch-results.sh` relied on SSH to running pods. Fixed the entire flow:
+**Installed claude-research-kit (2026-02-09).** Two-tower architecture: TDD for engineering (`./tdd.sh`), Research for experiments (`./experiment.sh`). Merged pre-tool-use hook dispatches on `TDD_PHASE` vs `EXP_PHASE`. Populated `QUESTIONS.md` (6 open + 4 answered), `DOMAIN_PRIORS.md`, `RESEARCH_LOG.md` (7 pre-experiments backfilled). Updated CLAUDE.md with research workflow section and "when to use which" guide.
+
+**Prior: Removed SSH dependency from RunPod infrastructure (2026-02-09).** All three GPU experiments had their auto-fetch fail because `monitor.sh` and `fetch-results.sh` relied on SSH to running pods. Fixed the entire flow:
 
 - **`start.sh`:** Exits 0 on training success (pod auto-stops, billing stops). Only keeps container alive via `sleep infinity` on failure for SSH debugging.
 - **`fetch-results.sh`:** Rewritten to use `aws s3 sync` from the network volume. Takes run dir name (e.g., `lstm_abc123`) not pod ID. No running pod required.
@@ -125,6 +133,13 @@ Key finding: **More training steps made things worse, not better.** MLP val went
 
 | File | Role |
 |---|---|
+| `experiment.sh` | Research experiment orchestrator — survey, frame, run, read, log, program |
+| `QUESTIONS.md` | Research agenda — 6 open questions, 4 answered |
+| `DOMAIN_PRIORS.md` | LOB-RL domain knowledge for experiment agents |
+| `RESEARCH_LOG.md` | Cumulative experiment findings (7 pre-experiments) |
+| `experiments/` | Experiment spec files (created by FRAME phase) |
+| `results/` | Experiment output directories (metrics.json, analysis.md) |
+| `.claude/prompts/{survey,frame,run,read,synthesize}.md` | Phase-specific agent prompts |
 | `scripts/train.py` | Training entry point — `--bar-size`, `--cache-dir`, `--output-dir`, `--train-days`, `--shuffle-split`, `--seed`, `--frame-stack`, `--recurrent`, `--checkpoint-freq`, `--resume` |
 | `scripts/start.sh` | RunPod container entrypoint. Runs train.py; exits 0 on success (pod stops), sleep infinity on failure (SSH debug). |
 | `Dockerfile` | Training container image. PyTorch 2.5.1 + CUDA 12.4 + sshd. Entrypoint: `start.sh`. Must build with `--platform linux/amd64`. |
@@ -196,7 +211,8 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 | ~~Proper OOS validation~~ | ~~Done~~ | Shuffle-split also negative. Not just regime shift — agent doesn't generalize at 2M steps. |
 | ~~RunPod GPU training~~ | ~~Done~~ | PR #17 (checkpointing) + infrastructure files (Dockerfile, runpod/ scripts). |
 | ~~Run experiments on RunPod~~ | ~~Done~~ | All 3 completed 5M steps. LSTM best (val -36.7), all negative OOS. See `research/experiment_report.md`. |
-| **Investigate negative OOS** | **Critical** | Priority: increase train days (20→199), ablate exec cost, eval 4M checkpoints, VecNormalize audit. |
+| ~~Install research kit~~ | ~~Done~~ | claude-research-kit installed, configured, research files populated. |
+| **Investigate negative OOS** | **Critical** | Use `./experiment.sh` pipeline. P0: increase train days (20→199), ablate exec cost. P1: eval 4M checkpoints, VecNormalize audit. |
 | Bar-level supervised diagnostic | Low | Script lacks `--bar-size` support. Nice-to-have. |
 | More data (second year) | Low | 2023-2024 as complement if 2022 generalizes well. |
 
