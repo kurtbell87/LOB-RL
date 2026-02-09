@@ -3,12 +3,16 @@
 # Claude Code to synthesize findings.
 #
 # Usage:
-#   ./research/monitor.sh
+#   RUNPOD_VOLUME_ID=4w2m8hek66 ./research/monitor.sh
 #
-# Polls every hour. When all pods finish:
-#   1. Fetches results via rsync
-#   2. Removes pods
-#   3. Launches Claude Code to analyze results and write a report
+# Polls every hour. When a pod finishes (exits or disappears):
+#   1. Fetches results via S3 (no SSH needed, no running pod needed)
+#   2. Verifies expected files were downloaded
+#   3. Removes the pod
+#   4. After ALL pods finish, launches Claude Code to analyze results
+#
+# Pods auto-stop on training success (start.sh exits 0). This monitor
+# detects the "Exited" state via `runpodctl get pod`.
 #
 # Edit the PODS array below for each experiment batch.
 
@@ -16,61 +20,66 @@ set -euo pipefail
 
 # ─── Configuration ───────────────────────────────────────────────────
 # Format: "pod_id:exp_name"
+# The run directory on the volume is: {exp_name}_{pod_id}
 PODS=(
     "6kwbf810ribiza:lstm"
     "yvag35jcok2egk:mlp"
     "0w3gtzsu1h3nhl:framestack"
 )
 POLL_INTERVAL="${POLL_INTERVAL:-3600}"  # seconds between polls (default: 1 hour)
+VOLUME_ID="${RUNPOD_VOLUME_ID:?Set RUNPOD_VOLUME_ID to your network volume ID}"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RESULTS_DIR="$REPO_ROOT/results"
-RESEARCH_DIR="$REPO_ROOT/research"
 FETCH_SCRIPT="$REPO_ROOT/runpod/fetch-results.sh"
-SSH_KEY="$HOME/.runpod/ssh/RunPod-Key-Go"
-SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -i $SSH_KEY"
+RESEARCH_DIR="$REPO_ROOT/research"
 
 # ─── Helpers ─────────────────────────────────────────────────────────
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
-get_ssh_info() {
+get_pod_status() {
+    # Returns the status string for a pod (RUNNING, EXITED, etc.) or empty if not found
     local pod_id="$1"
-    local ssh_line
-    ssh_line=$(runpodctl ssh connect "$pod_id" 2>&1) || return 1
-    local host port
-    host=$(echo "$ssh_line" | grep -oE 'root@[^ ]+' | sed 's/root@//')
-    port=$(echo "$ssh_line" | grep -oE '\-p [0-9]+' | grep -oE '[0-9]+')
-    if [ -z "$host" ] || [ -z "$port" ]; then
+    runpodctl get pod 2>&1 | grep "$pod_id" | awk '{print $2}' || true
+}
+
+is_pod_done() {
+    # A pod is "done" if it's EXITED (success) or no longer listed (removed/crashed)
+    local pod_id="$1"
+    local status
+    status=$(get_pod_status "$pod_id")
+    if [ -z "$status" ]; then
+        # Pod no longer listed — treat as done
+        return 0
+    fi
+    case "$status" in
+        EXITED|TERMINATED|COMPLETED) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+fetch_and_verify() {
+    # Fetch results via S3 and verify expected files exist locally.
+    # Returns 0 on success, 1 on failure.
+    local run_dir="$1"
+    local local_dir="$RESULTS_DIR/$run_dir"
+
+    log "  Fetching results via S3: $run_dir"
+    if RUNPOD_VOLUME_ID="$VOLUME_ID" "$FETCH_SCRIPT" "$run_dir" 2>&1 | tail -10; then
+        # Verify expected files
+        if [ -f "$local_dir/train.log" ] && [ -f "$local_dir/ppo_lob.zip" ]; then
+            log "  Verified: train.log and ppo_lob.zip present."
+            return 0
+        else
+            log "  WARNING: Download succeeded but expected files missing."
+            [ ! -f "$local_dir/train.log" ] && log "    Missing: train.log"
+            [ ! -f "$local_dir/ppo_lob.zip" ] && log "    Missing: ppo_lob.zip"
+            return 1
+        fi
+    else
+        log "  WARNING: fetch-results.sh failed for $run_dir."
         return 1
     fi
-    echo "$host $port"
-}
-
-check_training_done() {
-    local pod_id="$1" exp_name="$2"
-    local info host port
-    info=$(get_ssh_info "$pod_id") || return 1
-    host=$(echo "$info" | awk '{print $1}')
-    port=$(echo "$info" | awk '{print $2}')
-
-    local log_path="/workspace/runs/${exp_name}_${pod_id}/train.log"
-    local result
-    result=$(ssh $SSH_OPTS root@"$host" -p "$port" \
-        "grep -c 'Training exited with code' $log_path 2>/dev/null" 2>/dev/null) || return 1
-
-    [ "$result" -ge 1 ] && return 0 || return 1
-}
-
-get_exit_code() {
-    local pod_id="$1" exp_name="$2"
-    local info host port
-    info=$(get_ssh_info "$pod_id") || { echo "unknown"; return; }
-    host=$(echo "$info" | awk '{print $1}')
-    port=$(echo "$info" | awk '{print $2}')
-
-    local log_path="/workspace/runs/${exp_name}_${pod_id}/train.log"
-    ssh $SSH_OPTS root@"$host" -p "$port" \
-        "grep 'Training exited with code' $log_path 2>/dev/null | grep -oE '[0-9]+$'" 2>/dev/null || echo "unknown"
 }
 
 # ─── Track completion with simple parallel arrays ────────────────────
@@ -88,7 +97,8 @@ NUM_PODS=${#POD_IDS[@]}
 
 log "Monitoring $NUM_PODS pods. Poll interval: ${POLL_INTERVAL}s"
 for i in $(seq 0 $((NUM_PODS - 1))); do
-    log "  ${POD_NAMES[$i]} -> ${POD_IDS[$i]}"
+    run_dir="${POD_NAMES[$i]}_${POD_IDS[$i]}"
+    log "  ${POD_NAMES[$i]} -> ${POD_IDS[$i]}  (run dir: $run_dir)"
 done
 
 while true; do
@@ -100,41 +110,41 @@ while true; do
 
         pod_id="${POD_IDS[$i]}"
         exp_name="${POD_NAMES[$i]}"
+        run_dir="${exp_name}_${pod_id}"
 
         log "Checking $exp_name ($pod_id)..."
 
-        # Check if pod still exists (retry once on failure)
-        pod_list=$(runpodctl get pod 2>&1) || pod_list=""
-        if [ -z "$pod_list" ] || ! echo "$pod_list" | grep -q "$pod_id"; then
-            sleep 5
-            pod_list=$(runpodctl get pod 2>&1) || pod_list=""
-            if [ -z "$pod_list" ] || ! echo "$pod_list" | grep -q "$pod_id"; then
-                log "  WARNING: Pod $pod_id no longer exists. Marking as done."
-                POD_DONE[$i]="yes"
-                continue
-            fi
+        status=$(get_pod_status "$pod_id")
+        if [ -n "$status" ]; then
+            log "  Status: $status"
+        else
+            log "  Pod not found in listing."
         fi
 
-        # Check if training finished
-        if check_training_done "$pod_id" "$exp_name"; then
-            exit_code=$(get_exit_code "$pod_id" "$exp_name")
-            log "  FINISHED (exit code: $exit_code). Fetching results..."
+        if is_pod_done "$pod_id"; then
+            log "  Pod finished (status: ${status:-not found}). Fetching results..."
 
-            # Fetch results
-            if "$FETCH_SCRIPT" "$pod_id" 2>&1 | tail -5; then
-                log "  Results saved to $RESULTS_DIR/$pod_id/"
+            # Fetch and verify
+            if fetch_and_verify "$run_dir"; then
+                log "  Results saved to $RESULTS_DIR/$run_dir/"
+
+                # Only remove the pod if it still exists and results verified
+                if [ -n "$status" ]; then
+                    log "  Removing pod $pod_id..."
+                    runpodctl remove pod "$pod_id" 2>&1 || log "  WARNING: Failed to remove pod."
+                fi
             else
-                log "  WARNING: fetch-results.sh failed. Results may be incomplete."
-            fi
+                log "  Fetch failed or incomplete. NOT removing pod $pod_id."
+                log "  Manual fetch: RUNPOD_VOLUME_ID=$VOLUME_ID ./runpod/fetch-results.sh $run_dir"
 
-            # Remove pod
-            log "  Removing pod $pod_id..."
-            runpodctl remove pod "$pod_id" 2>&1 || log "  WARNING: Failed to remove pod."
+                # Still mark as done to avoid infinite loop, but warn
+                log "  WARNING: Marking as done despite fetch failure. Check results manually."
+            fi
 
             POD_DONE[$i]="yes"
             log "  $exp_name complete."
         else
-            log "  Still training."
+            log "  Still running."
         fi
     done
 
@@ -155,7 +165,8 @@ RESULT_DIRS=""
 for i in $(seq 0 $((NUM_PODS - 1))); do
     pod_id="${POD_IDS[$i]}"
     exp_name="${POD_NAMES[$i]}"
-    RESULT_DIRS="$RESULT_DIRS  - $exp_name: $RESULTS_DIR/$pod_id/ (output dir: ${exp_name}_${pod_id})"$'\n'
+    run_dir="${exp_name}_${pod_id}"
+    RESULT_DIRS="$RESULT_DIRS  - $exp_name: $RESULTS_DIR/$run_dir/"$'\n'
 done
 
 read -r -d '' ANALYSIS_PROMPT << 'PROMPT_EOF' || true

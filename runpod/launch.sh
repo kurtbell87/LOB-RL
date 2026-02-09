@@ -70,8 +70,7 @@ CREATE_OUTPUT=$(runpodctl create pod \
     --imageName "$IMAGE" \
     --networkVolumeId "$VOLUME_ID" \
     --volumePath /workspace \
-    --ports "22/tcp" --ports "6006/http" \
-    --startSSH \
+    --ports "6006/http" \
     --env "EXP_NAME=$EXP_NAME" \
     $CLOUD_TYPE \
     --args "$TRAIN_ARGS" \
@@ -85,18 +84,19 @@ if [ -z "$POD_ID" ]; then
     exit 1
 fi
 
+RUN_DIR="${EXP_NAME}_${POD_ID}"
+
 echo "Pod created: $POD_ID"
-echo "Output dir: /workspace/runs/${EXP_NAME}_${POD_ID}/"
+echo "Output dir: /workspace/runs/${RUN_DIR}/"
 echo ""
 echo "=== Next steps ==="
-echo "  Monitor:  runpodctl logs $POD_ID"
-echo "  SSH:      runpodctl ssh $POD_ID"
+echo "  Status:   runpodctl get pod"
+echo "  Logs:     runpodctl logs $POD_ID"
 echo "  Stop:     runpodctl stop pod $POD_ID"
 echo "  Remove:   runpodctl remove pod $POD_ID"
-echo "  Results:  ./runpod/fetch-results.sh $POD_ID"
 echo ""
-echo "  Log (after SSH):"
-echo "    tail -f /workspace/runs/${EXP_NAME}_${POD_ID}/train.log"
+echo "  Pod auto-stops on training success. Fetch results via S3:"
+echo "    RUNPOD_VOLUME_ID=$VOLUME_ID ./runpod/fetch-results.sh $RUN_DIR"
 echo ""
-echo "  TensorBoard (after SSH):"
-echo "    tensorboard --logdir /workspace/runs/${EXP_NAME}_${POD_ID}/tb_logs --port 6006 --bind_all"
+echo "  Automated monitoring (polls until done, fetches, analyzes):"
+echo "    RUNPOD_VOLUME_ID=$VOLUME_ID ./research/monitor.sh"

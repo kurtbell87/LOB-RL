@@ -4,19 +4,21 @@
 
 ### Immediate next step
 
-**GPU experiments running — check results in the morning.** Three parallel 5M-step experiments are running on RunPod RTX 4090s. `research/monitor.sh` is polling hourly, will auto-fetch results and auto-remove pods when done, then launch Claude Code to write `research/experiment_report.md`.
+**Investigate negative OOS results.** All three GPU experiments (5M steps) completed. All are negative OOS. LSTM is the best but still deeply unprofitable. Full analysis: `research/experiment_report.md`.
 
-| Exp | Pod ID | Output Dir | Est. Finish |
-|-----|--------|-----------|-------------|
-| LSTM | `6kwbf810ribiza` | `lstm_6kwbf810ribiza/` | ~6-8 hrs |
-| MLP | `yvag35jcok2egk` | `mlp_yvag35jcok2egk/` | ~3-4 hrs |
-| Frame-stack | `0w3gtzsu1h3nhl` | `framestack_0w3gtzsu1h3nhl/` | ~3-4 hrs |
+| Model | Val Return | Test Return | Val Sortino | Test Sortino | Positive Eps |
+|-------|-----------|-------------|-------------|--------------|--------------|
+| **LSTM** | **-36.7** | **-33.4** | **-1.06** | -1.48 | 2/5 val, 2/10 test |
+| MLP | -62.9 | -44.0 | -1.67 | -2.22 | 0/5 val, 1/10 test |
+| Frame-stack | -82.3 | -49.4 | -1.37 | -1.10 | 0/5 val, 1/10 test |
 
-1. **Check results** — `cat research/experiment_report.md` (auto-generated once all pods finish).
-2. **Monitor progress** — `tail -f research/monitor.log` or `runpodctl get pod`.
-3. **Manual check** — `runpodctl ssh connect <pod-id>`, then `tail -f /workspace/runs/<exp>_<pod-id>/train.log`.
-4. **Fetch results manually** — `./runpod/fetch-results.sh <pod-id>` if monitor.sh had issues.
-5. **After results:** Investigate negative OOS — reward shaping, obs normalization debugging, different architectures, more data.
+**Priority tasks:**
+1. **Increase training days** — current shuffle-split uses only 20 train days (8% of 249). Try 80% train (199 days). The model is memorizing 20 days.
+2. **Ablate execution cost** — run without `--execution-cost` to isolate signal vs cost. If OOS is positive without exec cost, the agent learns signal but can't overcome the spread.
+3. **Evaluate 4M checkpoints** — all three models have `checkpoints/rl_model_4000000_steps.zip`. Compare 4M vs 5M OOS to detect late-stage overfitting.
+4. **Use CPU for MLP/frame-stack** — SB3 warns GPU is wasted on MlpPolicy. Only LSTM benefits.
+5. **VecNormalize audit** — check if running statistics leak cross-day information.
+6. **Reward shaping** — consider reducing exec cost coefficient, per-day reward normalization.
 
 ### Roll calendar
 
@@ -33,7 +35,20 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 
 ### What was just completed
 
-**Launched 3 parallel GPU experiments on RunPod.** LSTM, MLP, and frame-stack all running 5M steps with checkpointing every 500k. Key fixes in this session:
+**Removed SSH dependency from RunPod infrastructure (2026-02-09).** All three GPU experiments had their auto-fetch fail because `monitor.sh` and `fetch-results.sh` relied on SSH to running pods. Fixed the entire flow:
+
+- **`start.sh`:** Exits 0 on training success (pod auto-stops, billing stops). Only keeps container alive via `sleep infinity` on failure for SSH debugging.
+- **`fetch-results.sh`:** Rewritten to use `aws s3 sync` from the network volume. Takes run dir name (e.g., `lstm_abc123`) not pod ID. No running pod required.
+- **`monitor.sh`:** Detects completion via `runpodctl get pod` status (EXITED/not found) instead of SSH. Fetches via S3. Verifies `train.log` + `ppo_lob.zip` exist before removing pod.
+- **`launch.sh`:** Removed `--ports "22/tcp"` and `--startSSH`. Updated printed instructions for S3-based fetch.
+- **`runpod/README.md`:** Updated for new auto-stop + S3 fetch flow.
+- **Dockerfile unchanged** — `openssh-server`+`rsync` kept for debugging failed pods.
+
+**Prior: GPU experiment analysis completed (2026-02-09).** All three 5M-step experiments finished on RunPod. Results were stranded on the persistent volume (auto-fetch failed due to SSH issues). Recovery: launched a recovery pod, rsync'd results locally. Report: `research/experiment_report.md`.
+
+Key finding: **More training steps made things worse, not better.** MLP val went from -51.5 (2M) to -62.9 (5M). Frame-stack val went from -48.4 to -82.3. The agent is memorizing the 20 training days. LSTM is least overfit but still negative. The problem is likely the 8%/2%/90% train/val/test split — 20 training days is far too few.
+
+**Prior: Launched 3 parallel GPU experiments on RunPod.** LSTM, MLP, and frame-stack all running 5M steps with checkpointing every 500k. Key fixes in this session:
 
 - **Per-experiment output dirs:** `launch.sh` auto-detects experiment name from args (`--recurrent` → lstm, `--frame-stack` → framestack, else mlp). `start.sh` constructs `/workspace/runs/{exp_name}_{RUNPOD_POD_ID}/` using RunPod-injected env vars. No collisions when multiple pods share a volume.
 - **Volume mount fix:** Added `--volumePath /workspace` to `runpodctl create pod` (default was `/runpod/`, causing "no training files" errors).
@@ -102,20 +117,23 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 | **MLP shuffle-split** | **2M, 170 train, shuffle, seed 42** | **Val -51.5, Test -62.5. Sortino -1.51.** |
 | **Frame-stack shuffle** | **2M, frame_stack=4, shuffle, seed 42** | **Val -48.4, Test -50.2. Sortino -1.08.** |
 | **LSTM shuffle** | **2M, recurrent, shuffle, seed 42** | **Killed at 15% — too slow locally (422 fps).** |
+| **MLP GPU** | **5M, shuffle, seed 42, RTX 4090** | **Val -62.9, Test -44.0. Sortino -2.22. Worse than 2M on val.** |
+| **Frame-stack GPU** | **5M, frame_stack=4, shuffle, RTX 4090** | **Val -82.3, Test -49.4. Sortino -1.10. Much worse on val.** |
+| **LSTM GPU** | **5M, recurrent, shuffle, RTX 4090** | **Val -36.7, Test -33.4. Sortino -1.06. Best OOS but still negative.** |
 
 ## Key files for current task
 
 | File | Role |
 |---|---|
 | `scripts/train.py` | Training entry point — `--bar-size`, `--cache-dir`, `--output-dir`, `--train-days`, `--shuffle-split`, `--seed`, `--frame-stack`, `--recurrent`, `--checkpoint-freq`, `--resume` |
-| `scripts/start.sh` | RunPod container entrypoint. Starts sshd, runs train.py in background, keeps container alive. |
+| `scripts/start.sh` | RunPod container entrypoint. Runs train.py; exits 0 on success (pod stops), sleep infinity on failure (SSH debug). |
 | `Dockerfile` | Training container image. PyTorch 2.5.1 + CUDA 12.4 + sshd. Entrypoint: `start.sh`. Must build with `--platform linux/amd64`. |
-| `research/monitor.sh` | Polls RunPod pods hourly, fetches results, removes pods, launches Claude Code for analysis |
+| `research/monitor.sh` | Polls RunPod pods via API (not SSH), fetches via S3, verifies before removing, launches Claude Code for analysis |
 | `research/experiment_report.md` | Auto-generated experiment analysis (created by monitor.sh after all pods finish) |
 | `runpod/README.md` | RunPod setup guide — volume creation, cache upload, pod launch, result fetch |
 | `runpod/launch.sh` | Launch a training pod: `./runpod/launch.sh [train.py args...]` |
 | `runpod/upload-cache.sh` | Legacy cache upload via rsync (creates GPU pod). Prefer `aws s3 sync` instead. |
-| `runpod/fetch-results.sh` | Download trained model + logs from pod via rsync over SSH |
+| `runpod/fetch-results.sh` | Download trained model + logs from network volume via S3. Takes run dir name, no running pod needed. |
 | `scripts/precompute_cache.py` | CLI tool to build `.npz` cache. Use `--roll-calendar` or `--instrument-id`. |
 | `data/mes/roll_calendar.json` | Maps each date → front-month instrument_id. Used by `--roll-calendar`. |
 | `data/mes/*.mbo.dbn.zst` | 312 daily files, Jan–Dec 2022, 57GB. All /MES instruments per file. |
@@ -177,8 +195,8 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 | ~~Comparative experiments~~ | ~~Done (partial)~~ | MLP and frame-stack done locally (both negative OOS). LSTM killed — needs GPU. |
 | ~~Proper OOS validation~~ | ~~Done~~ | Shuffle-split also negative. Not just regime shift — agent doesn't generalize at 2M steps. |
 | ~~RunPod GPU training~~ | ~~Done~~ | PR #17 (checkpointing) + infrastructure files (Dockerfile, runpod/ scripts). |
-| ~~Run experiments on RunPod~~ | ~~Running~~ | 3 pods running 5M steps (LSTM, MLP, frame-stack). `research/monitor.sh` watching. |
-| **Investigate negative OOS** | **Critical** | Consider: reward shaping, obs normalization debugging, different architectures, more data. |
+| ~~Run experiments on RunPod~~ | ~~Done~~ | All 3 completed 5M steps. LSTM best (val -36.7), all negative OOS. See `research/experiment_report.md`. |
+| **Investigate negative OOS** | **Critical** | Priority: increase train days (20→199), ablate exec cost, eval 4M checkpoints, VecNormalize audit. |
 | Bar-level supervised diagnostic | Low | Script lacks `--bar-size` support. Nice-to-have. |
 | More data (second year) | Low | 2023-2024 as complement if 2022 generalizes well. |
 

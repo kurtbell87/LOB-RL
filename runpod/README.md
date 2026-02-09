@@ -7,17 +7,16 @@ GPU training infrastructure for LOB-RL. Uses persistent network volumes for data
 | File | Role |
 |------|------|
 | `README.md` | This guide |
-| `upload-cache.sh` | One-time upload of `cache/mes/` to RunPod network volume via rsync over SSH |
+| `upload-cache.sh` | Legacy cache upload via rsync (prefer `aws s3 sync` — see setup below) |
 | `launch.sh` | Launch a training pod with given args. Auto-detects `EXP_NAME` from args, passes `--cache-dir /workspace/cache/mes/`. Output dir is `/workspace/runs/{exp_name}_{pod_id}/`. |
-| `fetch-results.sh` | Download trained model + logs from pod via rsync over SSH |
+| `fetch-results.sh` | Download trained model + logs from network volume via S3. Takes run dir name (e.g., `lstm_abc123`). No running pod required. |
 
 ## Prerequisites
 
 1. **RunPod account** with API key and S3 API credentials
 2. **`runpodctl`** CLI installed: `brew install runpod/runpodctl/runpodctl`
 3. **Docker Hub** account (for pushing the training image)
-4. **AWS CLI** (for S3-compatible upload to RunPod volumes): `brew install awscli`
-5. **SSH key** added to RunPod: `runpodctl ssh add-key`
+4. **AWS CLI** (for S3-compatible access to RunPod volumes): `brew install awscli`
 
 ## Secrets
 
@@ -83,16 +82,17 @@ Image is ~8GB (PyTorch 2.5.1 + CUDA 12.4 + sshd + rsync + SB3 deps). No data bak
 ## Docker Image
 
 The `Dockerfile` uses `pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime` as base and adds:
-- `openssh-server` + `rsync` (for SSH access and result fetching)
+- `openssh-server` + `rsync` (kept for debugging failed pods via SSH)
 - Python deps: `gymnasium`, `stable-baselines3`, `sb3-contrib`, `tensorboard`
-- `scripts/start.sh` as entrypoint (starts sshd, runs training in background, keeps container alive)
+- `scripts/start.sh` as entrypoint (runs training, exits on success)
 - `scripts/train.py` + `python/lob_rl/` (training code)
 
 The `start.sh` entrypoint:
 - Starts sshd (picks up RunPod-injected `PUBLIC_KEY` env var for auth)
 - Constructs unique output dir: `/workspace/runs/{EXP_NAME}_{RUNPOD_POD_ID}/`
-- Runs `train.py` in background, logging to `{output_dir}/train.log`
-- Keeps container alive after training completes or fails (for SSH debugging / result fetching)
+- Runs `train.py`, logging to `{output_dir}/train.log`
+- **On success (exit 0):** exits immediately — pod stops, billing stops. Results on network volume.
+- **On failure (non-zero):** keeps container alive via `sleep infinity` for SSH debugging.
 - With no args, idles for manual SSH use
 
 ## Running Experiments
@@ -124,25 +124,25 @@ GPU_TYPE="NVIDIA L40" ./runpod/launch.sh --recurrent ...
 ### Monitor training
 
 ```bash
-# SSH into the pod
-runpodctl ssh connect <pod-id>
-# Then use the printed ssh command
+# Check pod status (pods auto-stop on training success)
+runpodctl get pod
 
-# Watch training log (output dir shown in launch.sh output)
-tail -f /workspace/runs/<exp_name>_<pod-id>/train.log
+# View logs
+runpodctl logs <pod-id>
 
-# TensorBoard
-tensorboard --logdir /workspace/runs/<exp_name>_<pod-id>/tb_logs --port 6006 --bind_all
-# Then SSH tunnel: ssh -L 6006:localhost:6006 -p PORT root@HOST
+# Automated monitoring — polls until all pods finish, fetches results, analyzes
+RUNPOD_VOLUME_ID=4w2m8hek66 ./research/monitor.sh
 ```
 
 ### Fetch results
 
+Results are on the persistent network volume. Fetch via S3 — no running pod required:
+
 ```bash
-./runpod/fetch-results.sh <pod-id>
+RUNPOD_VOLUME_ID=4w2m8hek66 ./runpod/fetch-results.sh lstm_abc123
 ```
 
-Downloads via rsync over SSH to `results/<pod-id>/`. Pod must be RUNNING.
+Downloads via S3 to `results/lstm_abc123/`. The argument is the run directory name (`{exp_name}_{pod_id}`), shown in `launch.sh` output.
 
 ### Resume from checkpoint
 
@@ -196,6 +196,7 @@ Data never moves again unless you add new cache files.
 ## Gotchas
 
 - **Image must be `linux/amd64`** — use `docker buildx build --platform linux/amd64`. Building on Apple Silicon without `--platform` produces an ARM image that silently fails on RunPod.
-- **SSH needs the image to include sshd** — RunPod's `--startSSH` flag doesn't inject sshd into custom images. The Dockerfile installs `openssh-server` and `start.sh` runs it.
-- **SSH auth** — RunPod injects the public key via `PUBLIC_KEY` env var. `start.sh` writes it to `/root/.ssh/authorized_keys`. Use the RunPod-generated key: `ssh -i ~/.runpod/ssh/RunPod-Key-Go -p PORT root@HOST`.
-- **Cache upload uses S3, not rsync** — `upload-cache.sh` is legacy (creates a GPU pod for rsync). Prefer `aws s3 sync --profile runpod` (see setup above).
+- **Pods auto-stop on success** — `start.sh` exits 0 after training completes. The pod shows as "Exited" in `runpodctl get pod`. Results are on the network volume; fetch via S3.
+- **Failed pods stay alive** — if training fails (non-zero exit), the pod stays running for SSH debugging. Remember to `runpodctl remove pod` after debugging.
+- **Fetch uses S3, not SSH** — `fetch-results.sh` downloads from the network volume via `aws s3 sync`. No running pod required. Requires `RUNPOD_VOLUME_ID` env var and `--profile runpod` configured.
+- **Cache upload uses S3** — `upload-cache.sh` is legacy (creates a GPU pod for rsync). Prefer `aws s3 sync --profile runpod` (see setup above).

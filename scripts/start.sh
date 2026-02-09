@@ -1,6 +1,10 @@
 #!/bin/bash
 # RunPod container startup script.
-# Runs train.py in the background and keeps the container alive for SSH access.
+# Runs train.py, writes results to the network volume, and exits.
+#
+# On success (exit 0): pod stops immediately — billing stops. Results are on
+#   the network volume, fetchable via S3 any time.
+# On failure (non-zero): keeps container alive via sleep infinity for SSH debugging.
 #
 # Output dir: /workspace/runs/{EXP_NAME}_{RUNPOD_POD_ID}/
 # Training logs: {output_dir}/train.log
@@ -58,7 +62,11 @@ echo "=== Training exited with code $EXIT_CODE ===" | tee -a "$LOG_FILE"
 if [ $EXIT_CODE -ne 0 ]; then
     echo "Training failed. Container staying alive for debugging via SSH." | tee -a "$LOG_FILE"
     echo "Check log: tail -f $LOG_FILE" | tee -a "$LOG_FILE"
+    sleep infinity
 fi
 
-# Keep container alive for result fetching / debugging
-sleep infinity
+# Success — results are on the network volume (fetchable via S3).
+# Exit so the pod stops and billing stops.
+echo "Training succeeded. Pod will stop. Fetch results via S3:" | tee -a "$LOG_FILE"
+echo "  ./runpod/fetch-results.sh ${RUN_NAME}" | tee -a "$LOG_FILE"
+exit 0

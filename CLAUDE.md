@@ -1,4 +1,4 @@
-## Current State (updated 2026-02-08)
+## Current State (updated 2026-02-09)
 
 - **Build:** `build-release/` is current. 418 C++ tests pass (`./lob_tests`). 1304 Python tests pass. **1722 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
@@ -26,10 +26,12 @@
 - **Checkpointing DONE:** `--checkpoint-freq N` and `--resume PATH` on `train.py`. `CheckpointCallback` + custom `VecNormalizeSaveCallback`. Resume with `reset_num_timesteps=False`. PR #17 merged.
 - **RunPod infrastructure DONE:** `Dockerfile`, `.dockerignore`, `runpod/` scripts (upload-cache, launch, fetch-results). Persistent network volume + ephemeral GPU pods.
 - **RunPod config:** Region US-NC-1, default GPU RTX 4090 ($0.59/hr, 24GB). Volume ID `4w2m8hek66`. Docker Hub `kurtbell87/lob-rl:latest`. RunPod S3 creds via `aws configure --profile runpod`.
-- **RunPod fixes applied:** Dockerfile now builds for `linux/amd64` (not ARM). Includes `openssh-server`+`rsync`. Entrypoint is `scripts/start.sh` (starts sshd, runs training in background, keeps container alive). `fetch-results.sh` rewritten to use rsync over SSH. Cache upload uses `aws s3 sync --profile runpod`. Each experiment writes to `/workspace/runs/{exp_name}_{pod_id}/`.
+- **SSH dependency removed:** `start.sh` exits 0 on training success (pod auto-stops, billing stops). Only keeps container alive on failure for SSH debugging. `fetch-results.sh` uses `aws s3 sync` (no SSH/running pod needed). `monitor.sh` detects pod completion via `runpodctl get pod` status, fetches via S3, verifies before removing. `launch.sh` no longer requests SSH port.
+- **RunPod fixes applied:** Dockerfile builds for `linux/amd64` (not ARM). Includes `openssh-server`+`rsync` (kept for failed-pod debugging). Cache upload uses `aws s3 sync --profile runpod`. Each experiment writes to `/workspace/runs/{exp_name}_{pod_id}/`.
 - **Cache uploaded:** 249 `.npz` files (18GB) on RunPod volume `4w2m8hek66` at `cache/mes/`. Verified via `aws s3 ls`.
-- **GPU experiments RUNNING:** 3 parallel pods on RTX 4090s — LSTM (`6kwbf810ribiza`), MLP (`yvag35jcok2egk`), frame-stack (`0w3gtzsu1h3nhl`). 5M steps each, checkpoint every 500k. `research/monitor.sh` polling hourly, auto-fetches results, auto-removes pods, then launches Claude Code to write `research/experiment_report.md`.
-- **Next task:** Check `research/experiment_report.md` in the morning. Then investigate negative OOS results.
+- **GPU experiments DONE:** 3x RTX 4090 pods completed 5M steps each. Results recovered from RunPod volume (auto-fetch failed). Report: `research/experiment_report.md`.
+- **GPU results:** LSTM best OOS (val -36.7 / test -33.4), MLP (val -62.9 / test -44.0), frame-stack (val -82.3 / test -49.4). **All negative.** No architecture generalizes.
+- **Next task:** Investigate negative OOS — increase training days (20→199), ablate execution cost, evaluate 4M checkpoints.
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
 - **Precompute hint:** If cache needs rebuilding: `precompute_cache.py --roll-calendar ... --workers 8` (script supports `--workers N` via `ProcessPoolExecutor`).
 - **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42`
