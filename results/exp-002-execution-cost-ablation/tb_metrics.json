@@ -1,0 +1,152 @@
+{
+  "run-a": {
+    "500K": {
+      "entropy": 0.747547,
+      "entropy_actual_step": 507904,
+      "explained_variance": 0.895657,
+      "explained_variance_actual_step": 507904,
+      "approx_kl": 0.039066,
+      "approx_kl_actual_step": 507904,
+      "value_loss": 0.043705,
+      "value_loss_actual_step": 507904,
+      "fps": 4863.0,
+      "fps_actual_step": 507904
+    },
+    "1000K": {
+      "entropy": 0.563106,
+      "entropy_actual_step": 999424,
+      "explained_variance": 0.973526,
+      "explained_variance_actual_step": 999424,
+      "approx_kl": 0.052423,
+      "approx_kl_actual_step": 999424,
+      "value_loss": 0.020522,
+      "value_loss_actual_step": 999424,
+      "fps": 4807.0,
+      "fps_actual_step": 999424
+    },
+    "1500K": {
+      "entropy": 0.545503,
+      "entropy_actual_step": 1507328,
+      "explained_variance": 0.973744,
+      "explained_variance_actual_step": 1507328,
+      "approx_kl": 0.05629,
+      "approx_kl_actual_step": 1507328,
+      "value_loss": 0.014019,
+      "value_loss_actual_step": 1507328,
+      "fps": 4775.0,
+      "fps_actual_step": 1507328
+    },
+    "2000K": {
+      "entropy": 0.489739,
+      "entropy_actual_step": 1998848,
+      "explained_variance": 0.978602,
+      "explained_variance_actual_step": 1998848,
+      "approx_kl": 0.061359,
+      "approx_kl_actual_step": 1998848,
+      "value_loss": 0.011683,
+      "value_loss_actual_step": 1998848,
+      "fps": 4767.0,
+      "fps_actual_step": 1998848
+    }
+  },
+  "run-b": {
+    "500K": {
+      "entropy": 0.731502,
+      "entropy_actual_step": 507904,
+      "explained_variance": 0.91186,
+      "explained_variance_actual_step": 507904,
+      "approx_kl": 0.034904,
+      "approx_kl_actual_step": 507904,
+      "value_loss": 0.039527,
+      "value_loss_actual_step": 507904,
+      "fps": 3864.0,
+      "fps_actual_step": 507904
+    },
+    "1000K": {
+      "entropy": 0.588487,
+      "entropy_actual_step": 999424,
+      "explained_variance": 0.973036,
+      "explained_variance_actual_step": 999424,
+      "approx_kl": 0.051148,
+      "approx_kl_actual_step": 999424,
+      "value_loss": 0.019395,
+      "value_loss_actual_step": 999424,
+      "fps": 4106.0,
+      "fps_actual_step": 999424
+    },
+    "1500K": {
+      "entropy": 0.562302,
+      "entropy_actual_step": 1507328,
+      "explained_variance": 0.976353,
+      "explained_variance_actual_step": 1507328,
+      "approx_kl": 0.055945,
+      "approx_kl_actual_step": 1507328,
+      "value_loss": 0.013594,
+      "value_loss_actual_step": 1507328,
+      "fps": 4212.0,
+      "fps_actual_step": 1507328
+    },
+    "2000K": {
+      "entropy": 0.541923,
+      "entropy_actual_step": 1998848,
+      "explained_variance": 0.984348,
+      "explained_variance_actual_step": 1998848,
+      "approx_kl": 0.055266,
+      "approx_kl_actual_step": 1998848,
+      "value_loss": 0.010536,
+      "value_loss_actual_step": 1998848,
+      "fps": 4251.0,
+      "fps_actual_step": 1998848
+    }
+  },
+  "run-c": {
+    "500K": {
+      "entropy": 0.913136,
+      "entropy_actual_step": 507904,
+      "explained_variance": -0.004249,
+      "explained_variance_actual_step": 507904,
+      "approx_kl": 0.026359,
+      "approx_kl_actual_step": 507904,
+      "value_loss": 0.176574,
+      "value_loss_actual_step": 507904,
+      "fps": 4069.0,
+      "fps_actual_step": 507904
+    },
+    "1000K": {
+      "entropy": 0.877829,
+      "entropy_actual_step": 999424,
+      "explained_variance": 0.090651,
+      "explained_variance_actual_step": 999424,
+      "approx_kl": 0.029119,
+      "approx_kl_actual_step": 999424,
+      "value_loss": 0.168663,
+      "value_loss_actual_step": 999424,
+      "fps": 4094.0,
+      "fps_actual_step": 999424
+    },
+    "1500K": {
+      "entropy": 0.822026,
+      "entropy_actual_step": 1507328,
+      "explained_variance": 0.219498,
+      "explained_variance_actual_step": 1507328,
+      "approx_kl": 0.033665,
+      "approx_kl_actual_step": 1507328,
+      "value_loss": 0.177413,
+      "value_loss_actual_step": 1507328,
+      "fps": 4101.0,
+      "fps_actual_step": 1507328
+    },
+    "2000K": {
+      "entropy": 0.743415,
+      "entropy_actual_step": 1998848,
+      "explained_variance": 0.173749,
+      "explained_variance_actual_step": 1998848,
+      "approx_kl": 0.04104,
+      "approx_kl_actual_step": 1998848,
+      "value_loss": 0.20255,
+      "value_loss_actual_step": 1998848,
+      "fps": 4146.0,
+      "fps_actual_step": 1998848
+    }
+  }
+}

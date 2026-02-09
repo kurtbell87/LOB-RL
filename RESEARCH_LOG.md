@@ -5,6 +5,16 @@ Read this file FIRST when starting any new research task. It is the institutiona
 
 ---
 
+## exp-002-execution-cost-ablation — REFUTED
+**Date:** 2026-02-09
+**Hypothesis:** Removing execution cost reveals positive OOS returns, proving the agent learns signal masked by the 1-tick round-trip cost.
+**Key result:** Val -4.43 / test -5.03 without exec cost (vs val -39.55 / test -68.68 with). Exec cost accounts for ~35 points of OOS loss but removing it doesn't flip the sign to positive. 2/5 positive val episodes. Cross-eval with exec cost: val -85.22 (worse than baseline), confirming the no-cost policy is impractical.
+**Lesson:** Execution cost explains a large fraction (~70%) of OOS loss, but even gross returns are slightly negative on 20 training days. The gap to profitability is ~5 points (gross) not ~50 points (net). Stretch run (199d, no exec cost) hit +10.93 val but was severely undertrained (explained_variance=0.174) — needs 10M+ steps.
+**Next:** Run 199d no-exec-cost with sufficient training (10M+ steps) to test if positive val persists at convergence. Also resolve exp-001 (199d WITH exec cost) to isolate data vs cost effects.
+**Details:** results/exp-002-execution-cost-ablation/analysis.md
+
+---
+
 ## pre-007-gpu-framestack — REFUTED
 
 **Date:** 2026-02-09

@@ -1,0 +1,23 @@
+{
+  "run_a": {
+    "mean_return": 423.75,
+    "std_return": 141.84796142578125,
+    "sortino_ratio": Infinity,
+    "n_episodes": 10,
+    "positive_episodes": 10
+  },
+  "run_b": {
+    "mean_return": 483.7875061035156,
+    "std_return": 159.2895965576172,
+    "sortino_ratio": Infinity,
+    "n_episodes": 10,
+    "positive_episodes": 10
+  },
+  "run_c": {
+    "mean_return": 86.05000305175781,
+    "std_return": 43.81724166870117,
+    "sortino_ratio": Infinity,
+    "n_episodes": 10,
+    "positive_episodes": 10
+  }
+}
