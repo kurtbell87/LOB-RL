@@ -31,7 +31,10 @@
 - **Cache uploaded:** 249 `.npz` files (18GB) on RunPod volume `4w2m8hek66` at `cache/mes/`. Verified via `aws s3 ls`.
 - **GPU experiments DONE:** 3x RTX 4090 pods completed 5M steps each. Results recovered from RunPod volume (auto-fetch failed). Report: `research/experiment_report.md`.
 - **GPU results:** LSTM best OOS (val -36.7 / test -33.4), MLP (val -62.9 / test -44.0), frame-stack (val -82.3 / test -49.4). **All negative.** No architecture generalizes.
-- **Next task:** Run first experiment via `./experiment.sh` pipeline — P0: increase training days (20→199).
+- **RunPod compute in experiment.sh DONE (deprecated):** FRAME agent declares `compute: local|runpod` in specs. RUN agent dispatches to RunPod when `compute: runpod`. Env vars: `RUNPOD_VOLUME_ID`, `DOCKERHUB_USER`, `RUNPOD_GPU_TYPE`. **Superseded by AWS.**
+- **AWS EC2 Spot infrastructure DONE:** `aws/` scripts (setup, launch, fetch-results, upload-cache, monitor). EC2 Spot replaces RunPod — 60% cheaper GPU (g5.xlarge A10G ~$0.24/hr), dedicated CPU instances (c7a.4xlarge ~$0.39/hr). S3 for cache + results, ECR for Docker image. Spot interruption handled via metadata polling + checkpoint upload. Auto-detect: `--recurrent` → GPU, else → CPU. Env vars: `AWS_S3_BUCKET`, `AWS_ECR_REPO`, `AWS_INSTANCE_TYPE`, `AWS_REGION`.
+- **AWS compute in experiment.sh DONE:** FRAME agent declares `compute: local|aws` in specs. RUN agent dispatches to AWS when `compute: aws` — launches EC2 Spot instances, polls state, fetches from S3, evals locally. `runpod` kept as deprecated fallback.
+- **Next task:** Run first experiment via `./experiment.sh` pipeline — P0: increase training days (20→199). Set up AWS first: `./aws/setup.sh`, push Docker image to ECR, upload cache via `./aws/upload-cache.sh`.
 - **Research kit installed:** `experiment.sh`, prompts, templates, QUESTIONS.md, DOMAIN_PRIORS.md, RESEARCH_LOG.md all configured.
 - **Experiments completed (pre-pipeline):** 7 (1 confirmed, 6 refuted). All OOS results negative. See `RESEARCH_LOG.md`.
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.

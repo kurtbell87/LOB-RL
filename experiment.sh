@@ -39,6 +39,17 @@ TEST_CMD="${TEST_CMD:-PYTHONPATH=build-release:python uv run pytest python/tests
 MAX_GPU_HOURS="${MAX_GPU_HOURS:-8}"
 MAX_RUNS="${MAX_RUNS:-10}"
 
+# RunPod configuration (for remote compute — deprecated, use AWS)
+RUNPOD_VOLUME_ID="${RUNPOD_VOLUME_ID:-}"
+DOCKERHUB_USER="${DOCKERHUB_USER:-}"
+RUNPOD_GPU_TYPE="${RUNPOD_GPU_TYPE:-NVIDIA GeForce RTX 4090}"
+
+# AWS configuration (preferred remote compute)
+AWS_S3_BUCKET="${AWS_S3_BUCKET:-}"
+AWS_ECR_REPO="${AWS_ECR_REPO:-}"
+AWS_INSTANCE_TYPE="${AWS_INSTANCE_TYPE:-}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
+
 # Git / PR settings
 EXP_AUTO_MERGE="${EXP_AUTO_MERGE:-false}"
 EXP_DELETE_BRANCH="${EXP_DELETE_BRANCH:-false}"
@@ -395,6 +406,10 @@ run_run() {
   cp "$spec_file" "$results_path/spec.md"
   chmod 444 "$results_path/spec.md"
 
+  # Export remote compute env vars so the RUN agent can dispatch
+  export RUNPOD_VOLUME_ID DOCKERHUB_USER RUNPOD_GPU_TYPE
+  export AWS_S3_BUCKET AWS_ECR_REPO AWS_INSTANCE_TYPE AWS_REGION
+
   claude \
     --output-format stream-json \
     --append-system-prompt "$(cat "$PROMPT_DIR/run.md")
@@ -410,6 +425,17 @@ run_run() {
 - Test command (unit tests): $TEST_CMD
 - Max GPU hours: $MAX_GPU_HOURS
 - Max runs: $MAX_RUNS
+- AWS S3 bucket: ${AWS_S3_BUCKET:-not configured}
+- AWS ECR repo: ${AWS_ECR_REPO:-not configured}
+- AWS instance type: ${AWS_INSTANCE_TYPE:-auto-detect}
+- AWS region: $AWS_REGION
+- AWS launch script: ./aws/launch.sh <train.py args>
+- AWS fetch script: ./aws/fetch-results.sh <run_dir_name>
+- RunPod volume ID: ${RUNPOD_VOLUME_ID:-not configured} (deprecated)
+- RunPod Docker Hub user: ${DOCKERHUB_USER:-not configured} (deprecated)
+- RunPod GPU type: $RUNPOD_GPU_TYPE (deprecated)
+- RunPod launch script: ./runpod/launch.sh <train.py args> (deprecated)
+- RunPod fetch script: ./runpod/fetch-results.sh <run_dir_name> (deprecated)
 
 Read the experiment spec first. Implement and execute the experiment. Write ALL metrics to $results_path/metrics.json." \
     --allowed-tools "Read,Write,Edit,Bash,Glob,Grep" \
@@ -1081,6 +1107,13 @@ case "${1:-help}" in
     echo "  MAX_PROGRAM_CYCLES='10'        Max cycles in program mode"
     echo "  MAX_PROGRAM_GPU_HOURS='40'     Total GPU budget for program mode"
     echo "  INCONCLUSIVE_THRESHOLD='3'     Max consecutive INCONCLUSIVE before skipping"
+    echo "  AWS_S3_BUCKET=''               S3 bucket for cache/results (preferred)"
+    echo "  AWS_ECR_REPO=''                ECR URI for Docker image (preferred)"
+    echo "  AWS_INSTANCE_TYPE=''           Override instance type (auto-detect by default)"
+    echo "  AWS_REGION='us-east-1'         AWS region"
+    echo "  RUNPOD_VOLUME_ID=''            RunPod network volume ID (deprecated)"
+    echo "  DOCKERHUB_USER=''              Docker Hub user (deprecated)"
+    echo "  RUNPOD_GPU_TYPE='...'          GPU type for RunPod pods (deprecated)"
     echo "  EXP_AUTO_MERGE='false'         Auto-merge PR after creation"
     echo "  EXP_BASE_BRANCH='main'         Base branch for PRs"
     ;;

@@ -57,6 +57,9 @@ tdd.sh
 # RunPod scripts (used locally, not in container)
 runpod/
 
+# AWS scripts (used locally, not in container)
+aws/
+
 # Misc
 *.log
 runs/

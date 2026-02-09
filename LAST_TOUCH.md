@@ -4,9 +4,31 @@
 
 ### Immediate next step
 
-**Run first experiment via the research pipeline.** The claude-research-kit is now installed and configured. Use `./experiment.sh` to investigate negative OOS results through the SURVEY-FRAME-RUN-READ-LOG cycle.
+**Set up AWS infrastructure and run first experiment.** AWS EC2 Spot is now configured as the compute backend. Before running experiments:
 
-**Start here:**
+1. **One-time AWS setup:**
+```bash
+./aws/setup.sh
+# Export the printed env vars (AWS_S3_BUCKET, AWS_ECR_REPO, etc.)
+```
+
+2. **Push Docker image to ECR:**
+```bash
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $AWS_ECR_REPO
+docker buildx build --platform linux/amd64 -t ${AWS_ECR_REPO}:latest --push .
+```
+
+3. **Upload cache to S3:**
+```bash
+AWS_S3_BUCKET=lob-rl-training ./aws/upload-cache.sh
+```
+
+4. **Smoke test (1000 steps):**
+```bash
+./aws/launch.sh --total-timesteps 1000 --bar-size 1000 --execution-cost
+```
+
+5. **Run first experiment:**
 ```bash
 ./experiment.sh survey "Does increasing training data from 20 to 199 days fix OOS generalization?"
 ```
@@ -41,7 +63,29 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 
 ### What was just completed
 
-**Installed claude-research-kit (2026-02-09).** Two-tower architecture: TDD for engineering (`./tdd.sh`), Research for experiments (`./experiment.sh`). Merged pre-tool-use hook dispatches on `TDD_PHASE` vs `EXP_PHASE`. Populated `QUESTIONS.md` (6 open + 4 answered), `DOMAIN_PRIORS.md`, `RESEARCH_LOG.md` (7 pre-experiments backfilled). Updated CLAUDE.md with research workflow section and "when to use which" guide.
+**AWS EC2 Spot migration (2026-02-09).** Replaces RunPod with AWS EC2 Spot for all remote training. Six new files in `aws/`, five existing files modified (~700 lines total):
+
+- **`aws/setup.sh`:** One-time infrastructure setup — S3 bucket, ECR repo, IAM role (least-privilege: S3 read/write, ECR pull, self-terminate), security group. Idempotent. Prints env var exports.
+- **`aws/launch.sh`:** Launch EC2 Spot instance. Drop-in replacement for `runpod/launch.sh`. Auto-detects instance type: `--recurrent` → `g5.xlarge` (GPU, A10G, ~$0.24/hr), else → `c7a.4xlarge` (CPU, 16 vCPU, ~$0.39/hr). Generates user-data script that: starts spot interruption monitor, downloads cache from S3, pulls Docker from ECR, runs training, uploads results to S3, self-terminates on success.
+- **`aws/fetch-results.sh`:** Download results from S3. Simpler than RunPod version (no `--profile runpod --endpoint-url`).
+- **`aws/upload-cache.sh`:** One-time `aws s3 sync cache/mes/` to S3 bucket.
+- **`aws/monitor.sh`:** Discovers lob-rl instances via Project tag, polls every 5 min, auto-fetches when terminated/stopped.
+- **`aws/README.md`:** Full setup guide, env vars, instance types, S3 layout, cost comparison, spot interruption handling.
+- **`scripts/start.sh`:** Provider-agnostic `RUN_ID` env var (AWS passes instance ID, RunPod falls back to `RUNPOD_POD_ID`).
+- **`.dockerignore`:** Added `aws/` exclusion.
+- **`experiment.sh`:** Added `AWS_S3_BUCKET`, `AWS_ECR_REPO`, `AWS_INSTANCE_TYPE`, `AWS_REGION` config vars. Exports in `run_run()`. Added to RUN agent system prompt context. Updated help text. RunPod vars marked deprecated.
+- **`.claude/prompts/run.md`:** Added full AWS Dispatch Protocol (~80 lines): env validation, instance launching, parallel instances, polling, fetching, spot interruption handling, local eval, cleanup, error handling. Existing RunPod protocol marked deprecated.
+- **`.claude/prompts/frame.md`:** Changed `compute: runpod` → `compute: aws`. Instance type field: `g5.xlarge` (GPU) or `c7a.4xlarge` (CPU). Quality standard: remote experiments MUST use `compute: aws`.
+
+**Cost savings:** g5.xlarge spot ~$0.24/hr vs RunPod RTX 4090 $0.59/hr (60% cheaper GPU). c7a.4xlarge ~$0.39/hr for CPU-only MLP workloads (no GPU idle cost).
+
+**Prior: RunPod compute backend for experiment.sh (2026-02-09).** Three files changed (~120 lines):
+
+- **`experiment.sh`:** Added `RUNPOD_VOLUME_ID`, `DOCKERHUB_USER`, `RUNPOD_GPU_TYPE` config vars. Exports them in `run_run()`. Passes RunPod context (volume ID, Docker user, GPU type, script paths) to the RUN agent's system prompt. Updated help text.
+- **`.claude/prompts/frame.md`:** Added `## Compute Target` section to the spec template (between Resource Budget and Abort Criteria). FRAME agent now declares `compute: local|runpod` and GPU type. Added planning step for compute target decision. Added quality standard: LSTM experiments MUST use `compute: runpod`.
+- **`.claude/prompts/run.md`:** Added full `## RunPod Dispatch Protocol` section (~80 lines) covering: env var validation, pod launching (`EXP_NAME=<label> ./runpod/launch.sh <args>`), parallel pod management, polling (300s intervals), fetching (`./runpod/fetch-results.sh`), merging into experiment results, local eval for val/test metrics, cleanup (`runpodctl remove pod`), and error handling. Updated process steps for RunPod flow.
+
+**Prior: Installed claude-research-kit (2026-02-09).** Two-tower architecture: TDD for engineering (`./tdd.sh`), Research for experiments (`./experiment.sh`). Merged pre-tool-use hook dispatches on `TDD_PHASE` vs `EXP_PHASE`. Populated `QUESTIONS.md` (6 open + 4 answered), `DOMAIN_PRIORS.md`, `RESEARCH_LOG.md` (7 pre-experiments backfilled). Updated CLAUDE.md with research workflow section and "when to use which" guide.
 
 **Prior: Removed SSH dependency from RunPod infrastructure (2026-02-09).** All three GPU experiments had their auto-fetch fail because `monitor.sh` and `fetch-results.sh` relied on SSH to running pods. Fixed the entire flow:
 
@@ -134,21 +178,22 @@ Key finding: **More training steps made things worse, not better.** MLP val went
 | File | Role |
 |---|---|
 | `experiment.sh` | Research experiment orchestrator — survey, frame, run, read, log, program |
+| `aws/setup.sh` | One-time AWS infra setup: S3, ECR, IAM, security group |
+| `aws/launch.sh` | Launch EC2 Spot instance: `EXP_NAME=<label> ./aws/launch.sh <train.py args>` |
+| `aws/fetch-results.sh` | Download results from S3: `./aws/fetch-results.sh <run_dir>` |
+| `aws/upload-cache.sh` | One-time cache upload to S3: `./aws/upload-cache.sh` |
+| `aws/monitor.sh` | Poll EC2 instances, auto-fetch results on termination |
+| `aws/README.md` | AWS setup guide, env vars, instance types, S3 layout, cost comparison |
 | `QUESTIONS.md` | Research agenda — 6 open questions, 4 answered |
 | `DOMAIN_PRIORS.md` | LOB-RL domain knowledge for experiment agents |
 | `RESEARCH_LOG.md` | Cumulative experiment findings (7 pre-experiments) |
 | `experiments/` | Experiment spec files (created by FRAME phase) |
 | `results/` | Experiment output directories (metrics.json, analysis.md) |
-| `.claude/prompts/{survey,frame,run,read,synthesize}.md` | Phase-specific agent prompts |
+| `.claude/prompts/{survey,frame,run,read,synthesize}.md` | Phase-specific agent prompts (frame.md has Compute Target, run.md has AWS Dispatch Protocol) |
 | `scripts/train.py` | Training entry point — `--bar-size`, `--cache-dir`, `--output-dir`, `--train-days`, `--shuffle-split`, `--seed`, `--frame-stack`, `--recurrent`, `--checkpoint-freq`, `--resume` |
-| `scripts/start.sh` | RunPod container entrypoint. Runs train.py; exits 0 on success (pod stops), sleep infinity on failure (SSH debug). |
-| `Dockerfile` | Training container image. PyTorch 2.5.1 + CUDA 12.4 + sshd. Entrypoint: `start.sh`. Must build with `--platform linux/amd64`. |
-| `research/monitor.sh` | Polls RunPod pods via API (not SSH), fetches via S3, verifies before removing, launches Claude Code for analysis |
-| `research/experiment_report.md` | Auto-generated experiment analysis (created by monitor.sh after all pods finish) |
-| `runpod/README.md` | RunPod setup guide — volume creation, cache upload, pod launch, result fetch |
-| `runpod/launch.sh` | Launch a training pod: `./runpod/launch.sh [train.py args...]` |
-| `runpod/upload-cache.sh` | Legacy cache upload via rsync (creates GPU pod). Prefer `aws s3 sync` instead. |
-| `runpod/fetch-results.sh` | Download trained model + logs from network volume via S3. Takes run dir name, no running pod needed. |
+| `scripts/start.sh` | Container entrypoint. Provider-agnostic via `RUN_ID` env var. Runs train.py; exits 0 on success, sleep infinity on failure. |
+| `Dockerfile` | Training container image. PyTorch 2.5.1 + CUDA 12.4 + sshd. Entrypoint: `start.sh`. Must build with `--platform linux/amd64`. Push to ECR. |
+| `runpod/` | **Deprecated.** RunPod scripts kept for backward compatibility. Use `aws/` instead. |
 | `scripts/precompute_cache.py` | CLI tool to build `.npz` cache. Use `--roll-calendar` or `--instrument-id`. |
 | `data/mes/roll_calendar.json` | Maps each date → front-month instrument_id. Used by `--roll-calendar`. |
 | `data/mes/*.mbo.dbn.zst` | 312 daily files, Jan–Dec 2022, 57GB. All /MES instruments per file. |

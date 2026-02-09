@@ -1,0 +1,60 @@
+{
+  "experiment": "exp-002-execution-cost-ablation",
+  "common_config": {
+    "bar_size": 1000,
+    "policy_arch": "256,256",
+    "activation": "relu",
+    "ent_coef": 0.05,
+    "learning_rate": 0.001,
+    "shuffle_split": true,
+    "seed": 42,
+    "total_timesteps": 2000000,
+    "checkpoint_freq": 500000,
+    "n_envs": 8,
+    "batch_size": 256,
+    "n_epochs": 5,
+    "gamma": 0.99,
+    "clip_range": 0.2,
+    "max_grad_norm": 0.5,
+    "vf_coef": 0.5,
+    "algorithm": "PPO",
+    "policy": "MlpPolicy",
+    "framework": "stable-baselines3",
+    "hardware": "Apple Silicon (local CPU)"
+  },
+  "runs": {
+    "mve": {
+      "execution_cost": false,
+      "train_days": 20,
+      "total_timesteps": 200000,
+      "output_dir": "results/exp-002-execution-cost-ablation/mve"
+    },
+    "run_a": {
+      "execution_cost": true,
+      "train_days": 20,
+      "total_timesteps": 2000000,
+      "output_dir": "results/exp-002-execution-cost-ablation/run-a",
+      "command": "cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42 --total-timesteps 2000000 --checkpoint-freq 500000 --output-dir ../results/exp-002-execution-cost-ablation/run-a"
+    },
+    "run_b": {
+      "execution_cost": false,
+      "train_days": 20,
+      "total_timesteps": 2000000,
+      "output_dir": "results/exp-002-execution-cost-ablation/run-b",
+      "command": "cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42 --total-timesteps 2000000 --checkpoint-freq 500000 --output-dir ../results/exp-002-execution-cost-ablation/run-b"
+    },
+    "run_c": {
+      "execution_cost": false,
+      "train_days": 199,
+      "total_timesteps": 2000000,
+      "output_dir": "results/exp-002-execution-cost-ablation/run-c",
+      "command": "cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42 --train-days 199 --total-timesteps 2000000 --checkpoint-freq 500000 --output-dir ../results/exp-002-execution-cost-ablation/run-c"
+    }
+  },
+  "data": {
+    "cache_dir": "cache/mes/",
+    "total_cache_files": 249,
+    "val_set_size": 5,
+    "split_method": "shuffle-split with seed 42"
+  }
+}

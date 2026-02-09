@@ -1,0 +1,224 @@
+{
+  "experiment": "exp-002-execution-cost-ablation",
+  "timestamp": "2026-02-09T18:30:00",
+  "baseline": {
+    "run": "A",
+    "config": "MLP 20d, exec-cost ON, 2M steps, seed 42",
+    "val_mean_return": -39.55,
+    "val_std_return": 31.02,
+    "val_sortino_ratio": -1.275,
+    "val_positive_episodes": "0/5",
+    "test_mean_return": -68.68,
+    "test_std_return": 48.26,
+    "test_sortino_ratio": -1.550,
+    "test_positive_episodes": "1/10",
+    "insample_mean_return": 423.75,
+    "insample_std_return": 141.85,
+    "insample_positive_episodes": "10/10",
+    "final_entropy": 0.490,
+    "entropy_trajectory": {
+      "500K": 0.748,
+      "1000K": 0.563,
+      "1500K": 0.546,
+      "2000K": 0.490
+    },
+    "explained_variance": {
+      "1000K": 0.974,
+      "2000K": 0.979
+    },
+    "approx_kl": {
+      "1000K": 0.052,
+      "2000K": 0.061
+    },
+    "mean_trade_count_per_episode": 162.8,
+    "mean_episode_length": 347.7,
+    "training_fps": 4767,
+    "wall_clock_seconds": 422,
+    "cross_eval_val_no_exec_cost": 24.10,
+    "cross_eval_test_no_exec_cost": -21.84,
+    "historical_baseline_comparison": {
+      "pre_003_val_return": -51.5,
+      "run_a_val_return": -39.55,
+      "delta": 11.95,
+      "within_15_tolerance": true,
+      "within_20_abort_threshold": true
+    }
+  },
+  "treatment": {
+    "run_b": {
+      "run": "B",
+      "config": "MLP 20d, exec-cost OFF, 2M steps, seed 42",
+      "val_mean_return_no_exec_cost": -4.43,
+      "val_std_return_no_exec_cost": 40.89,
+      "val_sortino_ratio_no_exec_cost": -0.431,
+      "val_positive_episodes_no_exec_cost": "2/5",
+      "test_mean_return_no_exec_cost": -5.03,
+      "test_std_return_no_exec_cost": 48.19,
+      "test_sortino_ratio_no_exec_cost": -0.271,
+      "test_positive_episodes_no_exec_cost": "4/10",
+      "val_mean_return_with_exec_cost": -85.22,
+      "val_std_return_with_exec_cost": 33.84,
+      "val_sortino_ratio_with_exec_cost": -2.518,
+      "val_positive_episodes_with_exec_cost": "0/5",
+      "test_mean_return_with_exec_cost": -63.60,
+      "test_std_return_with_exec_cost": 60.48,
+      "test_sortino_ratio_with_exec_cost": -1.514,
+      "test_positive_episodes_with_exec_cost": "3/10",
+      "insample_mean_return": 483.79,
+      "insample_std_return": 159.29,
+      "insample_positive_episodes": "10/10",
+      "final_entropy": 0.542,
+      "entropy_trajectory": {
+        "500K": 0.732,
+        "1000K": 0.588,
+        "1500K": 0.562,
+        "2000K": 0.542
+      },
+      "explained_variance": {
+        "1000K": 0.973,
+        "2000K": 0.984
+      },
+      "approx_kl": {
+        "1000K": 0.051,
+        "2000K": 0.055
+      },
+      "mean_trade_count_per_episode": 199.7,
+      "mean_episode_length": 347.7,
+      "training_fps": 4251,
+      "wall_clock_seconds": 473
+    },
+    "run_c": {
+      "run": "C",
+      "config": "MLP 199d, exec-cost OFF, 2M steps, seed 42",
+      "val_mean_return_no_exec_cost": 10.93,
+      "val_std_return_no_exec_cost": 33.62,
+      "val_sortino_ratio_no_exec_cost": 0.777,
+      "val_positive_episodes_no_exec_cost": "3/5",
+      "test_mean_return_no_exec_cost": -13.90,
+      "test_std_return_no_exec_cost": 35.87,
+      "test_sortino_ratio_no_exec_cost": -0.591,
+      "test_positive_episodes_no_exec_cost": "6/10",
+      "val_mean_return_with_exec_cost": -64.50,
+      "val_std_return_with_exec_cost": 59.24,
+      "val_sortino_ratio_with_exec_cost": -1.331,
+      "val_positive_episodes_with_exec_cost": "1/5",
+      "test_mean_return_with_exec_cost": -77.57,
+      "test_std_return_with_exec_cost": 53.56,
+      "test_sortino_ratio_with_exec_cost": -1.448,
+      "test_positive_episodes_with_exec_cost": "0/10",
+      "insample_mean_return": 86.05,
+      "insample_std_return": 43.82,
+      "insample_positive_episodes": "10/10",
+      "final_entropy": 0.743,
+      "entropy_trajectory": {
+        "500K": 0.913,
+        "1000K": 0.878,
+        "1500K": 0.822,
+        "2000K": 0.743
+      },
+      "explained_variance": {
+        "1000K": 0.091,
+        "2000K": 0.174
+      },
+      "approx_kl": {
+        "1000K": 0.029,
+        "2000K": 0.041
+      },
+      "mean_trade_count_per_episode": 223.5,
+      "mean_episode_length": 347.7,
+      "training_fps": 4146,
+      "wall_clock_seconds": 485
+    }
+  },
+  "mve": {
+    "config": "MLP 20d, exec-cost OFF, 200K steps, seed 42",
+    "val_mean_return": -13.40,
+    "test_mean_return": -5.70,
+    "final_entropy": 0.922,
+    "training_fps": 5004,
+    "wall_clock_seconds": 42,
+    "passed": true
+  },
+  "success_criteria": {
+    "SC1_val_return_gt_0": {
+      "criterion": "No-exec-cost MLP 20d (Run B) mean val return > 0.0",
+      "value": -4.43,
+      "passed": false
+    },
+    "SC2_test_return_gt_0": {
+      "criterion": "No-exec-cost MLP 20d (Run B) mean test return > 0.0",
+      "value": -5.03,
+      "passed": false
+    },
+    "SC3_val_improvement_gt_30": {
+      "criterion": "Run B val return at least 30 points better than Run A",
+      "run_b_val": -4.43,
+      "run_a_val": -39.55,
+      "delta": 35.12,
+      "passed": true
+    },
+    "SC4_sanity_checks": {
+      "criterion": "No sanity check failures",
+      "entropy_above_neg060_all_runs": true,
+      "no_nan": true,
+      "control_reproduces_within_15": true,
+      "insample_positive_all_runs": true,
+      "trade_count_note": "Trade count per episode is 199.7 for Run B. Spec threshold was 40 based on assumed ~23 bars per episode. Actual episode length is ~348 bars. Trade rate is 0.57 trades/bar, not degenerate.",
+      "passed": true
+    },
+    "SC5_3of5_positive_val_episodes": {
+      "criterion": "At least 3 out of 5 val episodes have positive return in Run B",
+      "positive_val_episodes": 2,
+      "total_val_episodes": 5,
+      "passed": false
+    }
+  },
+  "sanity_checks": {
+    "entropy_min_all_runs": {
+      "run_a_min": 0.490,
+      "run_b_min": 0.542,
+      "run_c_min": 0.743,
+      "threshold": -0.60,
+      "all_above": true
+    },
+    "no_nan_loss": true,
+    "control_vs_baseline": {
+      "run_a_val": -39.55,
+      "pre_003_val": -51.5,
+      "abs_delta": 11.95,
+      "threshold_15": true,
+      "threshold_20": true
+    },
+    "insample_positive": {
+      "run_a": 423.75,
+      "run_b": 483.79,
+      "run_c": 86.05,
+      "all_positive": true
+    },
+    "trade_count_per_episode": {
+      "run_a": 162.8,
+      "run_b": 199.7,
+      "run_c": 223.5,
+      "bars_per_episode": 347.7,
+      "spec_threshold": 40,
+      "spec_assumed_bars": 23,
+      "actual_bars": 347.7
+    }
+  },
+  "resource_usage": {
+    "gpu_hours": 0,
+    "cpu_hours_estimated": 1.56,
+    "wall_clock_seconds_total": 1422,
+    "wall_clock_breakdown": {
+      "mve": 42,
+      "run_a": 422,
+      "run_b": 473,
+      "run_c": 485
+    },
+    "total_training_steps": 6200000,
+    "total_runs": 4
+  },
+  "abort_triggered": false,
+  "abort_reason": null,
+  "notes": "MVE passed all gates (entropy 0.922 > -0.60, no NaN, FPS ~5000). Run A reproduced pre-003 baseline within tolerance (val -39.55 vs historical -51.5, delta 11.95 < 15). Runs B and C executed in parallel. Trade count per episode is much higher than the spec's threshold of 40, but the spec assumed ~23 bars per episode — actual episode length is ~348 bars at bar_size=1000 with these cache files. Cross-evaluation of no-exec-cost models WITH exec cost shows much worse returns (Run B: val -85.22, Run C: val -64.50), indicating the learned policies trade too frequently to survive transaction costs. Run C (199d) has notably lower explained_variance (0.174 at 2M) compared to 20d runs (0.979-0.984), indicating 2M steps is insufficient to learn 199 days of data. Run C entropy stays much higher (0.743 vs 0.490-0.542) confirming the model has not converged. Forced flatten cost still applies even in no-exec-cost condition per the spec's acknowledged confound."
+}

@@ -31,6 +31,7 @@ You are a **Research Design Scientist**. Your sole job is to translate a researc
    - What metrics are needed, and which are primary vs. secondary?
    - What would make you confident the result is real (not noise)?
    - What resource budget is reasonable?
+   - Where should this run? If LSTM or wall time > 2h → `compute: aws`. Else `compute: local`.
    - When should you stop early?
 6. **Write the experiment spec** to the specified file path.
 7. **Self-review**: Does the hypothesis have a clear direction AND magnitude? Are the success criteria binary? Could a skeptic find an obvious confound you haven't addressed?
@@ -97,6 +98,17 @@ The RUN agent should execute this BEFORE the full protocol.]
 - Max training runs: [N]
 - Max seeds per configuration: [N]
 
+## Compute Target
+
+**Compute:** `local` | `aws`
+**Instance type:** (aws only) `g5.xlarge` (GPU) or `c7a.4xlarge` (CPU)
+
+[Choose `aws` for any LSTM runs or total wall time > 2 hours.
+When `aws`: commands use `./aws/launch.sh` — omit `--cache-dir` and `--output-dir`.
+Instance type is auto-detected: `--recurrent` → g5.xlarge (GPU), else → c7a.4xlarge (CPU).
+Runs that can execute in parallel SHOULD be launched as parallel instances.
+`runpod` is still accepted as a deprecated fallback.]
+
 ## Abort Criteria
 [When to stop early — saves resources on clearly-failing experiments.
 - Loss diverges (NaN or > [threshold]) for [N] consecutive steps
@@ -115,6 +127,7 @@ The READ agent will check these during analysis.]
 - **Baselines**: Must be reproducible. "Published result from paper X" requires a reproduction step.
 - **Resource budget**: Must be realistic. Don't budget 100 GPU-hours for a quick sanity check.
 - **Abort criteria**: Must exist. Open-ended experiments waste resources.
+- **Compute target**: Must be declared. LSTM experiments MUST use `compute: aws`. Remote experiments MUST use `compute: aws` (not `runpod`).
 
 ## What NOT To Do
 - Do NOT write implementation code, even stubs.
