@@ -5,6 +5,35 @@ Read this file FIRST when starting any new research task. It is the institutiona
 
 ---
 
+## t6-supervised-diagnostic — CONFIRMED (weak signal)
+**Date:** 2026-02-10
+**Hypothesis:** The 130-dim barrier feature set contains learnable signal about barrier-hit direction that exceeds majority-class baseline.
+
+**Key result (v2 — bidirectional framing):** Proper framing classifies {long_profitable, short_profitable, flat} — a balanced 3-class problem (33/33/35%). Both MLP and RF beat baseline on BOTH splits:
+
+| Model | Shuffle Acc | Shuffle Bal | Chrono Acc | Chrono Bal | Baseline |
+|-------|------------|------------|------------|------------|----------|
+| MLP [256,256] | 39.3% | 39.4% | 39.1% | 39.2% | 34.5% |
+| RF (100 trees) | 40.5% | 40.5% | 39.6% | 39.7% | 34.5% |
+
+Signal is +4-6pp above chance, consistent across both splits. RF marginally outperforms MLP. Massive overfitting: MLP 90% train → 39% test.
+
+**v1 (long-only, misleading):** Single-direction labels gave 67/33/0% imbalanced distribution. MLP 61.6% vs 67.4% baseline — appeared to show no signal. This was wrong: unidirectional framing tests gambler's ruin, not direction.
+
+**Critical insight: τ_{+} and τ_{-} are mutually exclusive.** Long profit (price up 20 before down 10) precludes short profit (short stops at +10). Joint distribution: 32.3% long, 32.6% short, 35.1% neither, 0% both.
+
+**Feature caveat:** 4/13 features dead (BBO imbal, depth imbal, cancel asym, spread = constant zero). `precompute_barrier_cache.py` doesn't pass `mbo_data`. Effective dim = 90, not 130.
+
+**Feature importance (RF):** trade_flow_imbalance (0.128) > bar_range (0.122) > volume_log (0.121) > vwap_displacement (0.121) > body_range_ratio (0.117) > bar_body (0.115) > realized_vol (0.114) > session_time (0.089) > session_age (0.074). Dead features: 0.000.
+
+**Lesson:** Trade-derived features have weak but real directional signal (~5pp above chance). Signal is consistent across time periods. Massive train/test gap (90→39%) suggests regularization matters. 4 dead book features are untested and could add meaningful signal. RL has something to learn.
+
+**Next:** (1) Activate book features, re-run. (2) Proceed to T10-T12 — signal exists. (3) Architecture comparison now unblocked.
+
+**Details:** cache/t6_diagnostic_v2_results.json (v2), cache/t6_diagnostic_results.json (v1), scripts/run_barrier_diagnostic_v2.py
+
+---
+
 ## exp-001-does-increasing-training-data-from-20-to — REFUTED
 **Date:** 2026-02-09
 **Hypothesis:** Increasing training data from 20 to 199 days (10x) reduces overfitting and produces meaningfully less negative OOS returns for the LSTM agent.
