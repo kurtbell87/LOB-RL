@@ -13,7 +13,8 @@ Gymnasium wrappers and utilities on top of the C++ `lob_rl_core` module.
 | `multi_day_env.py` | `MultiDayEnv` — cycles through multiple day files. **Lazy-loads** `.npz` on `reset()` (cache modes). Supports `cache_files=` for explicit file lists. **This is what `train.py` uses.** |
 | `bar_aggregation.py` | `aggregate_bars(obs, mid, spread, bar_size)` — tick → bar feature aggregation. Returns (bar_features, bar_mid_close, bar_spread_close). |
 | `bar_level_env.py` | `BarLevelEnv` — bar-level `gymnasium.Env`. 21-dim obs (13 intra-bar + 7 temporal + 1 position). `from_cache()`, `from_file()`. |
-| `_obs_layout.py` | C++ observation layout constants (index slices, sizes). Shared by `precomputed_env.py` and `bar_aggregation.py`. |
+| `_obs_layout.py` | C++ observation layout constants (index slices, sizes). Shared by `precomputed_env.py`, `bar_aggregation.py`, and `conftest.py`. |
+| `_bar_layout.py` | Bar-level feature index constants (`BAR_RETURN`, `SPREAD_CLOSE`, etc., `NUM_BAR_FEATURES=13`). Shared by `bar_aggregation.py` and `bar_level_env.py`. |
 | `_reward.py` | Shared reward/flatten logic: `ACTION_MAP`, `compute_forced_flatten()`, `compute_step_reward()`. Used by `precomputed_env.py` and `bar_level_env.py`. |
 | `_statistics.py` | Shared statistical utilities: `rolling_std(arr, window, warmup=True)`. Used by `precomputed_env.py` and `bar_level_env.py`. |
 | `barrier/` | Barrier pipeline subpackage. `TICK_SIZE=0.25` in `__init__.py`. `bar_pipeline.py` (bar construction), `label_pipeline.py` (label construction), `feature_pipeline.py` (feature extraction). |
@@ -143,12 +144,14 @@ LOBGymEnv(file_path=None,
 ## Dependencies
 
 - **Depends on:** `lob_rl_core` (C++ pybind11 module from `build-release/`), gymnasium, numpy
-- **Internal deps:** `bar_level_env.py` and `precomputed_env.py` both import from `_statistics.py` and `_reward.py`. `multi_day_env.py` imports from `precomputed_env.py` and lazily from `bar_level_env.py`.
+- **Internal deps:** `bar_level_env.py` and `precomputed_env.py` both import from `_statistics.py` and `_reward.py`. `bar_aggregation.py` and `bar_level_env.py` both import from `_bar_layout.py`. `multi_day_env.py` imports from `precomputed_env.py` and lazily from `bar_level_env.py`.
 - **Depended on by:** `scripts/train.py`, `python/tests/`
 
 ## Modification hints
 
 - **New env parameter:** Add to `PrecomputedEnv.__init__()`, forward in `MultiDayEnv.reset()` to inner env, add to `LOBGymEnv.__init__()` (forwards to C++), add to `from_file()` classmethod
 - **New reward mode:** Add string handling in `PrecomputedEnv.step()`, also update C++ `parse_reward_mode()` in bindings
-- **New temporal feature:** Add computation in `_precompute_temporal_features()`, append to `np.column_stack()`, update obs size 54→N+1, update `_build_obs()` slice indices, update `observation_space`
+- **New temporal feature (tick-level):** Add computation in `_precompute_temporal_features()`, append to `np.column_stack()`, update `_NUM_TEMPORAL` in `precomputed_env.py` — `_POSITION_IDX` and `_FULL_OBS_SIZE` derive automatically.
+- **New temporal feature (bar-level):** Update `_precompute_temporal()` in `bar_level_env.py`, update `_NUM_TEMPORAL` — `_OBS_SIZE` and `_POSITION_IDX` derive automatically.
+- **New bar feature:** Add index constant to `_bar_layout.py`, update `NUM_BAR_FEATURES`, add computation in `aggregate_bars()`, and `_NUM_BAR_FEATURES` in `bar_level_env.py` updates via import.
 - **New statistical utility:** Add to `_statistics.py`. Already used by both `precomputed_env.py` (rolling_std with warmup=False) and `bar_level_env.py` (rolling_std with warmup=True).
