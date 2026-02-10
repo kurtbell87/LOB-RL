@@ -13,6 +13,7 @@ Offline barrier-label construction pipeline for LOB-RL. Reads raw MBO data, buil
 | `gamblers_ruin.py` | Validation: `gamblers_ruin_analytic()`, `generate_random_walk()`, `validate_drift_level()`, `run_validation()`. |
 | `regime_switch.py` | Validation: `generate_regime_switch_trades()`, `validate_regime_switch()`, `compute_segment_stats()`, `ks_test_features()`, `measure_normalization_adaptation()`. |
 | `supervised_diagnostic.py` | MLP classifier diagnostic: `build_labeled_dataset()`, `BarrierMLP`, `overfit_test()`, `train_mlp()`, `evaluate_classifier()`, `train_random_forest()`, `run_diagnostic()`. |
+| `reward_accounting.py` | Reward computation: `RewardConfig`, `PositionState`, `compute_entry()`, `compute_hold_reward()`, `compute_unrealized_pnl()`, `compute_reward_sequence()`, `get_action_mask()`. Action constants: `ACTION_LONG`, `ACTION_SHORT`, `ACTION_FLAT`, `ACTION_HOLD`. |
 
 ## API Signatures
 
@@ -128,6 +129,41 @@ run_diagnostic(bars, labels, h=10, train_frac=0.8, epochs=100, seed=42) -> dict
     # {n_samples, n_train, n_test, label_distribution, overfit_test, mlp, random_forest, passed}
 ```
 
+### `reward_accounting.py`
+
+```python
+# Action constants
+ACTION_LONG = 0; ACTION_SHORT = 1; ACTION_FLAT = 2; ACTION_HOLD = 3
+
+@dataclass
+class RewardConfig:
+    a: int = 20          # profit barrier width in ticks
+    b: int = 10          # stop barrier width in ticks
+    G: float = 2.0       # profit gain reward
+    L: float = 1.0       # stop loss penalty magnitude
+    C: float = 0.2       # round-trip transaction cost
+    T_max: int = 40      # max holding period in bars
+    tick_size: float = 0.25  # /MES tick size
+
+@dataclass
+class PositionState:
+    position: int = 0           # 0=flat, +1=long, -1=short
+    entry_price: float = 0.0
+    profit_barrier: float = 0.0
+    stop_barrier: float = 0.0
+    hold_counter: int = 0
+
+get_action_mask(position: int) -> list[bool]  # [long, short, flat, hold]
+compute_entry(bar: TradeBar, action: int, config: RewardConfig) -> PositionState
+compute_hold_reward(bar: TradeBar, state: PositionState, config: RewardConfig)
+    -> tuple[float, PositionState]  # (reward, new_state)
+compute_unrealized_pnl(state: PositionState, current_price: float) -> float  # ticks
+compute_reward_sequence(bars: list[TradeBar], action: int, start_bar_idx: int,
+    config: RewardConfig) -> list[dict]
+    # Each dict: {reward, position, hold_counter, exit_type, unrealized_pnl}
+    # exit_type: "profit", "stop", "timeout", or None
+```
+
 ## Cross-File Dependencies
 
 - `bar_pipeline.py` depends on: `pandas`, `numpy`, `zoneinfo`, `__init__.py` (none from barrier)
@@ -136,6 +172,7 @@ run_diagnostic(bars, labels, h=10, train_frac=0.8, epochs=100, seed=42) -> dict
 - `gamblers_ruin.py` depends on: `__init__.py` (`TICK_SIZE`, `RTH_OPEN_NS`, `RTH_DURATION_NS`, `build_synthetic_trades`), `bar_pipeline.py`, `label_pipeline.py`
 - `regime_switch.py` depends on: `__init__.py` (same as gamblers_ruin), `bar_pipeline.py`, `label_pipeline.py`, `feature_pipeline.py`, `scipy.stats`
 - `supervised_diagnostic.py` depends on: `feature_pipeline.py`, `torch`, `numpy`, `sklearn.ensemble` (lazy import in `train_random_forest`)
+- `reward_accounting.py` depends on: `__init__.py` (`TICK_SIZE`)
 
 ## Modification Hints
 

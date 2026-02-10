@@ -13,8 +13,9 @@ Tests for the barrier pipeline package (`python/lob_rl/barrier/`).
 | `test_gamblers_ruin.py` | Gambler's ruin validation: analytic formula, random walk generation, drift levels. | 81 |
 | `test_regime_switch.py` | Regime-switch validation: synthetic data, label distributions, KS tests, normalization adaptation. | 51 |
 | `test_supervised_diagnostic.py` | Supervised diagnostic: dataset construction, MLP architecture, overfit test, training, evaluation, random forest, full pipeline. | 56 |
+| `test_reward_accounting.py` | Reward accounting: hand-computed reward sequences for long/short, barrier hits, timeouts, MTM normalization, transaction costs, position state transitions, unrealized PnL, action masking. | 46 |
 
-**Total: ~404 tests** (8 skipped: need `.dbn.zst` fixture data).
+**Total: ~450 tests** (8 skipped: need `.dbn.zst` fixture data).
 
 ## Shared Test Helpers (`conftest.py`)
 
@@ -42,6 +43,7 @@ make_session_bars(n, base_price=4000.0, spread=2.0, volume=100) -> list[TradeBar
 - `test_gamblers_ruin.py` and `test_regime_switch.py` are self-contained (call validation module functions directly).
 - `test_supervised_diagnostic.py` uses helpers from `conftest.py` and imports from `lob_rl.barrier.supervised_diagnostic`.
 - `test_bar_pipeline.py` has its own helpers (`_make_trades`, `_make_trades_with_prices`, `_utc_ns`).
+- `test_reward_accounting.py` uses `make_bar` from `conftest.py` and imports from `lob_rl.barrier.reward_accounting`.
 
 ## Running
 
