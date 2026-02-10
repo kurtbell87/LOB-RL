@@ -2,6 +2,9 @@
 
 import numpy as np
 
+# Maps discrete action index to position: 0 → short, 1 → flat, 2 → long.
+ACTION_MAP = {0: -1.0, 1: 0.0, 2: 1.0}
+
 
 def compute_forced_flatten(spread, prev_position, action):
     """Compute forced-flatten reward on the terminal step.

@@ -14,7 +14,7 @@ Gymnasium wrappers and utilities on top of the C++ `lob_rl_core` module.
 | `bar_aggregation.py` | `aggregate_bars(obs, mid, spread, bar_size)` — tick → bar feature aggregation. Returns (bar_features, bar_mid_close, bar_spread_close). |
 | `bar_level_env.py` | `BarLevelEnv` — bar-level `gymnasium.Env`. 21-dim obs (13 intra-bar + 7 temporal + 1 position). `from_cache()`, `from_file()`. |
 | `_obs_layout.py` | C++ observation layout constants (index slices, sizes). Shared by `precomputed_env.py` and `bar_aggregation.py`. |
-| `_reward.py` | Shared reward/flatten logic: `compute_forced_flatten()`, `compute_step_reward()`. Used by `precomputed_env.py` and `bar_level_env.py`. |
+| `_reward.py` | Shared reward/flatten logic: `ACTION_MAP`, `compute_forced_flatten()`, `compute_step_reward()`. Used by `precomputed_env.py` and `bar_level_env.py`. |
 | `_statistics.py` | Shared statistical utilities: `rolling_std(arr, window, warmup=True)`. Used by `precomputed_env.py` and `bar_level_env.py`. |
 | ~~`convert_dbn.py`~~ | Deleted (PR #11). |
 
@@ -23,6 +23,10 @@ Gymnasium wrappers and utilities on top of the C++ `lob_rl_core` module.
 ### Reward helpers (`_reward.py`)
 
 ```python
+ACTION_MAP = {0: -1.0, 1: 0.0, 2: 1.0}
+# Maps discrete action index to position: 0 → short, 1 → flat, 2 → long.
+# Shared by PrecomputedEnv and BarLevelEnv.
+
 compute_forced_flatten(spread, prev_position, action)
 # Returns (reward, info_dict). reward = -spread/2 * |prev_position|.
 # info_dict = {"forced_flatten": True, "forced_flatten_cost": float, "intended_action": int}
