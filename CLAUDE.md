@@ -1,4 +1,4 @@
-## Current State (updated 2026-02-09)
+## Current State (updated 2026-02-10)
 
 - **Build:** `build-release/` is current. 418 C++ tests pass (`./lob_tests`). 1858 Python tests pass (1308 core + 550 barrier). **2276 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
@@ -39,10 +39,12 @@
 - **Barrier pipeline (T1-T9b) DONE:** Bar construction (PR #20), label pipeline (PR #21), feature extraction (PR #22), Gambler's ruin validation (PR #23), regime-switch validation (PR #24), supervised diagnostic (PR #25), reward accounting (PR #26), barrier env (PR #27), PPO training infra (PR #28), training script (PR #29). All via TDD. 550 barrier tests.
 - **T9 PPO Training Infrastructure DONE (PR #28):** `multi_session_env.py` — `MultiSessionBarrierEnv` multi-session Gymnasium wrapper. `barrier_vec_env.py` — SB3-compatible VecEnv helpers. `training_diagnostics.py` — `BarrierDiagnosticCallback` with entropy/value loss/flat rate/win rate tracking + red flag detection + CSV output. `_sb3_compat.py` — SB3/PyTorch compatibility shim. `linear_schedule()` for LR decay. 41 tests (12 multi-session + 6 vec env + 13 diagnostics + 10 PPO training).
 - **T9b Training Script DONE (PR #29):** `scripts/train_barrier.py` — CLI training script with `parse_args()`, `split_sessions()`, `build_model()`, `main()`. Section 5.2 hyperparameters hardcoded. 22 tests.
-- **Next task:** T10-T12 require GPU training runs via `./experiment.sh`. T10: Behavioral Inspection, T11: Hyperparameter Sweep, T12: OOS Evaluation.
+- **T6 Supervised Diagnostic CONFIRMED — weak signal (2026-02-10):** Bidirectional framing classifies {long_profit, short_profit, flat} — balanced 33/33/35%. MLP 39.3% / RF 40.5% vs 34.5% baseline (+5pp). Consistent on shuffle and chrono splits. v1 (long-only) was misleading due to 67/33 imbalance. Overfit test passed. 4/13 features dead (book features need mbo_data). P0 gate PASSED.
+- **Barrier cache ready:** `cache/barrier/` has 247 `.npz` files with 130-dim features (90 effective), bar_size=500, lookback=10, a=20/b=10/t_max=40. 4 dead book features need precompute fix.
+- **Next task:** T10-T12 GPU training via `./experiment.sh`. P1: fix precompute to activate book features (may boost signal). P1: architecture comparison now unblocked.
 - **Research kit installed:** `experiment.sh`, prompts, templates, QUESTIONS.md, DOMAIN_PRIORS.md, RESEARCH_LOG.md all configured.
-- **Architecture exploration UNBLOCKED (doc-only):** QUESTIONS.md, DOMAIN_PRIORS.md updated to allow architecture comparison experiments (Transformer, SSM, custom SB3 feature extractors) once P0 supervised diagnostic confirms signal in 132-dim barrier features. No code changes — SB3 `features_extractor_class` is the extension point. See DOMAIN_PRIORS.md "Architecture exploration" section.
-- **Experiments completed:** 9 total (1 confirmed, 8 refuted). All OOS results negative. See `RESEARCH_LOG.md`.
+- **Architecture exploration UNBLOCKED:** T6 confirms signal exists. Architecture comparison (Transformer/SSM/LSTM on barrier features via `features_extractor_class`) is now a valid experiment. See DOMAIN_PRIORS.md.
+- **Experiments completed:** 10 total (2 confirmed, 8 refuted). See `RESEARCH_LOG.md`.
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
 - **Precompute hint:** If cache needs rebuilding: `precompute_cache.py --roll-calendar ... --workers 8` (script supports `--workers N` via `ProcessPoolExecutor`).
 - **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42`

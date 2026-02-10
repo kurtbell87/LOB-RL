@@ -37,6 +37,33 @@ Once the supervised diagnostic confirms signal in the 132-dim barrier features, 
 
 **Anti-pattern:** Do NOT tune hyperparameters within a single architecture (e.g., LSTM hidden size, number of layers) before comparing architecture families. Architecture class is likely a higher-information-value variable than architecture hyperparameters.
 
+## T6 Supervised Diagnostic Results (2026-02-10)
+
+Ran on 157,040 samples from 247 sessions. 130-dim barrier features (13 × 10 lookback, 4 dead). Two diagnostic framings:
+
+### v2 — Bidirectional framing (CORRECT)
+
+Target: {long_profitable, short_profitable, flat}. Key insight: τ_{+} and τ_{-} are mutually exclusive (long profit precludes short profit). Distribution: 33/33/35% — nearly balanced.
+
+| Metric | MLP (shuffle) | RF (shuffle) | MLP (chrono) | RF (chrono) |
+|--------|--------------|-------------|-------------|------------|
+| Accuracy | 0.393 | 0.405 | 0.391 | 0.396 |
+| Balanced accuracy | 0.394 | 0.405 | 0.392 | 0.397 |
+| Baseline | 0.346 | 0.346 | 0.350 | 0.350 |
+| Beats baseline | **Yes (+4.8pp)** | **Yes (+5.9pp)** | **Yes (+4.2pp)** | **Yes (+4.6pp)** |
+
+**Verdict: CONFIRMED — weak signal.** +5pp above chance, consistent across splits. P0 gate passed.
+
+### v1 — Long-only framing (misleading, for reference)
+
+Target: {stop, timeout, profit} from long perspective only. Distribution: 67/0.04/33% — heavily imbalanced.
+MLP 61.6% vs 67.4% baseline — appeared to show no signal. This framing tests gambler's ruin outcomes, not directional predictability. Discard.
+
+### Feature importance (RF, v2)
+trade_flow_imbalance (0.128) > bar_range (0.122) > volume_log (0.121) > vwap_displacement (0.121) > body_range_ratio (0.117) > bar_body (0.115) > realized_vol (0.114) > session_time (0.089) > session_age (0.074). Dead features: 0.000.
+
+**4/13 features dead:** bbo_imbal, depth_imbal, cancel_asym, mean_spread (need mbo_data fix in precompute). Activating these is P1.
+
 ## Anti-Patterns to Avoid
 
 - **Don't chase in-sample returns.** Return 139.5 on 20 training days is meaningless. Only OOS matters.
