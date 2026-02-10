@@ -87,7 +87,7 @@ class TestSeedFlag:
 
     def test_seed_default_is_42(self):
         """--seed default should be 42."""
-        pattern = r"add_argument\s*\(\s*['\"]--seed['\"].*?default\s*=\s*42\b"
+        pattern = r"add_argument\s*\(\s*['\"]--seed['\"].*?default\s*=\s*(?:cfg\([^,]+,\s*)?42\b"
         match = re.search(pattern, self.source, re.DOTALL)
         assert match is not None, "--seed default should be 42"
 
@@ -445,11 +445,11 @@ class TestAcceptanceCriteria:
 
     def test_ac2_seed_flag_int_default_42(self):
         """AC2: --seed flag exists with type=int, default=42."""
-        pattern = r"add_argument\s*\(\s*['\"]--seed['\"].*?type\s*=\s*int.*?default\s*=\s*42"
+        pattern = r"add_argument\s*\(\s*['\"]--seed['\"].*?type\s*=\s*int.*?default\s*=\s*(?:cfg\([^,]+,\s*)?42"
         match = re.search(pattern, self.source, re.DOTALL)
         if match is None:
             # Try reversed order (default before type)
-            pattern = r"add_argument\s*\(\s*['\"]--seed['\"].*?default\s*=\s*42.*?type\s*=\s*int"
+            pattern = r"add_argument\s*\(\s*['\"]--seed['\"].*?default\s*=\s*(?:cfg\([^,]+,\s*)?42.*?type\s*=\s*int"
             match = re.search(pattern, self.source, re.DOTALL)
         assert match is not None, "--seed should have type=int and default=42"
 

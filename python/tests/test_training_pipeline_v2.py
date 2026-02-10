@@ -82,8 +82,8 @@ class TestCLINewFlags:
 
     def test_ent_coef_default_is_0_01(self):
         """--ent-coef default should be 0.01."""
-        # Match: default=0.01 near --ent-coef
-        pattern = r"--ent-coef.*?default\s*=\s*(0\.01)"
+        # Match: default=0.01 or default=cfg('...', 0.01)
+        pattern = r"--ent-coef.*?default\s*=\s*(?:cfg\([^,]+,\s*)?(0\.01)"
         match = re.search(pattern, self.source, re.DOTALL)
         assert match is not None, (
             "--ent-coef default should be 0.01"
@@ -104,7 +104,7 @@ class TestCLINewFlags:
 
     def test_n_envs_default_is_8(self):
         """--n-envs default should be 8."""
-        pattern = r"--n-envs.*?default\s*=\s*8\b"
+        pattern = r"--n-envs.*?default\s*=\s*(?:cfg\([^,]+,\s*)?8\b"
         match = re.search(pattern, self.source, re.DOTALL)
         assert match is not None, "--n-envs default should be 8"
 
@@ -122,7 +122,7 @@ class TestCLINewFlags:
 
     def test_batch_size_default_is_256(self):
         """--batch-size default should be 256."""
-        pattern = r"--batch-size.*?default\s*=\s*256\b"
+        pattern = r"--batch-size.*?default\s*=\s*(?:cfg\([^,]+,\s*)?256\b"
         match = re.search(pattern, self.source, re.DOTALL)
         assert match is not None, "--batch-size default should be 256"
 
@@ -140,7 +140,7 @@ class TestCLINewFlags:
 
     def test_n_epochs_default_is_5(self):
         """--n-epochs default should be 5."""
-        pattern = r"--n-epochs.*?default\s*=\s*5\b"
+        pattern = r"--n-epochs.*?default\s*=\s*(?:cfg\([^,]+,\s*)?5\b"
         match = re.search(pattern, self.source, re.DOTALL)
         assert match is not None, "--n-epochs default should be 5"
 
@@ -158,7 +158,7 @@ class TestCLINewFlags:
 
     def test_learning_rate_default_is_3e_4(self):
         """--learning-rate default should be 3e-4."""
-        pattern = r"--learning-rate.*?default\s*=\s*(3e-4|0\.0003)"
+        pattern = r"--learning-rate.*?default\s*=\s*(?:cfg\([^,]+,\s*)?(3e-4|0\.0003)"
         match = re.search(pattern, self.source, re.DOTALL)
         assert match is not None, "--learning-rate default should be 3e-4"
 

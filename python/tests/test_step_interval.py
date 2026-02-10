@@ -744,9 +744,11 @@ class TestTrainScriptCLI:
 
     def test_step_interval_default_is_1(self):
         """--step-interval should default to 1."""
+        import re as _re
         source = load_train_source()
-        # Should contain default=1 near --step-interval
-        assert "default=1" in source or "default = 1" in source, (
+        # Should contain default=1 (or default=cfg('step_interval', 1)) near --step-interval
+        pattern = r"--step-interval.*?default\s*=\s*(?:cfg\([^,]+,\s*)?1\b"
+        assert _re.search(pattern, source, _re.DOTALL) is not None, (
             "--step-interval should have default=1"
         )
 

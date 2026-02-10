@@ -47,7 +47,7 @@ class TestFrameStackFlag:
 
     def test_frame_stack_default_is_1(self):
         """--frame-stack default should be 1."""
-        pattern = r"add_argument\s*\(\s*['\"]--frame-stack['\"].*?default\s*=\s*1\b"
+        pattern = r"add_argument\s*\(\s*['\"]--frame-stack['\"].*?default\s*=\s*(?:cfg\([^,]+,\s*)?1\b"
         match = re.search(pattern, self.source, re.DOTALL)
         assert match is not None, "--frame-stack default should be 1"
 
@@ -339,7 +339,7 @@ class TestEvalCallsForwardFrameStack:
         # Check first call (validation) includes frame_stack
         first_call_start = eval_calls[0].start()
         # Find the closing paren (approximate — look for the next line that ends the call)
-        call_region = self.main_body[first_call_start:first_call_start + 500]
+        call_region = self.main_body[first_call_start:first_call_start + 1000]
         assert "frame_stack" in call_region, (
             "Validation evaluate_sortino() call should include frame_stack"
         )
@@ -352,7 +352,7 @@ class TestEvalCallsForwardFrameStack:
         )
         # Check second call (test) includes frame_stack
         second_call_start = eval_calls[1].start()
-        call_region = self.main_body[second_call_start:second_call_start + 500]
+        call_region = self.main_body[second_call_start:second_call_start + 1000]
         assert "frame_stack" in call_region, (
             "Test evaluate_sortino() call should include frame_stack"
         )
@@ -460,7 +460,7 @@ class TestAcceptanceCriteria:
         pattern = r"add_argument\s*\(\s*['\"]--frame-stack['\"].*?type\s*=\s*int"
         match = re.search(pattern, self.source, re.DOTALL)
         assert match is not None, "AC1: --frame-stack should have type=int"
-        pattern = r"add_argument\s*\(\s*['\"]--frame-stack['\"].*?default\s*=\s*1\b"
+        pattern = r"add_argument\s*\(\s*['\"]--frame-stack['\"].*?default\s*=\s*(?:cfg\([^,]+,\s*)?1\b"
         match = re.search(pattern, self.source, re.DOTALL)
         assert match is not None, "AC1: --frame-stack should have default=1"
 
