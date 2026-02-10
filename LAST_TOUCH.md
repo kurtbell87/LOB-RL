@@ -4,18 +4,20 @@
 
 ### Immediate next step
 
-**T6: Supervised Diagnostic.** Write spec, run TDD cycle. This is a new barrier module (`supervised_diagnostic.py`) that trains an MLP classifier (256, 256, ReLU) to predict barrier labels H_k ∈ {+1, -1, 0} from feature matrix Z_k. Validates that the observation space contains learnable signal about barrier outcomes before proceeding to RL training.
+**T7: Reward Accounting Unit Test.** Write spec, run TDD cycle. This is a new barrier module (`reward_accounting.py`) implementing the reward computation logic from spec Section 4.4–4.5. Hand-compute expected reward sequences for specific bars and verify the module output matches exactly.
 
-**Dependencies satisfied:** T2 (labels) ✓, T3 (features) ✓, T4 (Gambler's ruin) ✓, T5 (regime-switch) ✓.
+**Dependencies satisfied:** T1 (bars) ✓, T2 (labels) ✓, T6 (supervised diagnostic) ✓.
 
-**T6 tests (from orchestrator):**
-1. Overfitting test: MLP >95% train accuracy on 256 samples within 500 epochs
-2. Validation accuracy exceeds majority-class baseline
-3. Random forest baseline comparison
-4. Class-balanced accuracy reported
-5. Confusion matrix logged
+**T7 tests (from orchestrator):**
+1. Select 5 specific bars with known barrier hits, hand-compute full reward sequence for long entry
+2. Same 5 bars, hand-compute reward sequence for short entry (barrier directions reversed)
+3. At least 1 bar with MTM reward at timeout, verify `/b` normalization
+4. Transaction cost C deducted exactly once per round-trip
+5. Position state transitions: flat → long → flat, flat → short → flat
+6. Unrealized PnL computation for both long and short positions at intermediate bars
+7. Action masking: when position != 0, only hold is valid
 
-**Remaining pipeline:** T6 → T7 (Reward Accounting) → T8 (Environment) → T9 (PPO Training, GPU) → T10 (Behavioral Inspection) → T11 (Hyperparameter Sweep) → T12 (OOS Evaluation).
+**Remaining pipeline:** T7 → T8 (Environment) → T9 (PPO Training, GPU) → T10 (Behavioral Inspection) → T11 (Hyperparameter Sweep) → T12 (OOS Evaluation).
 
 ### Roll calendar
 
@@ -32,14 +34,15 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 
 ### What was just completed
 
-**PPO Barrier-Hit Agent pipeline T1-T5 complete (2026-02-09).** All five data pipeline tasks completed via strict TDD (`./tdd.sh`):
+**PPO Barrier-Hit Agent pipeline T1-T6 complete (2026-02-09).** All six data pipeline + diagnostic tasks completed via strict TDD (`./tdd.sh`):
 - **T1: Bar Construction Pipeline** — PR #20. `TradeBar`, `build_bars_from_trades()`, RTH filtering, dataset builder. 59 tests.
 - **T2: Label Construction Pipeline** — PR #21. `BarrierLabel`, `compute_labels()`, intrabar tiebreaking, T_max calibration. 65 tests.
 - **T3: Feature Extraction** — PR #22. 13 bar-level features, z-score normalization, lookback assembly. 92 tests.
 - **T4: Gambler's Ruin Validation** — PR #23. Analytic formula validation at 5 drift levels (p=0.485..0.510). 81 tests.
 - **T5: Regime-Switch Validation** — PR #24. Low-vol/high-vol synthetic regime switch, KS tests, chi-squared, normalization adaptation. 51 tests.
+- **T6: Supervised Diagnostic** — PR #25. MLP classifier + random forest baseline for barrier label prediction. `_train_loop()` extracted, vectorized `compute_segment_stats()`, cached RTH boundaries. 56 tests.
 
-All code in `python/lob_rl/barrier/` with tests in `python/tests/barrier/`. 1664 Python tests total (1308 core + 356 barrier).
+All code in `python/lob_rl/barrier/` with tests in `python/tests/barrier/`. 1712 Python tests total (1308 core + 404 barrier).
 
 **Prior: AWS EC2 Spot migration (2026-02-09).** Replaces RunPod with AWS EC2 Spot for all remote training. Six new files in `aws/`, five existing files modified (~700 lines total):
 
@@ -214,8 +217,8 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 ## Test coverage
 
 - **418 C++ tests** — `cd build-release && ./lob_tests` (15 skipped: need `.dbn.zst` fixture)
-- **1664 Python tests** (1308 core + 356 barrier) — `PYTHONPATH=build-release:python uv run --with pandas --with scipy pytest python/tests/` (4 skipped: fixture-dependent)
-- **2082 total**, all passing.
+- **1712 Python tests** (1308 core + 404 barrier) — `PYTHONPATH=build-release:python uv run --with pandas --with scipy --with scikit-learn --with torch pytest python/tests/` (4 core + 8 barrier skipped: fixture-dependent)
+- **2130 total**, all passing.
 
 ## Remaining work
 
