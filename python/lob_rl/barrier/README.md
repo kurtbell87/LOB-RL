@@ -10,6 +10,7 @@ Offline barrier-label construction pipeline for LOB-RL. Reads raw MBO data, buil
 | `bar_pipeline.py` | Bar construction: `TradeBar`, `build_bars_from_trades()`, `filter_rth_trades()`, `extract_trades_from_mbo()`, `build_session_bars()`, `build_dataset()`. |
 | `label_pipeline.py` | Barrier labels: `BarrierLabel`, `compute_labels()`, `calibrate_t_max()`, `compute_tiebreak_frequency()`, `compute_label_distribution()`. |
 | `feature_pipeline.py` | Features: `compute_bar_features()`, `normalize_features()`, `assemble_lookback()`, `build_feature_matrix()`. |
+| `lob_reconstructor.py` | LOB reconstruction: `OrderBook` — maintains bid/ask levels from MBO messages. Used by `feature_pipeline.py` for book-derived features. |
 | `gamblers_ruin.py` | Validation: `gamblers_ruin_analytic()`, `generate_random_walk()`, `validate_drift_level()`, `run_validation()`. |
 | `regime_switch.py` | Validation: `generate_regime_switch_trades()`, `validate_regime_switch()`, `compute_segment_stats()`, `ks_test_features()`, `measure_normalization_adaptation()`. |
 | `supervised_diagnostic.py` | MLP classifier diagnostic: `build_labeled_dataset()`, `BarrierMLP`, `overfit_test()`, `train_mlp()`, `evaluate_classifier()`, `train_random_forest()`, `run_diagnostic()`. |
@@ -66,6 +67,10 @@ compute_label_distribution(labels) -> dict  # {p_plus, p_minus, p_zero}
 ### `feature_pipeline.py`
 
 ```python
+# Module constants
+_REALIZED_VOL_WARMUP = 19    # bars 0..18 have NaN in col 8
+_SESSION_AGE_PERIOD = 20.0   # col 12 saturates at bar_index / 20
+
 compute_bar_features(bars, mbo_data=None) -> np.ndarray  # shape (N, 13)
 normalize_features(raw, window=2000) -> np.ndarray        # z-score, clipped [-5, +5]
 assemble_lookback(normed, h=10) -> np.ndarray             # shape (N-h+1, 13*h)
@@ -114,6 +119,9 @@ measure_normalization_adaptation(normed_features, boundary, col=8, threshold_sig
 ### `supervised_diagnostic.py`
 
 ```python
+# Module constants
+_OVERFIT_MAX_SAMPLES = 256   # max samples for overfit sanity check
+
 build_labeled_dataset(bars, labels, h=10) -> tuple[np.ndarray, np.ndarray]
     # X: shape (n_usable, 13*h), float32; y: shape (n_usable,), int64
     # Label mapping: -1 -> 0, 0 -> 1, +1 -> 2
@@ -215,6 +223,12 @@ make_barrier_vec_env(sessions, n_envs=1, use_subprocess=False,
 ### `training_diagnostics.py`
 
 ```python
+# Red-flag thresholds
+_ENTROPY_COLLAPSE_THRESHOLD = 0.3
+_ENTROPY_COLLAPSE_WINDOW = 100
+_FLAT_RATE_LOW = 0.10
+_FLAT_RATE_HIGH = 0.90
+
 linear_schedule(initial_value: float) -> callable
     # Returns f(progress_remaining) -> current_value
 
@@ -231,7 +245,7 @@ class BarrierDiagnosticCallback(BaseCallback):
 
 - `bar_pipeline.py` depends on: `pandas`, `numpy`, `zoneinfo`, `__init__.py` (none from barrier)
 - `label_pipeline.py` depends on: `__init__.py` (`TICK_SIZE`)
-- `feature_pipeline.py` depends on: `__init__.py` (`TICK_SIZE`)
+- `feature_pipeline.py` depends on: `__init__.py` (`TICK_SIZE`), `lob_reconstructor.py` (`OrderBook`)
 - `gamblers_ruin.py` depends on: `__init__.py` (`TICK_SIZE`, `RTH_OPEN_NS`, `RTH_DURATION_NS`, `build_synthetic_trades`), `bar_pipeline.py`, `label_pipeline.py`
 - `regime_switch.py` depends on: `__init__.py` (same as gamblers_ruin), `bar_pipeline.py`, `label_pipeline.py`, `feature_pipeline.py`, `scipy.stats`
 - `supervised_diagnostic.py` depends on: `feature_pipeline.py`, `torch`, `numpy`, `sklearn.ensemble` (lazy import in `train_random_forest`)
