@@ -25,7 +25,7 @@ Determine whether a reinforcement learning agent can profitably trade MES (Micro
 - Live/paper trading integration
 - Alternative RL algorithms beyond PPO family (SAC, DQN, etc.)
 - Multi-year data (focus on 2022 first)
-- Custom neural architectures beyond SB3's built-in policies
+- Custom neural architectures beyond SB3's built-in policies BEFORE the supervised diagnostic (T6) confirms signal in the 132-dim barrier feature set. Once signal is confirmed, architecture comparison is a first-class experiment variable.
 
 ---
 
@@ -38,6 +38,7 @@ Determine whether a reinforcement learning agent can profitably trade MES (Micro
 | P1 | Are 4M-step checkpoints better than 5M (late-stage overfitting)? | Not started | — | — | If 4M > 5M OOS: implement early stopping. If equal: overfitting is gradual, not sudden. |
 | P1 | Does VecNormalize leak cross-day information? | Not started | — | — | If leak found: fix normalizer. If clean: rule out this confounder. |
 | P2 | Can reward shaping improve OOS returns? | Not started | P0, P0 | Resolve P0 questions first | If improved OOS: adopt new reward. If not: problem is deeper than reward design. |
+| P1 | Does model architecture (Transformer / SSM / LSTM) significantly affect OOS on the 132-dim barrier features? | Not started | — | P0 supervised diagnostic must confirm signal | If architecture X beats LSTM OOS by >5pp: adopt X. If all within noise: LSTM is fine, problem is elsewhere. Determines whether to invest in custom policy infrastructure. |
 
 ---
 
@@ -61,3 +62,4 @@ Determine whether a reinforcement learning agent can profitably trade MES (Micro
 - **H3: LSTM's advantage is regularization, not temporal learning.** LSTM retains more entropy and distributes learning across more parameters, acting as implicit regularization.
 - **H4: Late-stage training is harmful.** The 4M checkpoint may outperform the 5M checkpoint, suggesting early stopping would help.
 - **H5: The 21-dim bar-level observation space lacks sufficient predictive signal.** The model learns to avoid worst outcomes (positive in-sample) but cannot find alpha that survives transaction costs. This is now the leading hypothesis after H1 and H2 were refuted.
+- **H6: SB3's built-in LSTM is insufficient for the 132-dim barrier feature set.** The 13-feature × 10-lookback observation has spatial structure across the lookback window (features at position k-1 are semantically different from k-5) that a flat LSTM processes sequentially but a Transformer or windowed attention could process in parallel. This is untested — gated on supervised diagnostic.
