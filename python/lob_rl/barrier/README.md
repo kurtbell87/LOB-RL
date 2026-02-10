@@ -13,7 +13,8 @@ Offline barrier-label construction pipeline for LOB-RL. Reads raw MBO data, buil
 | `gamblers_ruin.py` | Validation: `gamblers_ruin_analytic()`, `generate_random_walk()`, `validate_drift_level()`, `run_validation()`. |
 | `regime_switch.py` | Validation: `generate_regime_switch_trades()`, `validate_regime_switch()`, `compute_segment_stats()`, `ks_test_features()`, `measure_normalization_adaptation()`. |
 | `supervised_diagnostic.py` | MLP classifier diagnostic: `build_labeled_dataset()`, `BarrierMLP`, `overfit_test()`, `train_mlp()`, `evaluate_classifier()`, `train_random_forest()`, `run_diagnostic()`. |
-| `reward_accounting.py` | Reward computation: `RewardConfig`, `PositionState`, `compute_entry()`, `compute_hold_reward()`, `compute_unrealized_pnl()`, `compute_reward_sequence()`, `get_action_mask()`. Action constants: `ACTION_LONG`, `ACTION_SHORT`, `ACTION_FLAT`, `ACTION_HOLD`. |
+| `reward_accounting.py` | Reward computation: `RewardConfig`, `PositionState`, `compute_entry()`, `compute_hold_reward()`, `compute_mtm_reward()`, `classify_exit()`, `compute_unrealized_pnl()`, `compute_reward_sequence()`, `get_action_mask()`. Action constants: `ACTION_LONG`, `ACTION_SHORT`, `ACTION_FLAT`, `ACTION_HOLD`. |
+| `barrier_env.py` | Gymnasium RL env: `BarrierEnv` — combines bars, labels, features, and reward accounting. One episode = one RTH session. `from_bars()` factory. `action_masks()` for SB3. |
 
 ## API Signatures
 
@@ -157,11 +158,31 @@ get_action_mask(position: int) -> list[bool]  # [long, short, flat, hold]
 compute_entry(bar: TradeBar, action: int, config: RewardConfig) -> PositionState
 compute_hold_reward(bar: TradeBar, state: PositionState, config: RewardConfig)
     -> tuple[float, PositionState]  # (reward, new_state)
+classify_exit(reward: float, hold_counter: int, config: RewardConfig) -> str
+    # "profit", "stop", or "timeout"
+compute_mtm_reward(state: PositionState, close_price: float, config: RewardConfig) -> float
+    # MTM = position * (close - entry) / (b * tick_size) - C
 compute_unrealized_pnl(state: PositionState, current_price: float) -> float  # ticks
 compute_reward_sequence(bars: list[TradeBar], action: int, start_bar_idx: int,
     config: RewardConfig) -> list[dict]
     # Each dict: {reward, position, hold_counter, exit_type, unrealized_pnl}
     # exit_type: "profit", "stop", "timeout", or None
+```
+
+### `barrier_env.py`
+
+```python
+class BarrierEnv(gymnasium.Env):
+    __init__(bars: list[TradeBar], labels: list[BarrierLabel],
+             features: np.ndarray, config: RewardConfig = None)
+    from_bars(cls, bars: list[TradeBar], h: int = 10,
+              config: RewardConfig = None) -> BarrierEnv  # classmethod
+    reset(seed=None, options=None) -> tuple[np.ndarray, dict]
+    step(action: int) -> tuple[np.ndarray, float, bool, bool, dict]
+    action_masks() -> np.ndarray  # shape (4,), dtype int8
+    # Observation: shape (13*h + 2,) = features | position | unrealized_pnl
+    # Action space: Discrete(4) = [long, short, flat, hold]
+    # Info dict keys: position, bar_idx, exit_type, entry_price, n_trades
 ```
 
 ## Cross-File Dependencies
@@ -173,6 +194,7 @@ compute_reward_sequence(bars: list[TradeBar], action: int, start_bar_idx: int,
 - `regime_switch.py` depends on: `__init__.py` (same as gamblers_ruin), `bar_pipeline.py`, `label_pipeline.py`, `feature_pipeline.py`, `scipy.stats`
 - `supervised_diagnostic.py` depends on: `feature_pipeline.py`, `torch`, `numpy`, `sklearn.ensemble` (lazy import in `train_random_forest`)
 - `reward_accounting.py` depends on: `__init__.py` (`TICK_SIZE`)
+- `barrier_env.py` depends on: `__init__.py` (`TICK_SIZE`), `feature_pipeline.py`, `label_pipeline.py`, `reward_accounting.py`, `gymnasium`
 
 ## Modification Hints
 

@@ -1,6 +1,6 @@
 ## Current State (updated 2026-02-09)
 
-- **Build:** `build-release/` is current. 418 C++ tests pass (`./lob_tests`). 1712 Python tests pass (1308 core + 404 barrier). **2130 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
+- **Build:** `build-release/` is current. 418 C++ tests pass (`./lob_tests`). 1758 Python tests pass (1308 core + 450 barrier). **2176 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent) all installed.
 - **Shuffle split DONE:** `--shuffle-split` and `--seed 42` on `train.py`. Reproducible random train/val/test splits. Episodes are independent days. PR #14 merged.
@@ -36,9 +36,9 @@
 - **AWS compute in experiment.sh DONE:** FRAME agent declares `compute: local|aws` in specs. RUN agent dispatches to AWS when `compute: aws` — launches EC2 Spot instances, polls state, fetches from S3, evals locally. `runpod` kept as deprecated fallback.
 - **exp-001 REFUTED:** 199d does not fix OOS. LSTM 199d val -59.95, MLP 199d val -75.53 ≈ MLP 20d val -75.82. 199d eliminates memorization (expl_var 0.30 vs 0.97) but OOS unchanged. Data quantity is not the primary bottleneck.
 - **exp-002 REFUTED:** Removing exec cost improves OOS by ~35 points but doesn't flip positive. Val -4.43 without exec cost (vs -39.55 with). Gap to gross profitability is ~5 points.
-- **Barrier pipeline (T1-T6) DONE:** Bar construction (PR #20), label pipeline (PR #21), feature extraction (PR #22), Gambler's ruin validation (PR #23), regime-switch validation (PR #24), supervised diagnostic (PR #25). All via TDD. 404 barrier tests.
-- **T6 Supervised Diagnostic DONE (PR #25):** `supervised_diagnostic.py` — MLP classifier + random forest baseline for barrier label prediction. `build_labeled_dataset()`, `BarrierMLP`, `overfit_test()`, `train_mlp()`, `evaluate_classifier()`, `train_random_forest()`, `run_diagnostic()`. 56 tests. Note: synthetic data has negligible discriminative signal (Cohen's d < 0.1); the diagnostic is designed to CHECK signal on real data, not guarantee it on synthetic.
-- **Next task:** T7 Reward Accounting Unit Test — hand-computed reward sequences for long/short entries. Then T8 Environment → T9 PPO Training → T10-T12.
+- **Barrier pipeline (T1-T7) DONE:** Bar construction (PR #20), label pipeline (PR #21), feature extraction (PR #22), Gambler's ruin validation (PR #23), regime-switch validation (PR #24), supervised diagnostic (PR #25), reward accounting (PR #26). All via TDD. 450 barrier tests.
+- **T7 Reward Accounting DONE (PR #26):** `reward_accounting.py` — `RewardConfig`, `PositionState`, `compute_entry()`, `compute_hold_reward()`, `compute_unrealized_pnl()`, `compute_reward_sequence()`, `get_action_mask()`. Action constants: `ACTION_LONG=0, ACTION_SHORT=1, ACTION_FLAT=2, ACTION_HOLD=3`. 46 tests with hand-computed reward sequences for long/short entries, barrier hits, timeouts, MTM normalization, transaction costs.
+- **Next task:** T8 Environment Implementation — Gymnasium-compatible barrier-hit trading environment. Then T9 PPO Training → T10-T12.
 - **Research kit installed:** `experiment.sh`, prompts, templates, QUESTIONS.md, DOMAIN_PRIORS.md, RESEARCH_LOG.md all configured.
 - **Experiments completed:** 9 total (1 confirmed, 8 refuted). All OOS results negative. See `RESEARCH_LOG.md`.
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
