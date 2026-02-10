@@ -18,35 +18,21 @@ import numpy as np
 import pytest
 import torch.nn as nn
 
+from .conftest import make_session_data_list, DEFAULT_OBS_DIM
+
 
 # ---------------------------------------------------------------------------
-# Helpers — build synthetic session data for training tests
+# Helpers
 # ---------------------------------------------------------------------------
 
-_H = 10
-_OBS_DIM = 13 * _H + 2  # 132
-
-
-def _make_session_data_list(n_sessions=5, n_bars=40, h=_H):
-    """Build session data for training tests."""
-    from lob_rl.barrier.feature_pipeline import build_feature_matrix
-    from lob_rl.barrier.label_pipeline import compute_labels
-    from ..barrier.conftest import make_session_bars
-
-    sessions = []
-    for i in range(n_sessions):
-        bars = make_session_bars(n_bars, base_price=4000.0 + i * 10.0)
-        labels = compute_labels(bars, a=20, b=10, t_max=40)
-        features = build_feature_matrix(bars, h=h)
-        sessions.append({"bars": bars, "labels": labels, "features": features})
-    return sessions
+_OBS_DIM = DEFAULT_OBS_DIM
 
 
 def _make_vec_env(n_sessions=5, n_bars=40, n_envs=2):
     """Create a DummyVecEnv for training tests."""
     from lob_rl.barrier.barrier_vec_env import make_barrier_vec_env
 
-    sessions = _make_session_data_list(n_sessions=n_sessions, n_bars=n_bars)
+    sessions = make_session_data_list(n_sessions=n_sessions, n_bars=n_bars)
     return make_barrier_vec_env(
         sessions, n_envs=n_envs, use_subprocess=False, seed=42,
     )
@@ -264,7 +250,7 @@ class TestEndToEndIntegration:
         from lob_rl.barrier.training_diagnostics import BarrierDiagnosticCallback
 
         # Split sessions into train and eval
-        all_sessions = _make_session_data_list(n_sessions=6, n_bars=40)
+        all_sessions = make_session_data_list(n_sessions=6, n_bars=40)
         train_sessions = all_sessions[:4]
         eval_sessions = all_sessions[4:]
 
@@ -324,7 +310,7 @@ class TestActionMaskingEnforcement:
 
         import gymnasium
 
-        sessions = _make_session_data_list(n_sessions=3, n_bars=40)
+        sessions = make_session_data_list(n_sessions=3, n_bars=40)
 
         # Wrapper that logs actions and their validity
         class MaskCheckWrapper(gymnasium.Wrapper):
@@ -378,7 +364,7 @@ class TestEvalCallback:
         from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
         from lob_rl.barrier.barrier_vec_env import make_barrier_vec_env
 
-        all_sessions = _make_session_data_list(n_sessions=6, n_bars=40)
+        all_sessions = make_session_data_list(n_sessions=6, n_bars=40)
         train_sessions = all_sessions[:4]
         eval_sessions = all_sessions[4:]
 
