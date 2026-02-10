@@ -4,20 +4,17 @@
 
 ### Immediate next step
 
-**T6 CONFIRMED — weak signal. Proceed to T10-T12 GPU training.**
+**22 features complete. Re-precompute barrier cache, then re-run T6 diagnostic.**
 
-The T6 supervised diagnostic (2026-02-10) shows **weak but real directional signal** in the barrier features:
-- Bidirectional framing: {long_profit, short_profit, flat} — balanced 33/33/35%
-- MLP 39.3% / RF 40.5% vs 34.5% baseline (+5pp above chance)
-- Consistent across shuffle-split and chronological splits
-- Signal is real but small; massive overfitting gap (90% train → 39% test)
+Three TDD cycles completed (PRs #34, #35, #36): LOB reconstructor, Phase 1 (cols 13-16), Phase 2 (cols 17-21). `N_FEATURES` is now 22. All book features are live. Observation dim = 222 (22*10 + 2).
 
-**P0 gate PASSED.** RL has something to learn. Architecture comparison is now unblocked.
+**The barrier cache is STALE.** The existing 247 `.npz` files have 130-dim features (N_FEATURES=13, and 4 of those were dead). Must re-precompute to get 220-dim features (N_FEATURES=22, all active).
 
 **Action items (in priority order):**
-1. **T10-T12 GPU training** via `./experiment.sh` — train barrier PPO on the 247-session cache. Use `scripts/train_barrier.py`.
-2. **Fix dead book features (P1):** `precompute_barrier_cache.py` needs `mbo_data` passed to `compute_bar_features()`. 4/13 features are constant zero (BBO imbal, depth imbal, cancel asym, spread). Activating these may boost signal from 40% → higher.
-3. **Architecture comparison (P1, now unblocked):** Transformer / SSM / LSTM on barrier features via SB3 `features_extractor_class`. RF slightly beats MLP, suggesting architecture matters.
+1. **Re-precompute barrier cache** — `precompute_barrier_cache.py` with MBO data pass-through. This activates all 22 features including the 4 previously-dead book features + 9 new microstructure features.
+2. **Re-run T6 supervised diagnostic** — compare 22-feature signal vs old 9-active-feature (RF 40.5%). Expect significant improvement.
+3. **T10-T12 GPU training** via `./experiment.sh` — train barrier PPO on the enriched 247-session cache.
+4. **Architecture comparison (P1, now unblocked):** Transformer / SSM / LSTM on barrier features via SB3 `features_extractor_class`.
 
 **Key insight from T6:** τ_{+} (long profit) and τ_{-} (short profit) are **mutually exclusive** events. If price rises a=20 before falling b=10 (long profit), the short already stopped at +10. The correct classification target is the *direction* (long/short/flat), not the single-direction barrier outcome.
 
@@ -37,6 +34,14 @@ The T6 supervised diagnostic (2026-02-10) shows **weak but real directional sign
 Source: `data/symbology.json` from Databento download. Roll dates are ~1 week before CME 3rd-Friday expiry.
 
 ### What was just completed
+
+**Microstructure Features — 3 TDD Cycles (2026-02-10).** Expanded barrier feature set from 13 to 22 features:
+
+- **Cycle 1 (PR #34):** LOB Reconstructor + Fix Dead Features. Created `OrderBook` class in `lob_reconstructor.py`, added `extract_all_mbo()` to `bar_pipeline.py`, wired MBO data through `_compute_book_features()` to activate the 4 dead book features (BBO imbalance, depth imbalance, cancel asymmetry, mean spread). Introduced `N_FEATURES` constant. Added `n_features` version check to precompute cache. 67 tests.
+- **Cycle 2 (PR #35):** Phase 1 Microstructure Features (cols 13-16). OFI (order flow imbalance), multi-level depth ratio, weighted mid-price displacement, spread dynamics (std). Expanded `_compute_book_features` from (n,4) to (n,8). `N_FEATURES` 13→17. 55 tests.
+- **Cycle 3 (PR #36):** Phase 2 Microstructure Features (cols 17-21). VAMP displacement, aggressor imbalance, trade arrival rate, cancel-to-trade ratio, price impact per trade. Added `OrderBook.vamp(n)` method. Expanded `_compute_book_features` from (n,8) to (n,13). `N_FEATURES` 17→22. Refactored: `_BOOK_COL_MAP` for column assignment, `stride_tricks` in `assemble_lookback`, extracted MBO helpers to `conftest.py`. 78 tests.
+
+Total: 200 new tests across 3 test files. 2062 Python tests pass (was 1858).
 
 **T6 Supervised Diagnostic run (2026-02-10).** Result: **CONFIRMED — weak signal.**
 
@@ -187,11 +192,12 @@ Key finding: **More training steps made things worse, not better.** MLP val went
 | File | Role |
 |---|---|
 | `scripts/run_barrier_diagnostic.py` | T6 supervised diagnostic runner — loads barrier cache, runs overfit/MLP/RF tests |
-| `scripts/precompute_barrier_cache.py` | Barrier cache builder — `.dbn.zst` → bars → labels → features → `.npz`. **Needs fix: pass mbo_data to compute_bar_features()** |
-| `cache/barrier/` | 247 barrier `.npz` files (130-dim features, bar_size=500). **4/13 features dead.** |
+| `scripts/precompute_barrier_cache.py` | Barrier cache builder — `.dbn.zst` → bars → labels → features → `.npz`. **MBO data wired through. Needs re-precompute for 22 features.** |
+| `cache/barrier/` | 247 barrier `.npz` files (130-dim features, N_FEATURES=13). **STALE — must re-precompute for N_FEATURES=22 (220-dim).** |
+| `python/lob_rl/barrier/lob_reconstructor.py` | `OrderBook` class — LOB reconstruction from MBO messages. `vamp(n)` method. |
 | `cache/t6_diagnostic_results.json` | Full T6 diagnostic results in JSON format |
 | `python/lob_rl/barrier/supervised_diagnostic.py` | MLP classifier + RF baseline functions for barrier label prediction |
-| `python/lob_rl/barrier/feature_pipeline.py` | Feature extraction — `compute_bar_features(bars, mbo_data=None)`. Dead features when mbo_data=None. |
+| `python/lob_rl/barrier/feature_pipeline.py` | Feature extraction — `compute_bar_features(bars, mbo_data=None)`. 22 features. Neutral defaults when mbo_data=None. |
 | `experiment.sh` | Research experiment orchestrator — survey, frame, run, read, log, program |
 | `aws/setup.sh` | One-time AWS infra setup: S3, ECR, IAM, security group |
 | `aws/launch.sh` | Launch EC2 Spot instance: `EXP_NAME=<label> ./aws/launch.sh <train.py args>` |
@@ -219,7 +225,7 @@ Key finding: **More training steps made things worse, not better.** MLP val went
 
 ## Don't waste time on
 
-- **Build verification** — `build-release/` is current, 418 C++ + 1858 Python = 2276 tests pass.
+- **Build verification** — `build-release/` is current, 418 C++ + 2062 Python = 2480 tests pass.
 - **Dependency checks** — SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp all installed.
 - **Reading PRD.md** — everything relevant is in this file.
 - **Codebase exploration** — read directory `README.md` files instead.
@@ -251,8 +257,8 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 ## Test coverage
 
 - **418 C++ tests** — `cd build-release && ./lob_tests` (15 skipped: need `.dbn.zst` fixture)
-- **1858 Python tests** (1308 core + 550 barrier) — `PYTHONPATH=build-release:python uv run --with pytest --with pandas --with scipy --with scikit-learn --with torch --with sb3-contrib pytest python/tests/` (4 core + 8 barrier skipped: fixture-dependent)
-- **2276 total**, all passing.
+- **2062 Python tests** (1308 core + 754 barrier) — `PYTHONPATH=build-release:python uv run --with pytest --with pandas --with scipy --with scikit-learn --with torch --with sb3-contrib pytest python/tests/` (4 core + 12 barrier skipped: fixture-dependent)
+- **2480 total**, all passing.
 
 ## Remaining work
 
@@ -274,7 +280,10 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 | ~~Install research kit~~ | ~~Done~~ | claude-research-kit installed, configured, research files populated. |
 | ~~Investigate negative OOS~~ | ~~Done (P0s REFUTED)~~ | exp-001 (data scaling) REFUTED, exp-002 (exec cost) REFUTED. Both P0 hypotheses eliminated. |
 | **T10-T12 barrier GPU training** | **P0** | Signal confirmed. Train barrier PPO via `./experiment.sh`. |
-| **Fix dead book features** | **P1** | `precompute_barrier_cache.py` needs `mbo_data` pass-through. 4/13 features dead. May boost signal. |
+| ~~Fix dead book features~~ | ~~Done~~ | PR #34. LOB Reconstructor + MBO wiring. All book features active. |
+| ~~Phase 1 microstructure features~~ | ~~Done~~ | PR #35. OFI, depth ratio, wmid displacement, spread std. N_FEATURES 13→17. |
+| ~~Phase 2 microstructure features~~ | ~~Done~~ | PR #36. VAMP, aggressor imbalance, trade arrival, cancel-to-trade, price impact. N_FEATURES 17→22. |
+| **Re-precompute barrier cache** | **P0** | Must re-precompute 247 sessions with N_FEATURES=22 and MBO data before any training. |
 | **Architecture comparison** | **P1 (now unblocked)** | Transformer / SSM / LSTM on barrier features via SB3 `features_extractor_class`. RF > MLP suggests architecture matters. |
 | **199d no-exec-cost 10M+ steps** | **P1** | Only positive OOS ever (exp-002 Run C val +10.93, undertrained). Needs GPU. |
 | Checkpoint early stopping | P1 | eval 4M vs 5M checkpoints. |

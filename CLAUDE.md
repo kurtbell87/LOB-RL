@@ -1,6 +1,6 @@
 ## Current State (updated 2026-02-10)
 
-- **Build:** `build-release/` is current. 418 C++ tests pass (`./lob_tests`). 1858 Python tests pass (1308 core + 550 barrier). **2276 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
+- **Build:** `build-release/` is current. 418 C++ tests pass (`./lob_tests`). 2062 Python tests pass (1308 core + 754 barrier). **2480 total.** (15 C++ + 12 Python skipped — need `.dbn.zst` fixture.)
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent) all installed.
 - **Shuffle split DONE:** `--shuffle-split` and `--seed 42` on `train.py`. Reproducible random train/val/test splits. Episodes are independent days. PR #14 merged.
@@ -40,11 +40,16 @@
 - **T9 PPO Training Infrastructure DONE (PR #28):** `multi_session_env.py` — `MultiSessionBarrierEnv` multi-session Gymnasium wrapper. `barrier_vec_env.py` — SB3-compatible VecEnv helpers. `training_diagnostics.py` — `BarrierDiagnosticCallback` with entropy/value loss/flat rate/win rate tracking + red flag detection + CSV output. `_sb3_compat.py` — SB3/PyTorch compatibility shim. `linear_schedule()` for LR decay. 41 tests (12 multi-session + 6 vec env + 13 diagnostics + 10 PPO training).
 - **T9b Training Script DONE (PR #29):** `scripts/train_barrier.py` — CLI training script with `parse_args()`, `split_sessions()`, `build_model()`, `main()`. Section 5.2 hyperparameters hardcoded. 22 tests.
 - **T6 Supervised Diagnostic CONFIRMED — weak signal (2026-02-10):** Bidirectional framing classifies {long_profit, short_profit, flat} — balanced 33/33/35%. MLP 39.3% / RF 40.5% vs 34.5% baseline (+5pp). Consistent on shuffle and chrono splits. v1 (long-only) was misleading due to 67/33 imbalance. Overfit test passed. 4/13 features dead (book features need mbo_data). P0 gate PASSED.
-- **Barrier cache ready:** `cache/barrier/` has 247 `.npz` files with 130-dim features (90 effective), bar_size=500, lookback=10, a=20/b=10/t_max=40. 4 dead book features need precompute fix.
-- **Next task:** T10-T12 GPU training via `./experiment.sh`. P1: fix precompute to activate book features (may boost signal). P1: architecture comparison now unblocked.
+- **LOB Reconstructor DONE (PR #34):** `OrderBook` class, `extract_all_mbo()`, dead book features fixed, `N_FEATURES` constant, precompute wiring with version check. 67 tests.
+- **Phase 1 Microstructure Features DONE (PR #35):** 4 new features (cols 13-16: OFI, depth ratio, weighted mid displacement, spread std). `N_FEATURES` bumped 13→17. 55 tests.
+- **Phase 2 Microstructure Features DONE (PR #36):** 5 new features (cols 17-21: VAMP displacement, aggressor imbalance, trade arrival rate, cancel-to-trade ratio, price impact per trade). `N_FEATURES` bumped 17→22. `OrderBook.vamp()` method. Refactored: `_BOOK_COL_MAP`, `stride_tricks` in `assemble_lookback`, extracted MBO helpers to `conftest.py`. 78 tests.
+- **Feature count:** 22 total features. Observation dim = 22*10 + 2 = 222 (with h=10).
+- **Barrier cache STALE:** `cache/barrier/` has 247 `.npz` files with 130-dim features (N_FEATURES=13). **Must re-precompute** with N_FEATURES=22 before training.
+- **Next task:** Re-precompute barrier cache with MBO data (activates all 22 features), then re-run T6 diagnostic to measure signal improvement. Then T10-T12 GPU training.
 - **Research kit installed:** `experiment.sh`, prompts, templates, QUESTIONS.md, DOMAIN_PRIORS.md, RESEARCH_LOG.md all configured.
 - **Architecture exploration UNBLOCKED:** T6 confirms signal exists. Architecture comparison (Transformer/SSM/LSTM on barrier features via `features_extractor_class`) is now a valid experiment. See DOMAIN_PRIORS.md.
 - **Experiments completed:** 10 total (2 confirmed, 8 refuted). See `RESEARCH_LOG.md`.
+- **PRs this session:** #34 (LOB reconstructor), #35 (Phase 1 features), #36 (Phase 2 features).
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
 - **Precompute hint:** If cache needs rebuilding: `precompute_cache.py --roll-calendar ... --workers 8` (script supports `--workers N` via `ProcessPoolExecutor`).
 - **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42`
