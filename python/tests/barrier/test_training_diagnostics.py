@@ -7,10 +7,10 @@ entropy, value loss, flat action rate, episode reward, trade win rate,
 NaN detection, and red flag alerts.
 """
 
-import math
-
 import numpy as np
 import pytest
+
+from .conftest import make_session_data_list
 
 
 # ===========================================================================
@@ -52,23 +52,12 @@ class TestDiagnosticMetricTracking:
 
     @pytest.fixture
     def trained_callback(self, tmp_path):
-        """Run a minimal MaskablePPO training (2048 steps) and return the callback."""
+        """Run a minimal MaskablePPO training (128 steps) and return the callback."""
         from lob_rl.barrier.training_diagnostics import BarrierDiagnosticCallback
         from lob_rl.barrier.barrier_vec_env import make_barrier_vec_env
-        from lob_rl.barrier.feature_pipeline import build_feature_matrix
-        from lob_rl.barrier.label_pipeline import compute_labels
         from sb3_contrib import MaskablePPO
 
-        from ..barrier.conftest import make_session_bars
-
-        # Build synthetic session data
-        sessions = []
-        for i in range(3):
-            bars = make_session_bars(40, base_price=4000.0 + i * 10.0)
-            labels = compute_labels(bars, a=20, b=10, t_max=40)
-            features = build_feature_matrix(bars, h=10)
-            sessions.append({"bars": bars, "labels": labels, "features": features})
-
+        sessions = make_session_data_list(n_sessions=3, n_bars=40)
         vec_env = make_barrier_vec_env(
             sessions, n_envs=2, use_subprocess=False, seed=42,
         )
@@ -240,19 +229,9 @@ class TestDiagnosticOutput:
         """When output_dir is set, diagnostics are written to a CSV file."""
         from lob_rl.barrier.training_diagnostics import BarrierDiagnosticCallback
         from lob_rl.barrier.barrier_vec_env import make_barrier_vec_env
-        from lob_rl.barrier.feature_pipeline import build_feature_matrix
-        from lob_rl.barrier.label_pipeline import compute_labels
         from sb3_contrib import MaskablePPO
 
-        from ..barrier.conftest import make_session_bars
-
-        sessions = []
-        for i in range(3):
-            bars = make_session_bars(40, base_price=4000.0 + i * 10.0)
-            labels = compute_labels(bars, a=20, b=10, t_max=40)
-            features = build_feature_matrix(bars, h=10)
-            sessions.append({"bars": bars, "labels": labels, "features": features})
-
+        sessions = make_session_data_list(n_sessions=3, n_bars=40)
         vec_env = make_barrier_vec_env(
             sessions, n_envs=2, use_subprocess=False, seed=42,
         )

@@ -6,21 +6,22 @@ Tests for the barrier pipeline package (`python/lob_rl/barrier/`).
 
 | File | Role | Test Count |
 |------|------|-----------|
-| `conftest.py` | Shared test helpers: `make_bar()`, `make_flat_bars()`, `make_session_bars()`, RTH timestamp constants. | — |
-| `test_bar_pipeline.py` | Bar construction: OHLCV, VWAP, timestamps, trade retention, RTH filtering, DST, batch processing. | ~80 |
-| `test_label_pipeline.py` | Barrier labels: upper/lower/timeout, tiebreaking, short direction, calibration, diagnostics. | ~80 |
-| `test_feature_pipeline.py` | Features: 13-column layout, normalization, lookback assembly, end-to-end builder. | ~55 |
+| `conftest.py` | Shared test helpers: `make_bar()`, `make_flat_bars()`, `make_session_bars()`, `make_session_data()`, `make_session_data_list()`, `run_episode()`, RTH timestamp constants, dimension constants. | — |
+| `test_bar_pipeline.py` | Bar construction: OHLCV, VWAP, timestamps, trade retention, RTH filtering, DST, batch processing. | 67 |
+| `test_label_pipeline.py` | Barrier labels: upper/lower/timeout, tiebreaking, short direction, calibration, diagnostics. | 65 |
+| `test_feature_pipeline.py` | Features: 13-column layout, normalization, lookback assembly, end-to-end builder. | 92 |
 | `test_gamblers_ruin.py` | Gambler's ruin validation: analytic formula, random walk generation, drift levels. | 81 |
 | `test_regime_switch.py` | Regime-switch validation: synthetic data, label distributions, KS tests, normalization adaptation. | 51 |
 | `test_supervised_diagnostic.py` | Supervised diagnostic: dataset construction, MLP architecture, overfit test, training, evaluation, random forest, full pipeline. | 56 |
 | `test_reward_accounting.py` | Reward accounting: hand-computed reward sequences for long/short, barrier hits, timeouts, MTM normalization, transaction costs, position state transitions, unrealized PnL, action masking. | 46 |
 | `test_barrier_env.py` | Gymnasium env: API compliance, observation content, action masking, episode lifecycle, reward integration, position state transitions, random agent, info dict, edge cases, factory method. | 41 |
 | `test_multi_session_env.py` | Multi-session wrapper: reset/API, session cycling, shuffle/determinism, skip short sessions, action mask delegation, single session, from_bar_lists factory, random agent stress. | 12 |
-| `test_barrier_vec_env.py` | Vectorized env: env_fn callable, DummyVecEnv creation, num_envs, step/reset shapes, random agent on vec env. | 5 |
-| `test_training_diagnostics.py` | Training callback: init, metric tracking (episode reward, flat action rate, trade win rate), NaN detection, red flag detection (entropy collapse, flat rate), CSV output, snapshot accumulation. | 11 |
-| `test_ppo_training.py` | PPO training integration: MaskablePPO training smoke test, eval callback. | 13 |
+| `test_barrier_vec_env.py` | Vectorized env: env_fn callable, DummyVecEnv creation, num_envs, step/reset shapes, random agent on vec env. | 6 |
+| `test_training_diagnostics.py` | Training callback: init, metric tracking (episode reward, flat action rate, trade win rate), NaN detection, red flag detection (entropy collapse, flat rate), CSV output, snapshot accumulation. | 12 |
+| `test_ppo_training.py` | PPO training: linear schedule, model creation, prediction with masks, short training run, checkpointing, end-to-end integration, action masking enforcement, eval callback, policy architecture. | 11 |
+| `test_train_barrier_script.py` | Training CLI script: arg parsing, session loading, model building, training smoke test, diagnostics output. | 22 |
 
-**Total: ~532 tests** (8 skipped: need `.dbn.zst` fixture data).
+**Total: 562 tests** (8 skipped: need `.dbn.zst` fixture data).
 
 ## Shared Test Helpers (`conftest.py`)
 
@@ -66,8 +67,9 @@ run_episode(env, rng=None) -> tuple[float, int]
 - `test_barrier_env.py` uses `make_bar`, `make_flat_bars`, `make_session_bars`, `make_session_data`, dimension constants from `conftest.py`.
 - `test_multi_session_env.py` uses `make_session_bars`, `make_session_data`, `make_session_data_list`, `run_episode`, dimension constants from `conftest.py`.
 - `test_barrier_vec_env.py` uses `make_session_data_list`, dimension constants from `conftest.py`.
-- `test_training_diagnostics.py` uses `make_session_bars` from `conftest.py`, imports from `lob_rl.barrier.training_diagnostics` and `lob_rl.barrier.barrier_vec_env`.
-- `test_ppo_training.py` uses `make_session_bars` from `conftest.py`, imports from `lob_rl.barrier.barrier_vec_env` and `sb3_contrib`.
+- `test_training_diagnostics.py` uses `make_session_data_list` from `conftest.py`, imports from `lob_rl.barrier.training_diagnostics` and `lob_rl.barrier.barrier_vec_env`.
+- `test_ppo_training.py` uses `make_session_data_list`, `DEFAULT_OBS_DIM` from `conftest.py`, imports from `lob_rl.barrier.barrier_vec_env` and `sb3_contrib`.
+- `test_train_barrier_script.py` uses `make_session_bars` from `conftest.py`, imports from `scripts.train_barrier`.
 
 ## Running
 
