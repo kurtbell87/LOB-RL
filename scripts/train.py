@@ -17,8 +17,11 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFrameStack, VecNormalize
 
+from lob_rl.config import load_json_config
 from lob_rl.multi_day_env import MultiDayEnv
+from lob_rl.orchestration import build_run_manifest, write_run_manifest
 from lob_rl.precomputed_env import PrecomputedEnv
+from lob_rl.reporting import METRICS_SCHEMA_VERSION, validate_metrics_payload
 
 DEFAULT_SESSION_CONFIG = {
     'rth_open_ns': 48_600_000_000_000,   # 13:30 UTC
@@ -156,8 +159,8 @@ def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False
         all_returns.append(episode_reward)
 
     if not all_returns:
-        return {'mean_return': 0.0, 'std_return': 0.0, 'sortino_ratio': 0.0,
-                'n_episodes': 0, 'positive_episodes': 0}
+        return {'mean_return': 0.0, 'std_return': 0.0, 'sortino': 0.0,
+                'downside_std': 0.0, 'n_episodes': 0, 'positive_episodes': 0}
 
     returns = np.array(all_returns)
     mean_return = np.mean(returns)
@@ -172,51 +175,69 @@ def evaluate_sortino(model, eval_files, n_eval_episodes=10, execution_cost=False
     return {
         'mean_return': float(mean_return),
         'std_return': float(np.std(returns)),
-        'sortino_ratio': float(sortino),
+        'sortino': float(sortino),
+        'downside_std': float(np.std(downside_returns)) if len(downside_returns) > 0 else 0.0,
         'n_episodes': len(returns),
         'positive_episodes': int(np.sum(returns > 0)),
     }
 
 
-def main():
+def _build_parser(config):
+    def cfg(name, default):
+        return config.get(name, default)
+
     parser = argparse.ArgumentParser(description='Train PPO on LOB data')
-    parser.add_argument('--data-dir', default=None, help='Directory with .bin files')
-    parser.add_argument('--cache-dir', default=None, help='Directory with cached .npz files')
-    parser.add_argument('--train-days', type=int, default=20, help='Number of training days')
-    parser.add_argument('--total-timesteps', type=int, default=500_000, help='Total training timesteps')
-    parser.add_argument('--reward-mode', default='pnl_delta', choices=['pnl_delta', 'pnl_delta_penalized'])
-    parser.add_argument('--lambda', dest='lambda_', type=float, default=0.0, help='Inventory penalty lambda')
-    parser.add_argument('--execution-cost', action='store_true', default=False,
+    parser.add_argument('--config', default=None, help='Path to JSON run config')
+    parser.add_argument('--data-dir', default=cfg('data_dir', None), help='Directory with .bin files')
+    parser.add_argument('--cache-dir', default=cfg('cache_dir', None), help='Directory with cached .npz files')
+    parser.add_argument('--train-days', type=int, default=cfg('train_days', 20), help='Number of training days')
+    parser.add_argument('--val-days', type=int, default=cfg('val_days', 5), help='Number of validation days')
+    parser.add_argument('--n-eval-episodes', type=int, default=cfg('n_eval_episodes', 10),
+                        help='Max episodes to evaluate per split')
+    parser.add_argument('--total-timesteps', type=int, default=cfg('total_timesteps', 500_000), help='Total training timesteps')
+    parser.add_argument('--reward-mode', default=cfg('reward_mode', 'pnl_delta'), choices=['pnl_delta', 'pnl_delta_penalized'])
+    parser.add_argument('--lambda', dest='lambda_', type=float, default=cfg('lambda_', 0.0), help='Inventory penalty lambda')
+    parser.add_argument('--execution-cost', action='store_true', default=cfg('execution_cost', False),
                         help='Enable execution cost (spread/2 per position change)')
-    parser.add_argument('--output-dir', default='runs', help='Output directory for model and logs')
-    parser.add_argument('--ent-coef', type=float, default=0.01, help='Entropy coefficient for PPO')
-    parser.add_argument('--n-envs', type=int, default=8, help='Number of parallel training environments')
-    parser.add_argument('--batch-size', type=int, default=256, help='PPO minibatch size')
-    parser.add_argument('--n-epochs', type=int, default=5, help='PPO epochs per rollout')
-    parser.add_argument('--learning-rate', type=float, default=3e-4, help='Learning rate')
-    parser.add_argument('--no-norm', action='store_true', default=False,
+    parser.add_argument('--output-dir', default=cfg('output_dir', 'runs'), help='Output directory for model and logs')
+    parser.add_argument('--ent-coef', type=float, default=cfg('ent_coef', 0.01), help='Entropy coefficient for PPO')
+    parser.add_argument('--n-envs', type=int, default=cfg('n_envs', 8), help='Number of parallel training environments')
+    parser.add_argument('--batch-size', type=int, default=cfg('batch_size', 256), help='PPO minibatch size')
+    parser.add_argument('--n-epochs', type=int, default=cfg('n_epochs', 5), help='PPO epochs per rollout')
+    parser.add_argument('--learning-rate', type=float, default=cfg('learning_rate', 3e-4), help='Learning rate')
+    parser.add_argument('--no-norm', action='store_true', default=cfg('no_norm', False),
                         help='Disable VecNormalize')
-    parser.add_argument('--participation-bonus', type=float, default=0.0,
+    parser.add_argument('--participation-bonus', type=float, default=cfg('participation_bonus', 0.0),
                         help='Per-step bonus for holding a position: bonus * |pos|')
-    parser.add_argument('--step-interval', type=int, default=1,
+    parser.add_argument('--step-interval', type=int, default=cfg('step_interval', 1),
                         help='Subsample every Nth BBO snapshot (default: 1, no subsampling)')
-    parser.add_argument('--bar-size', type=int, default=0,
+    parser.add_argument('--bar-size', type=int, default=cfg('bar_size', 0),
                         help='Number of ticks per bar (0 = tick-level, >0 = bar-level)')
-    parser.add_argument('--policy-arch', type=str, default='64,64',
+    parser.add_argument('--policy-arch', type=str, default=cfg('policy_arch', '64,64'),
                         help='Comma-separated hidden layer sizes (default: 64,64)')
-    parser.add_argument('--activation', type=str, default='tanh', choices=['tanh', 'relu'],
+    parser.add_argument('--activation', type=str, default=cfg('activation', 'tanh'), choices=['tanh', 'relu'],
                         help='Activation function for policy/value networks (default: tanh)')
-    parser.add_argument('--shuffle-split', action='store_true', default=False,
+    parser.add_argument('--shuffle-split', action='store_true', default=cfg('shuffle_split', False),
                         help='Shuffle files before train/val/test split (random instead of chronological)')
-    parser.add_argument('--seed', type=int, default=42, help='Random seed for shuffle-split')
-    parser.add_argument('--frame-stack', type=int, default=1,
+    parser.add_argument('--seed', type=int, default=cfg('seed', 42), help='Random seed for shuffle-split')
+    parser.add_argument('--frame-stack', type=int, default=cfg('frame_stack', 1),
                         help='Number of frames to stack (1 = no stacking)')
-    parser.add_argument('--recurrent', action='store_true', default=False,
+    parser.add_argument('--recurrent', action='store_true', default=cfg('recurrent', False),
                         help='Use LSTM-based recurrent policy instead of MLP')
-    parser.add_argument('--checkpoint-freq', type=int, default=0,
+    parser.add_argument('--checkpoint-freq', type=int, default=cfg('checkpoint_freq', 0),
                         help='Save a checkpoint every N timesteps (0 = disabled)')
-    parser.add_argument('--resume', type=str, default=None,
+    parser.add_argument('--resume', type=str, default=cfg('resume', None),
                         help='Path to a checkpoint .zip file to resume training from')
+    return parser
+
+
+def main():
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument('--config', default=None)
+    pre_args, _ = pre_parser.parse_known_args()
+    config = load_json_config(pre_args.config)
+
+    parser = _build_parser(config)
     args = parser.parse_args()
 
     # Validate mutual exclusivity
@@ -252,8 +273,8 @@ def main():
             random.Random(args.seed).shuffle(all_files)
 
         train_files = all_files[:args.train_days]
-        val_files = all_files[args.train_days:args.train_days + 5]
-        test_files = all_files[args.train_days + 5:]
+        val_files = all_files[args.train_days:args.train_days + args.val_days]
+        test_files = all_files[args.train_days + args.val_days:]
 
         print(f"Train: {len(train_files)} days, Val: {len(val_files)} days, Test: {len(test_files)} days")
         print(f"Train dates: {[f[0] for f in train_files]}")
@@ -288,8 +309,8 @@ def main():
             random.Random(args.seed).shuffle(all_files)
 
         train_files = all_files[:args.train_days]
-        val_files = all_files[args.train_days:args.train_days + 5]
-        test_files = all_files[args.train_days + 5:]
+        val_files = all_files[args.train_days:args.train_days + args.val_days]
+        test_files = all_files[args.train_days + args.val_days:]
 
         print(f"Train: {len(train_files)} days, Val: {len(val_files)} days, Test: {len(test_files)} days")
         print(f"Train dates: {[f[0] for f in train_files]}")
@@ -410,8 +431,18 @@ def main():
         reset_num_timesteps=False if args.resume else True,
     )
 
-    # Save model
+    # Save model + run manifest
     os.makedirs(args.output_dir, exist_ok=True)
+    run_manifest = build_run_manifest(
+        args=vars(args),
+        train_files=train_files,
+        val_files=val_files,
+        test_files=test_files,
+        artifact_schema_version=METRICS_SCHEMA_VERSION,
+    )
+    manifest_path = write_run_manifest(run_manifest, args.output_dir)
+    print(f"Run manifest written to: {manifest_path}")
+
     model_path = os.path.join(args.output_dir, 'ppo_lob')
     model.save(model_path)
     print(f"Model saved to: {model_path}")
@@ -423,11 +454,14 @@ def main():
         env.save(vec_normalize_path)
         print(f"VecNormalize stats saved to: {vec_normalize_path}")
 
+    val_metrics = None
+    test_metrics = None
+
     # Evaluate on validation set
     cache_path = args.cache_dir if args.cache_dir else None
     if val_files:
         print("\nEvaluating on validation set...")
-        val_metrics = evaluate_sortino(model, val_files, execution_cost=args.execution_cost,
+        val_metrics = evaluate_sortino(model, val_files, n_eval_episodes=args.n_eval_episodes, execution_cost=args.execution_cost,
                                        vec_normalize_path=vec_normalize_path,
                                        participation_bonus=args.participation_bonus,
                                        step_interval=args.step_interval,
@@ -440,7 +474,7 @@ def main():
     # Evaluate on test set
     if test_files:
         print("\nEvaluating on test set...")
-        test_metrics = evaluate_sortino(model, test_files, execution_cost=args.execution_cost,
+        test_metrics = evaluate_sortino(model, test_files, n_eval_episodes=args.n_eval_episodes, execution_cost=args.execution_cost,
                                         vec_normalize_path=vec_normalize_path,
                                         participation_bonus=args.participation_bonus,
                                         step_interval=args.step_interval,
@@ -449,6 +483,26 @@ def main():
                                         frame_stack=args.frame_stack,
                                         is_recurrent=args.recurrent)
         print(f"Test metrics: {test_metrics}")
+
+
+    metrics_payload = {
+        'schema_version': METRICS_SCHEMA_VERSION,
+        'evaluation': {'n_eval_episodes': args.n_eval_episodes},
+        'metrics': {},
+    }
+    if val_metrics is not None:
+        metrics_payload['metrics']['validation'] = val_metrics
+    if test_metrics is not None:
+        metrics_payload['metrics']['test'] = test_metrics
+
+    validation_errors = validate_metrics_payload(metrics_payload)
+    if validation_errors:
+        raise ValueError(f"Metrics payload validation failed: {validation_errors}")
+
+    metrics_path = os.path.join(args.output_dir, 'metrics.json')
+    with open(metrics_path, 'w', encoding='utf-8') as f:
+        json.dump(metrics_payload, f, indent=2, sort_keys=True)
+    print(f"Metrics written to: {metrics_path}")
 
     return 0
 
