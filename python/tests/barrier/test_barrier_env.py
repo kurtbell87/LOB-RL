@@ -22,29 +22,30 @@ from lob_rl.barrier.reward_accounting import (
     compute_unrealized_pnl,
 )
 
-from .conftest import make_bar, make_flat_bars, make_session_bars
+from .conftest import (
+    make_bar,
+    make_flat_bars,
+    make_session_bars,
+    make_session_data,
+    DEFAULT_H,
+    DEFAULT_FEATURE_DIM,
+    DEFAULT_OBS_DIM,
+)
 
 
 # ---------------------------------------------------------------------------
 # Helpers — build synthetic data for env construction
 # ---------------------------------------------------------------------------
 
-# Default lookback h=10, 13 features → obs_dim = 130 + 2 = 132
-_H = 10
-_FEATURE_DIM = 13 * _H  # 130
-_OBS_DIM = _FEATURE_DIM + 2  # 132
+_H = DEFAULT_H
+_FEATURE_DIM = DEFAULT_FEATURE_DIM
+_OBS_DIM = DEFAULT_OBS_DIM
 
 
 def _make_env_inputs(n_bars=60, base_price=4000.0, h=_H):
-    """Build (bars, labels, features) for env construction.
-
-    Returns n_bars session bars, their labels, and a feature matrix.
-    The feature matrix has shape (n_bars - h + 1, 13*h).
-    """
-    bars = make_session_bars(n_bars, base_price=base_price)
-    labels = compute_labels(bars, a=20, b=10, t_max=40)
-    features = build_feature_matrix(bars, h=h)
-    return bars, labels, features
+    """Build (bars, labels, features) for env construction."""
+    s = make_session_data(n_bars=n_bars, base_price=base_price, h=h)
+    return s["bars"], s["labels"], s["features"]
 
 
 def _make_env(n_bars=60, config=None, h=_H):
