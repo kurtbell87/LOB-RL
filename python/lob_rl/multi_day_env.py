@@ -143,21 +143,22 @@ class MultiDayEnv(gym.Env):
 
     def _filter_days_for_bar_size(self):
         """Remove days that produce < 2 bars with the given bar_size."""
+        n_days = self._num_days()
+        keep = []
+        for i in range(n_days):
+            if self._lazy:
+                data = np.load(self._npz_paths[i])
+                obs, mid, spread = data["obs"], data["mid"], data["spread"]
+            else:
+                obs, mid, spread = self._precomputed_days[i]
+            if self._has_enough_bars(obs, mid, spread):
+                keep.append(i)
+
         if self._lazy:
-            keep = []
-            for i, npz_path in enumerate(self._npz_paths):
-                data = np.load(npz_path)
-                if self._has_enough_bars(data["obs"], data["mid"], data["spread"]):
-                    keep.append(i)
             self._npz_paths = [self._npz_paths[i] for i in keep]
-            self._contract_ids = [self._contract_ids[i] for i in keep]
         else:
-            keep = []
-            for i, (obs, mid, spread) in enumerate(self._precomputed_days):
-                if self._has_enough_bars(obs, mid, spread):
-                    keep.append(i)
             self._precomputed_days = [self._precomputed_days[i] for i in keep]
-            self._contract_ids = [self._contract_ids[i] for i in keep]
+        self._contract_ids = [self._contract_ids[i] for i in keep]
 
     def _validate_npz(self, npz_path):
         """Validate and extract metadata from an .npz file.
@@ -225,6 +226,27 @@ class MultiDayEnv(gym.Env):
         data = np.load(npz_path)
         return data["obs"], data["mid"], data["spread"]
 
+    def _create_inner_env(self, obs, mid, spread):
+        """Create the appropriate single-day env based on bar_size."""
+        if self._bar_size > 0:
+            from lob_rl.bar_level_env import BarLevelEnv
+            return BarLevelEnv(
+                obs, mid, spread,
+                bar_size=self._bar_size,
+                reward_mode=self._reward_mode,
+                lambda_=self._lambda,
+                execution_cost=self._execution_cost,
+                participation_bonus=self._participation_bonus,
+            )
+        return PrecomputedEnv(
+            obs, mid, spread,
+            reward_mode=self._reward_mode,
+            lambda_=self._lambda,
+            execution_cost=self._execution_cost,
+            participation_bonus=self._participation_bonus,
+            step_interval=self._step_interval,
+        )
+
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed, options=options)
 
@@ -254,40 +276,18 @@ class MultiDayEnv(gym.Env):
         else:
             obs, mid, spread = self._precomputed_days[file_idx]
 
-        if self._bar_size > 0:
-            from lob_rl.bar_level_env import BarLevelEnv
-            self._inner_env = BarLevelEnv(
-                obs, mid, spread,
-                bar_size=self._bar_size,
-                reward_mode=self._reward_mode,
-                lambda_=self._lambda,
-                execution_cost=self._execution_cost,
-                participation_bonus=self._participation_bonus,
-            )
-        else:
-            self._inner_env = PrecomputedEnv(
-                obs, mid, spread,
-                reward_mode=self._reward_mode,
-                lambda_=self._lambda,
-                execution_cost=self._execution_cost,
-                participation_bonus=self._participation_bonus,
-                step_interval=self._step_interval,
-            )
+        self._inner_env = self._create_inner_env(obs, mid, spread)
         obs_out, info = self._inner_env.reset()
         info["day_index"] = file_idx
 
         # Contract boundary tracking
         current_contract_id = self._contract_ids[file_idx]
         info["instrument_id"] = current_contract_id
-
-        # Detect contract roll: both must be non-None and different
-        if (self._prev_contract_id is not None and
-                current_contract_id is not None and
-                self._prev_contract_id != current_contract_id):
-            info["contract_roll"] = True
-        else:
-            info["contract_roll"] = False
-
+        info["contract_roll"] = (
+            self._prev_contract_id is not None
+            and current_contract_id is not None
+            and self._prev_contract_id != current_contract_id
+        )
         self._prev_contract_id = current_contract_id
 
         return obs_out, info

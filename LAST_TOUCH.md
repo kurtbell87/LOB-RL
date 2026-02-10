@@ -4,49 +4,36 @@
 
 ### Immediate next step
 
-**Set up AWS infrastructure and run first experiment.** AWS EC2 Spot is now configured as the compute backend. Before running experiments:
+**Decide strategic direction.** Both P0 hypotheses (data quantity, execution cost masking) are REFUTED. The 21-dim bar-level observation space may lack sufficient predictive signal. Two paths forward:
 
-1. **One-time AWS setup:**
-```bash
-./aws/setup.sh
-# Export the printed env vars (AWS_S3_BUCKET, AWS_ECR_REPO, etc.)
-```
+1. **P0: Observation signal audit (supervised classifier).** Train a simple classifier (logistic regression, random forest) to predict next-bar price direction from the 21-dim obs. If accuracy > 55%, signal exists and RL is failing to exploit it. If ~50%, the features lack predictive power and feature engineering is needed. This is cheap (local, no GPU).
 
-2. **Push Docker image to ECR:**
+2. **P0: 199d + no exec cost at 10M+ steps on AWS.** The only positive OOS signal ever observed was exp-002 Run C (val +10.93, severely undertrained at expl_var=0.174). Test whether it persists at convergence. Needs AWS setup first (see below).
+
+3. **Feature engineering.** If signal audit shows ~50% accuracy, the current obs space is insufficient. Consider: order flow imbalance, trade imbalance, volume-weighted features, microstructure features beyond BBO.
+
+**AWS setup (needed for GPU experiments):**
 ```bash
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $AWS_ECR_REPO
+./aws/setup.sh                    # One-time infra
+# Export the printed env vars
 docker buildx build --platform linux/amd64 -t ${AWS_ECR_REPO}:latest --push .
-```
-
-3. **Upload cache to S3:**
-```bash
 AWS_S3_BUCKET=lob-rl-training ./aws/upload-cache.sh
+./aws/launch.sh --total-timesteps 1000 --bar-size 1000 --execution-cost  # Smoke test
 ```
 
-4. **Smoke test (1000 steps):**
-```bash
-./aws/launch.sh --total-timesteps 1000 --bar-size 1000 --execution-cost
-```
-
-5. **Run first experiment:**
-```bash
-./experiment.sh survey "Does increasing training data from 20 to 199 days fix OOS generalization?"
-```
-
-Or run the full auto-advancing program:
-```bash
-./experiment.sh program --max-cycles 3
-```
-
-**Research agenda:** See `QUESTIONS.md` for 6 open questions (2x P0, 2x P1, 1x P2, 1x P3). See `RESEARCH_LOG.md` for 7 pre-experiments. See `DOMAIN_PRIORS.md` for LOB-RL domain knowledge.
+**Research agenda:** See `QUESTIONS.md` for 5 open questions (2x P0, 2x P1, 1x P2). See `RESEARCH_LOG.md` for 9 experiments (1 confirmed, 8 refuted). See `DOMAIN_PRIORS.md` for LOB-RL domain knowledge.
 
 **OOS results summary (all negative):**
 
-| Model | Val Return | Test Return | Val Sortino | Test Sortino | Positive Eps |
-|-------|-----------|-------------|-------------|--------------|--------------|
-| **LSTM** | **-36.7** | **-33.4** | **-1.06** | -1.48 | 2/5 val, 2/10 test |
-| MLP | -62.9 | -44.0 | -1.67 | -2.22 | 0/5 val, 1/10 test |
-| Frame-stack | -82.3 | -49.4 | -1.37 | -1.10 | 0/5 val, 1/10 test |
+| Experiment | Model | Val Return | Test Return | Val Sortino | Test Sortino | Pos Val Eps |
+|-----------|-------|-----------|-------------|-------------|--------------|-------------|
+| pre-005 (20d GPU) | LSTM | -36.7 | -33.4 | -1.06 | -1.48 | 2/5 |
+| pre-006 (20d GPU) | MLP | -62.9 | -44.0 | -1.67 | -2.22 | 0/5 |
+| exp-001 (199d local) | LSTM 199d | -59.95 | -43.14 | -1.49 | -1.24 | 0/5 |
+| exp-001 (199d local) | MLP 199d | -75.53 | -44.81 | -1.19 | -1.02 | 0/5 |
+| exp-001 (20d local) | MLP 20d | -75.82 | -61.42 | -2.95 | -1.16 | 0/5 |
+| exp-002 (no exec cost) | MLP 20d | -4.43 | -5.03 | -0.43 | -0.27 | 2/5 |
+| exp-002 (199d no exec) | MLP 199d | +10.93 | -13.90 | +0.78 | -0.59 | 3/5 |
 
 ### Roll calendar
 
@@ -63,7 +50,17 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 
 ### What was just completed
 
-**AWS EC2 Spot migration (2026-02-09).** Replaces RunPod with AWS EC2 Spot for all remote training. Six new files in `aws/`, five existing files modified (~700 lines total):
+**exp-001 OOS evaluation recovered + exp-002 completed (2026-02-09).** Ran retroactive `evaluate_sortino()` on all 4 exp-001 checkpoints. Verdict: **REFUTED.** Key findings:
+- LSTM 199d val -59.95 (threshold was -16.7) — failed SC-1 by 43 points
+- MLP 199d val -75.53 ≈ MLP 20d val -75.82 — more data did nothing for MLP
+- 0/20 positive val episodes across all 4 runs
+- 199d reduces memorization (expl_var 0.30 vs 0.97) but OOS is unchanged
+- Both P0 hypotheses (data quantity, exec cost masking) now REFUTED
+- New leading hypothesis H5: 21-dim bar-level obs space lacks sufficient predictive signal
+- Updated RESEARCH_LOG.md, QUESTIONS.md (6 answered, 5 open), CLAUDE.md
+- Eval script: `results/exp-001-does-increasing-training-data-from-20-to/eval_oos.py`
+
+**Prior: AWS EC2 Spot migration (2026-02-09).** Replaces RunPod with AWS EC2 Spot for all remote training. Six new files in `aws/`, five existing files modified (~700 lines total):
 
 - **`aws/setup.sh`:** One-time infrastructure setup — S3 bucket, ECR repo, IAM role (least-privilege: S3 read/write, ECR pull, self-terminate), security group. Idempotent. Prints env var exports.
 - **`aws/launch.sh`:** Launch EC2 Spot instance. Drop-in replacement for `runpod/launch.sh`. Auto-detects instance type: `--recurrent` → `g5.xlarge` (GPU, A10G, ~$0.24/hr), else → `c7a.4xlarge` (CPU, 16 vCPU, ~$0.39/hr). Generates user-data script that: starts spot interruption monitor, downloads cache from S3, pulls Docker from ECR, runs training, uploads results to S3, self-terminates on success.
@@ -257,8 +254,12 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 | ~~RunPod GPU training~~ | ~~Done~~ | PR #17 (checkpointing) + infrastructure files (Dockerfile, runpod/ scripts). |
 | ~~Run experiments on RunPod~~ | ~~Done~~ | All 3 completed 5M steps. LSTM best (val -36.7), all negative OOS. See `research/experiment_report.md`. |
 | ~~Install research kit~~ | ~~Done~~ | claude-research-kit installed, configured, research files populated. |
-| **Investigate negative OOS** | **Critical** | Use `./experiment.sh` pipeline. P0: increase train days (20→199), ablate exec cost. P1: eval 4M checkpoints, VecNormalize audit. |
-| Bar-level supervised diagnostic | Low | Script lacks `--bar-size` support. Nice-to-have. |
+| ~~Investigate negative OOS~~ | ~~Done (P0s REFUTED)~~ | exp-001 (data scaling) REFUTED, exp-002 (exec cost) REFUTED. Both P0 hypotheses eliminated. |
+| **Observation signal audit** | **P0 — Critical** | Supervised classifier on 21-dim obs to determine if signal exists. If ~50% accuracy, feature engineering needed. |
+| **199d no-exec-cost 10M+ steps** | **P0** | Only positive OOS ever (exp-002 Run C val +10.93, undertrained). Needs AWS GPU. |
+| **Feature engineering** | **P0 (if signal audit fails)** | Order flow imbalance, trade imbalance, microstructure features beyond BBO. |
+| Checkpoint early stopping | P1 | eval 4M vs 5M checkpoints. |
+| VecNormalize audit | P1 | Check for cross-day information leakage. |
 | More data (second year) | Low | 2023-2024 as complement if 2022 generalizes well. |
 
 ---

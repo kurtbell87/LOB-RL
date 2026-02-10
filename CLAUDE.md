@@ -34,9 +34,11 @@
 - **RunPod compute in experiment.sh DONE (deprecated):** FRAME agent declares `compute: local|runpod` in specs. RUN agent dispatches to RunPod when `compute: runpod`. Env vars: `RUNPOD_VOLUME_ID`, `DOCKERHUB_USER`, `RUNPOD_GPU_TYPE`. **Superseded by AWS.**
 - **AWS EC2 Spot infrastructure DONE:** `aws/` scripts (setup, launch, fetch-results, upload-cache, monitor). EC2 Spot replaces RunPod — 60% cheaper GPU (g5.xlarge A10G ~$0.24/hr), dedicated CPU instances (c7a.4xlarge ~$0.39/hr). S3 for cache + results, ECR for Docker image. Spot interruption handled via metadata polling + checkpoint upload. Auto-detect: `--recurrent` → GPU, else → CPU. Env vars: `AWS_S3_BUCKET`, `AWS_ECR_REPO`, `AWS_INSTANCE_TYPE`, `AWS_REGION`.
 - **AWS compute in experiment.sh DONE:** FRAME agent declares `compute: local|aws` in specs. RUN agent dispatches to AWS when `compute: aws` — launches EC2 Spot instances, polls state, fetches from S3, evals locally. `runpod` kept as deprecated fallback.
-- **Next task:** Run first experiment via `./experiment.sh` pipeline — P0: increase training days (20→199). Set up AWS first: `./aws/setup.sh`, push Docker image to ECR, upload cache via `./aws/upload-cache.sh`.
+- **exp-001 REFUTED:** 199d does not fix OOS. LSTM 199d val -59.95, MLP 199d val -75.53 ≈ MLP 20d val -75.82. 199d eliminates memorization (expl_var 0.30 vs 0.97) but OOS unchanged. Data quantity is not the primary bottleneck.
+- **exp-002 REFUTED:** Removing exec cost improves OOS by ~35 points but doesn't flip positive. Val -4.43 without exec cost (vs -39.55 with). Gap to gross profitability is ~5 points.
+- **Next task:** P0 observation signal audit (supervised classifier on 21-dim obs). Also: 199d no-exec-cost at 10M+ steps (only positive OOS signal ever: exp-002 Run C val +10.93, undertrained). AWS infra ready but not yet smoke-tested.
 - **Research kit installed:** `experiment.sh`, prompts, templates, QUESTIONS.md, DOMAIN_PRIORS.md, RESEARCH_LOG.md all configured.
-- **Experiments completed (pre-pipeline):** 7 (1 confirmed, 6 refuted). All OOS results negative. See `RESEARCH_LOG.md`.
+- **Experiments completed:** 9 total (1 confirmed, 8 refuted). All OOS results negative. See `RESEARCH_LOG.md`.
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
 - **Precompute hint:** If cache needs rebuilding: `precompute_cache.py --roll-calendar ... --workers 8` (script supports `--workers N` via `ProcessPoolExecutor`).
 - **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42`

@@ -15,6 +15,7 @@ Gymnasium wrappers and utilities on top of the C++ `lob_rl_core` module.
 | `bar_level_env.py` | `BarLevelEnv` — bar-level `gymnasium.Env`. 21-dim obs (13 intra-bar + 7 temporal + 1 position). `from_cache()`, `from_file()`. |
 | `_obs_layout.py` | C++ observation layout constants (index slices, sizes). Shared by `precomputed_env.py` and `bar_aggregation.py`. |
 | `_reward.py` | Shared reward/flatten logic: `compute_forced_flatten()`, `compute_step_reward()`. Used by `precomputed_env.py` and `bar_level_env.py`. |
+| `_statistics.py` | Shared statistical utilities: `rolling_std(arr, window, warmup=True)`. Used by `precomputed_env.py` and `bar_level_env.py`. |
 | ~~`convert_dbn.py`~~ | Deleted (PR #11). |
 
 ## API Signatures
@@ -30,6 +31,15 @@ compute_step_reward(position, prev_position, mid_now, mid_prev,
                     spread_prev, reward_mode, lambda_,
                     execution_cost, participation_bonus)
 # Returns reward (float). PnL delta with optional penalty, exec cost, bonus.
+```
+
+### Statistics (`_statistics.py`)
+
+```python
+rolling_std(arr, window, warmup=True)
+# Returns ndarray(N,) float32. Rolling std of arr over *window* steps.
+# warmup=True: indices 2..window-1 use growing window. warmup=False: only indices >= window filled.
+# Uses O(N) cumulative-sum algorithm.
 ```
 
 ### PrecomputedEnv (`precomputed_env.py`)
@@ -128,6 +138,7 @@ LOBGymEnv(file_path=None,
 ## Dependencies
 
 - **Depends on:** `lob_rl_core` (C++ pybind11 module from `build-release/`), gymnasium, numpy
+- **Internal deps:** `bar_level_env.py` and `precomputed_env.py` both import from `_statistics.py` and `_reward.py`. `multi_day_env.py` imports from `precomputed_env.py` and lazily from `bar_level_env.py`.
 - **Depended on by:** `scripts/train.py`, `python/tests/`
 
 ## Modification hints
@@ -135,3 +146,4 @@ LOBGymEnv(file_path=None,
 - **New env parameter:** Add to `PrecomputedEnv.__init__()`, forward in `MultiDayEnv.reset()` to inner env, add to `LOBGymEnv.__init__()` (forwards to C++), add to `from_file()` classmethod
 - **New reward mode:** Add string handling in `PrecomputedEnv.step()`, also update C++ `parse_reward_mode()` in bindings
 - **New temporal feature:** Add computation in `_precompute_temporal_features()`, append to `np.column_stack()`, update obs size 54→N+1, update `_build_obs()` slice indices, update `observation_space`
+- **New statistical utility:** Add to `_statistics.py`. Already used by both `precomputed_env.py` (rolling_std with warmup=False) and `bar_level_env.py` (rolling_std with warmup=True).
