@@ -57,3 +57,23 @@ def test_validate_metrics_payload_success_and_failure():
     assert any("schema_version" in error for error in errors)
     assert any("n_eval_episodes" in error for error in errors)
     assert any("std_return" in error for error in errors)
+
+
+def test_validate_metrics_payload_rejects_bool_episode_counts():
+    payload = {
+        "schema_version": METRICS_SCHEMA_VERSION,
+        "evaluation": {"n_eval_episodes": True},
+        "metrics": {
+            "validation": {
+                "mean_return": 1.0,
+                "std_return": 2.0,
+                "sortino": 0.5,
+                "downside_std": 1.2,
+                "n_episodes": False,
+            }
+        },
+    }
+
+    errors = validate_metrics_payload(payload)
+    assert "evaluation.n_eval_episodes must be int" in errors
+    assert "metrics.validation.n_episodes must be int" in errors
