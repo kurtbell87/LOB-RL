@@ -7,6 +7,31 @@
 #include <cstring>
 #include <vector>
 
+// ── Shared char-to-enum mappings ─────────────────────────────────────
+
+/// Map a Databento action character to Message::Action.
+/// Returns false for actions we skip (Reset, None, unknown).
+static bool map_action(char action_char, Message::Action& out) {
+    switch (action_char) {
+        case 'A': out = Message::Action::Add; return true;
+        case 'C': out = Message::Action::Cancel; return true;
+        case 'M': out = Message::Action::Modify; return true;
+        case 'T': [[fallthrough]];
+        case 'F': out = Message::Action::Trade; return true;
+        default:  return false;
+    }
+}
+
+/// Map a Databento side character to Message::Side.
+/// Defaults to Bid for unknown/None sides.
+static Message::Side map_side(char side_char) {
+    switch (side_char) {
+        case 'A': return Message::Side::Ask;
+        case 'B': [[fallthrough]];
+        default:  return Message::Side::Bid;
+    }
+}
+
 // Inline mapping from real databento::MboMsg to our Message type.
 static bool convert_mbo(const databento::MboMsg& mbo, Message& msg,
                         uint32_t instrument_id) {
@@ -14,25 +39,10 @@ static bool convert_mbo(const databento::MboMsg& mbo, Message& msg,
         return false;
     }
 
-    char action = static_cast<char>(mbo.action);
-    switch (action) {
-        case 'A': msg.action = Message::Action::Add; break;
-        case 'C': msg.action = Message::Action::Cancel; break;
-        case 'M': msg.action = Message::Action::Modify; break;
-        case 'T': [[fallthrough]];
-        case 'F': msg.action = Message::Action::Trade; break;
-        case 'R': return false;
-        case 'N': return false;
-        default:  return false;
+    if (!map_action(static_cast<char>(mbo.action), msg.action)) {
+        return false;
     }
-
-    char side = static_cast<char>(mbo.side);
-    switch (side) {
-        case 'B': msg.side = Message::Side::Bid; break;
-        case 'A': msg.side = Message::Side::Ask; break;
-        case 'N': [[fallthrough]];
-        default:  msg.side = Message::Side::Bid; break;
-    }
+    msg.side = map_side(static_cast<char>(mbo.side));
 
     msg.price = static_cast<double>(mbo.price) / 1e9;
     msg.order_id = mbo.order_id;
@@ -65,21 +75,10 @@ static Message convert_flat(const FlatRecord& rec) {
     msg.qty = rec.qty;
     msg.flags = rec.flags;
 
-    switch (rec.action) {
-        case 'A': msg.action = Message::Action::Add; break;
-        case 'C': msg.action = Message::Action::Cancel; break;
-        case 'M': msg.action = Message::Action::Modify; break;
-        case 'T': [[fallthrough]];
-        case 'F': msg.action = Message::Action::Trade; break;
-        default:  msg.action = Message::Action::Add; break;
+    if (!map_action(static_cast<char>(rec.action), msg.action)) {
+        msg.action = Message::Action::Add;  // Legacy default for unknown actions
     }
-
-    switch (rec.side) {
-        case 'B': [[fallthrough]];
-        case 'N': msg.side = Message::Side::Bid; break;
-        case 'A': msg.side = Message::Side::Ask; break;
-        default:  msg.side = Message::Side::Bid; break;
-    }
+    msg.side = map_side(static_cast<char>(rec.side));
 
     return msg;
 }

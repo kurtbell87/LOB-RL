@@ -146,11 +146,7 @@ class MultiDayEnv(gym.Env):
         n_days = self._num_days()
         keep = []
         for i in range(n_days):
-            if self._lazy:
-                data = np.load(self._npz_paths[i])
-                obs, mid, spread = data["obs"], data["mid"], data["spread"]
-            else:
-                obs, mid, spread = self._precomputed_days[i]
+            obs, mid, spread = self._get_day_arrays(i)
             if self._has_enough_bars(obs, mid, spread):
                 keep.append(i)
 
@@ -226,6 +222,15 @@ class MultiDayEnv(gym.Env):
         data = np.load(npz_path)
         return data["obs"], data["mid"], data["spread"]
 
+    def _get_day_arrays(self, day_idx):
+        """Load (obs, mid, spread) for day at the given index.
+
+        Dispatches to npz loading (lazy mode) or in-memory lookup (eager mode).
+        """
+        if self._lazy:
+            return self._load_day_from_npz(self._npz_paths[day_idx])
+        return self._precomputed_days[day_idx]
+
     def _create_inner_env(self, obs, mid, spread):
         """Create the appropriate single-day env based on bar_size."""
         if self._bar_size > 0:
@@ -271,10 +276,7 @@ class MultiDayEnv(gym.Env):
         self._day_index += 1
 
         # Get arrays for this day
-        if self._lazy:
-            obs, mid, spread = self._load_day_from_npz(self._npz_paths[file_idx])
-        else:
-            obs, mid, spread = self._precomputed_days[file_idx]
+        obs, mid, spread = self._get_day_arrays(file_idx)
 
         self._inner_env = self._create_inner_env(obs, mid, spread)
         obs_out, info = self._inner_env.reset()
