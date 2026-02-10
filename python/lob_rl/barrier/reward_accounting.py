@@ -195,8 +195,7 @@ def compute_hold_reward(bar, state, config):
 
     # Timeout check
     if new_counter >= config.T_max:
-        mtm = state.position * (bar.close - state.entry_price) / (config.b * config.tick_size)
-        reward = mtm - config.C
+        reward = compute_mtm_reward(state, bar.close, config)
         return reward, PositionState(position=0)
 
     # No event — hold continues
@@ -207,6 +206,67 @@ def compute_hold_reward(bar, state, config):
         stop_barrier=state.stop_barrier,
         hold_counter=new_counter,
     )
+
+
+# ---------------------------------------------------------------------------
+# Exit type classification
+# ---------------------------------------------------------------------------
+
+def classify_exit(reward, hold_counter, config):
+    """Classify an exit as profit, stop, or timeout.
+
+    Positive reward → profit, negative → stop, zero reward at T_max → timeout,
+    zero reward before T_max → stop (edge case: exact break-even barrier hit).
+
+    Parameters
+    ----------
+    reward : float
+        The reward from the exit.
+    hold_counter : int
+        The hold counter at the time of exit (pre-increment value + 1).
+    config : RewardConfig
+        Reward parameters.
+
+    Returns
+    -------
+    str
+        "profit", "stop", or "timeout".
+    """
+    if reward > 0:
+        return "profit"
+    if reward < 0:
+        return "stop"
+    # Zero reward: timeout if at T_max, otherwise stop
+    if hold_counter >= config.T_max:
+        return "timeout"
+    return "stop"
+
+
+# ---------------------------------------------------------------------------
+# Mark-to-market reward
+# ---------------------------------------------------------------------------
+
+def compute_mtm_reward(state, close_price, config):
+    """Compute mark-to-market reward for position exit (timeout or force-close).
+
+    MTM = position * (close - entry) / (b * tick_size) - C
+
+    Parameters
+    ----------
+    state : PositionState
+        Current position state.
+    close_price : float
+        Bar close price at exit.
+    config : RewardConfig
+        Reward parameters.
+
+    Returns
+    -------
+    float
+        MTM reward.
+    """
+    mtm = state.position * (close_price - state.entry_price) / (config.b * config.tick_size)
+    return mtm - config.C
 
 
 # ---------------------------------------------------------------------------
@@ -274,12 +334,7 @@ def compute_reward_sequence(bars, action, start_bar_idx, config):
 
         # Determine exit type
         if new_state.position == 0:
-            if state.hold_counter + 1 >= config.T_max:
-                exit_type = "timeout"
-            elif reward > 0:
-                exit_type = "profit"
-            else:
-                exit_type = "stop"
+            exit_type = classify_exit(reward, state.hold_counter + 1, config)
         else:
             exit_type = None
 

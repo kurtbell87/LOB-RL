@@ -4,20 +4,24 @@
 
 ### Immediate next step
 
-**T7: Reward Accounting Unit Test.** Write spec, run TDD cycle. This is a new barrier module (`reward_accounting.py`) implementing the reward computation logic from spec Section 4.4–4.5. Hand-compute expected reward sequences for specific bars and verify the module output matches exactly.
+**T8: Environment Implementation.** Write spec, run TDD cycle. Gymnasium-compatible barrier-hit trading environment that combines bars, labels, features, and reward accounting into a step-by-step RL environment.
 
-**Dependencies satisfied:** T1 (bars) ✓, T2 (labels) ✓, T6 (supervised diagnostic) ✓.
+**Dependencies satisfied:** T1 (bars) ✓, T2 (labels) ✓, T3 (features) ✓, T7 (reward accounting) ✓.
 
-**T7 tests (from orchestrator):**
-1. Select 5 specific bars with known barrier hits, hand-compute full reward sequence for long entry
-2. Same 5 bars, hand-compute reward sequence for short entry (barrier directions reversed)
-3. At least 1 bar with MTM reward at timeout, verify `/b` normalization
-4. Transaction cost C deducted exactly once per round-trip
-5. Position state transitions: flat → long → flat, flat → short → flat
-6. Unrealized PnL computation for both long and short positions at intermediate bars
-7. Action masking: when position != 0, only hold is valid
+**T8 tests (from orchestrator):**
+1. Gymnasium API compliance: env.reset() returns valid observation, env.step() returns (obs, reward, terminated, truncated, info)
+2. Observation shape: (132,) = 13 features × 10 lookback + 2 position state
+3. Action space: Discrete(4) with correct masking via action_masks()
+4. Episode terminates at last bar of session
+5. Random agent runs for 100 episodes without crashing
+6. Random agent mean episode reward ≈ -0.20 per trade (within ±0.10)
+7. Position state transitions correct across full episode
+8. Barrier exits fire on correct bars (cross-reference with T2 labels)
+9. Force-close at session end applies MTM correctly
+10. Action masking prevents invalid actions
+11. No reward leakage: sum of rewards = realized PnL minus costs
 
-**Remaining pipeline:** T7 → T8 (Environment) → T9 (PPO Training, GPU) → T10 (Behavioral Inspection) → T11 (Hyperparameter Sweep) → T12 (OOS Evaluation).
+**Remaining pipeline:** T8 → T9 (PPO Training, GPU) → T10 (Behavioral Inspection) → T11 (Hyperparameter Sweep) → T12 (OOS Evaluation).
 
 ### Roll calendar
 
@@ -41,8 +45,9 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 - **T4: Gambler's Ruin Validation** — PR #23. Analytic formula validation at 5 drift levels (p=0.485..0.510). 81 tests.
 - **T5: Regime-Switch Validation** — PR #24. Low-vol/high-vol synthetic regime switch, KS tests, chi-squared, normalization adaptation. 51 tests.
 - **T6: Supervised Diagnostic** — PR #25. MLP classifier + random forest baseline for barrier label prediction. `_train_loop()` extracted, vectorized `compute_segment_stats()`, cached RTH boundaries. 56 tests.
+- **T7: Reward Accounting** — PR #26. `RewardConfig`, `PositionState`, `compute_entry()`, `compute_hold_reward()`, `compute_unrealized_pnl()`, `compute_reward_sequence()`, `get_action_mask()`. Hand-computed reward sequences for all exit types. 46 tests.
 
-All code in `python/lob_rl/barrier/` with tests in `python/tests/barrier/`. 1712 Python tests total (1308 core + 404 barrier).
+All code in `python/lob_rl/barrier/` with tests in `python/tests/barrier/`. 1758 Python tests total (1308 core + 450 barrier).
 
 **Prior: AWS EC2 Spot migration (2026-02-09).** Replaces RunPod with AWS EC2 Spot for all remote training. Six new files in `aws/`, five existing files modified (~700 lines total):
 
@@ -217,8 +222,8 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 ## Test coverage
 
 - **418 C++ tests** — `cd build-release && ./lob_tests` (15 skipped: need `.dbn.zst` fixture)
-- **1712 Python tests** (1308 core + 404 barrier) — `PYTHONPATH=build-release:python uv run --with pandas --with scipy --with scikit-learn --with torch pytest python/tests/` (4 core + 8 barrier skipped: fixture-dependent)
-- **2130 total**, all passing.
+- **1758 Python tests** (1308 core + 450 barrier) — `PYTHONPATH=build-release:python uv run --with pandas --with scipy --with scikit-learn --with torch pytest python/tests/` (4 core + 8 barrier skipped: fixture-dependent)
+- **2176 total**, all passing.
 
 ## Remaining work
 
