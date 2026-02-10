@@ -9,6 +9,10 @@ def _is_number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def _is_int(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _validate_split_metrics(name: str, metrics: dict, errors: list[str]) -> None:
     required_numeric_fields = [
         "mean_return",
@@ -25,7 +29,7 @@ def _validate_split_metrics(name: str, metrics: dict, errors: list[str]) -> None
 
     if "n_episodes" not in metrics:
         errors.append(f"{name}.n_episodes missing")
-    elif not isinstance(metrics["n_episodes"], int):
+    elif not _is_int(metrics["n_episodes"]):
         errors.append(f"{name}.n_episodes must be int")
 
 
@@ -40,7 +44,7 @@ def validate_metrics_payload(payload: dict) -> list[str]:
     if not isinstance(eval_cfg, dict):
         errors.append("evaluation must be an object")
     else:
-        if not isinstance(eval_cfg.get("n_eval_episodes"), int):
+        if not _is_int(eval_cfg.get("n_eval_episodes")):
             errors.append("evaluation.n_eval_episodes must be int")
 
     split_metrics = payload.get("metrics")
