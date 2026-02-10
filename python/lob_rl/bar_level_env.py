@@ -5,7 +5,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from lob_rl.bar_aggregation import aggregate_bars
-from lob_rl._reward import compute_forced_flatten, compute_step_reward
+from lob_rl._reward import ACTION_MAP, compute_forced_flatten, compute_step_reward
 from lob_rl._statistics import rolling_std
 
 # Observation layout: 13 intra-bar + 7 cross-bar temporal + 1 position = 21
@@ -23,7 +23,7 @@ class BarLevelEnv(gym.Env):
     """
 
     metadata = {"render_modes": []}
-    _ACTION_MAP = {0: -1.0, 1: 0.0, 2: 1.0}
+    _ACTION_MAP = ACTION_MAP
 
     def __init__(self, obs, mid, spread, bar_size=500,
                  reward_mode="pnl_delta", lambda_=0.0,

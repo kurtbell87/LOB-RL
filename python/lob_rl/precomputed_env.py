@@ -13,7 +13,7 @@ from lob_rl._obs_layout import (
     IMBALANCE as _IMBALANCE,
     BASE_OBS_SIZE as _BASE_OBS_SIZE,
 )
-from lob_rl._reward import compute_forced_flatten, compute_step_reward
+from lob_rl._reward import ACTION_MAP, compute_forced_flatten, compute_step_reward
 from lob_rl._statistics import rolling_std
 
 _FULL_OBS_SIZE = 54
@@ -30,7 +30,7 @@ def _lagged_diff(arr, lag):
 
 class PrecomputedEnv(gym.Env):
     metadata = {"render_modes": []}
-    _ACTION_MAP = {0: -1.0, 1: 0.0, 2: 1.0}
+    _ACTION_MAP = ACTION_MAP
 
     def __init__(self, obs, mid, spread, reward_mode="pnl_delta", lambda_=0.0,
                  execution_cost=False, participation_bonus=0.0, step_interval=1):
