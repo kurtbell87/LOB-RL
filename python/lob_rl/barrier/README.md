@@ -1,0 +1,119 @@
+# python/lob_rl/barrier/
+
+Offline barrier-label construction pipeline for LOB-RL. Reads raw MBO data, builds fixed-count trade bars, computes triple-barrier labels, extracts 13 bar-level features with trailing z-score normalization, and provides validation modules.
+
+## Files
+
+| File | Role |
+|------|------|
+| `__init__.py` | Package init. Exports `TICK_SIZE`, `RTH_OPEN_NS`, `RTH_DURATION_NS`, `build_synthetic_trades()`. |
+| `bar_pipeline.py` | Bar construction: `TradeBar`, `build_bars_from_trades()`, `filter_rth_trades()`, `extract_trades_from_mbo()`, `build_session_bars()`, `build_dataset()`. |
+| `label_pipeline.py` | Barrier labels: `BarrierLabel`, `compute_labels()`, `calibrate_t_max()`, `compute_tiebreak_frequency()`, `compute_label_distribution()`. |
+| `feature_pipeline.py` | Features: `compute_bar_features()`, `normalize_features()`, `assemble_lookback()`, `build_feature_matrix()`. |
+| `gamblers_ruin.py` | Validation: `gamblers_ruin_analytic()`, `generate_random_walk()`, `validate_drift_level()`, `run_validation()`. |
+| `regime_switch.py` | Validation: `generate_regime_switch_trades()`, `validate_regime_switch()`, `compute_segment_stats()`, `ks_test_features()`, `measure_normalization_adaptation()`. |
+
+## API Signatures
+
+### `__init__.py`
+
+```python
+TICK_SIZE = 0.25           # /MES tick size
+RTH_OPEN_NS = 1655296200_000_000_000   # 2022-06-15 13:30 UTC
+RTH_DURATION_NS = 23400_000_000_000    # 6.5 hours in ns
+
+build_synthetic_trades(prices: np.ndarray, timestamps: np.ndarray) -> np.ndarray
+    # Returns structured array: (price float64, size int32, side U1, ts_event int64, timestamp int64)
+```
+
+### `bar_pipeline.py`
+
+```python
+@dataclass
+class TradeBar:
+    bar_index: int; open: float; high: float; low: float; close: float
+    volume: int; vwap: float; t_start: int; t_end: int
+    session_date: str; trade_prices: np.ndarray; trade_sizes: np.ndarray
+
+build_bars_from_trades(trades, n=500, session_date="") -> list[TradeBar]
+filter_rth_trades(trades) -> np.ndarray
+extract_trades_from_mbo(filepath, instrument_id=None) -> np.ndarray
+build_session_bars(filepath, n=500, instrument_id=None) -> list[TradeBar]
+build_dataset(filepaths, n=500, roll_calendar=None, output_path=None) -> pd.DataFrame
+```
+
+### `label_pipeline.py`
+
+```python
+@dataclass
+class BarrierLabel:
+    bar_index: int; label: int; tau: int; resolution_type: str
+    entry_price: float; resolution_bar: int
+
+compute_labels(bars, a=20, b=10, t_max=40, direction="long") -> list[BarrierLabel]
+calibrate_t_max(bars, a=20, b=10) -> int
+compute_tiebreak_frequency(labels) -> float
+compute_label_distribution(labels) -> dict  # {p_plus, p_minus, p_zero}
+```
+
+### `feature_pipeline.py`
+
+```python
+compute_bar_features(bars, mbo_data=None) -> np.ndarray  # shape (N, 13)
+normalize_features(raw, window=2000) -> np.ndarray        # z-score, clipped [-5, +5]
+assemble_lookback(normed, h=10) -> np.ndarray             # shape (N-h+1, 13*h)
+build_feature_matrix(bars, h=10, window=2000, mbo_data=None) -> np.ndarray
+```
+
+Feature column layout (13 columns):
+| Col | Feature | Range |
+|-----|---------|-------|
+| 0 | Trade flow imbalance | [-1, +1] |
+| 1 | BBO imbalance | [0, 1] (0.5 default) |
+| 2 | Depth imbalance | [0, 1] (0.5 default) |
+| 3 | Bar range (ticks) | >= 0 |
+| 4 | Bar body (ticks) | signed |
+| 5 | Body/range ratio | [-1, +1] |
+| 6 | VWAP displacement | [-1, +1] |
+| 7 | Volume (log) | finite |
+| 8 | Trailing realized vol | NaN for first 19 bars |
+| 9 | Normalized session time | [0, 1] |
+| 10 | Cancel rate asymmetry | [-1, +1] (0.0 default) |
+| 11 | Mean spread | > 0 (1.0 default) |
+| 12 | Session age | [0, 1] |
+
+### `gamblers_ruin.py`
+
+```python
+gamblers_ruin_analytic(a, b, p) -> float
+generate_random_walk(n_trades, p=0.5, start_price=4000.0, tick_size=0.25, seed=None) -> np.ndarray
+validate_drift_level(p, a=20, b=10, n_bars=10000, bar_size=500, t_max=40, seed=None) -> dict
+run_validation(drift_levels=None, a=20, b=10, n_bars=10000, bar_size=500, t_max=40, seed=42) -> list[dict]
+```
+
+### `regime_switch.py`
+
+```python
+generate_regime_switch_trades(n_bars_low=5000, n_bars_high=5000, bar_size=500,
+                               p=0.5, start_price=4000.0, tick_size=0.25,
+                               seed=None) -> tuple[np.ndarray, list[TradeBar]]
+validate_regime_switch(n_bars_low=5000, n_bars_high=5000, bar_size=500,
+                        a=100, b=100, t_max=40, seed=42) -> dict
+compute_segment_stats(labels, start, end) -> dict  # {p_plus, p_minus, p_zero, mean_tau, median_tau}
+ks_test_features(features, boundary, window=500) -> dict  # {ks_p_col_0..ks_p_col_12}
+measure_normalization_adaptation(normed_features, boundary, col=8, threshold_sigma=1.0) -> int
+```
+
+## Cross-File Dependencies
+
+- `bar_pipeline.py` depends on: `pandas`, `numpy`, `zoneinfo`, `__init__.py` (none from barrier)
+- `label_pipeline.py` depends on: `__init__.py` (`TICK_SIZE`)
+- `feature_pipeline.py` depends on: `__init__.py` (`TICK_SIZE`)
+- `gamblers_ruin.py` depends on: `__init__.py` (`TICK_SIZE`, `RTH_OPEN_NS`, `RTH_DURATION_NS`, `build_synthetic_trades`), `bar_pipeline.py`, `label_pipeline.py`
+- `regime_switch.py` depends on: `__init__.py` (same as gamblers_ruin), `bar_pipeline.py`, `label_pipeline.py`, `feature_pipeline.py`, `scipy.stats`
+
+## Modification Hints
+
+- To add a new feature column: update `compute_bar_features()` in `feature_pipeline.py`, increment the column count (currently 13), update the column layout table above, and update `__init__.py` constants if any.
+- To add a new validation module: create `python/lob_rl/barrier/<name>.py`, use `build_synthetic_trades()` from `__init__.py` for trade generation, add tests in `python/tests/barrier/test_<name>.py`.
+- To add a new label resolution type: update `_label_single_bar()` and `_tiebreak()` in `label_pipeline.py`, handle the new type in the short-direction flip logic in `compute_labels()`.
