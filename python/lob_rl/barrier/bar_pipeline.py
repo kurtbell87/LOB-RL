@@ -98,6 +98,21 @@ _RTH_CLOSE_HOUR = 15
 _RTH_CLOSE_MINUTE = 0
 
 
+def _rth_bounds_ns(ct_date):
+    """Return (open_ns, close_ns) for RTH on the given Chicago-time date."""
+    open_ct = datetime(
+        ct_date.year, ct_date.month, ct_date.day,
+        _RTH_OPEN_HOUR, _RTH_OPEN_MINUTE, 0,
+        tzinfo=_CHICAGO,
+    )
+    close_ct = datetime(
+        ct_date.year, ct_date.month, ct_date.day,
+        _RTH_CLOSE_HOUR, _RTH_CLOSE_MINUTE, 0,
+        tzinfo=_CHICAGO,
+    )
+    return int(open_ct.timestamp() * 1e9), int(close_ct.timestamp() * 1e9)
+
+
 def filter_rth_trades(trades):
     """Filter trades to RTH session hours only.
 
@@ -120,38 +135,20 @@ def filter_rth_trades(trades):
     timestamps = trades["timestamp"]
     mask = np.zeros(len(trades), dtype=bool)
 
+    # Cache RTH boundaries per calendar date to avoid redundant datetime work.
+    bounds_cache = {}  # ct_date -> (open_ns, close_ns)
+
     for i in range(len(trades)):
         ts_ns = int(timestamps[i])
         ts_seconds = ts_ns / 1e9
         dt_utc = datetime.fromtimestamp(ts_seconds, tz=timezone.utc)
-        dt_ct = dt_utc.astimezone(_CHICAGO)
+        ct_date = dt_utc.astimezone(_CHICAGO).date()
 
-        ct_hour = dt_ct.hour
-        ct_minute = dt_ct.minute
+        if ct_date not in bounds_cache:
+            bounds_cache[ct_date] = _rth_bounds_ns(ct_date)
+        open_ns, close_ns = bounds_cache[ct_date]
 
-        # Convert to minutes since midnight for easy comparison
-        ct_minutes = ct_hour * 60 + ct_minute
-        rth_open_minutes = _RTH_OPEN_HOUR * 60 + _RTH_OPEN_MINUTE   # 510
-        rth_close_minutes = _RTH_CLOSE_HOUR * 60 + _RTH_CLOSE_MINUTE  # 900
-
-        # Check nanosecond precision: trade must be >= open and < close
-        # Build the open and close timestamps for this date in CT
-        ct_date = dt_ct.date()
-        open_ct = datetime(
-            ct_date.year, ct_date.month, ct_date.day,
-            _RTH_OPEN_HOUR, _RTH_OPEN_MINUTE, 0,
-            tzinfo=_CHICAGO,
-        )
-        close_ct = datetime(
-            ct_date.year, ct_date.month, ct_date.day,
-            _RTH_CLOSE_HOUR, _RTH_CLOSE_MINUTE, 0,
-            tzinfo=_CHICAGO,
-        )
-
-        open_ns = int(open_ct.timestamp() * 1e9)
-        close_ns = int(close_ct.timestamp() * 1e9)
-
-        if ts_ns >= open_ns and ts_ns < close_ns:
+        if open_ns <= ts_ns < close_ns:
             mask[i] = True
 
     return trades[mask]

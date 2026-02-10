@@ -12,8 +12,9 @@ Tests for the barrier pipeline package (`python/lob_rl/barrier/`).
 | `test_feature_pipeline.py` | Features: 13-column layout, normalization, lookback assembly, end-to-end builder. | ~55 |
 | `test_gamblers_ruin.py` | Gambler's ruin validation: analytic formula, random walk generation, drift levels. | 81 |
 | `test_regime_switch.py` | Regime-switch validation: synthetic data, label distributions, KS tests, normalization adaptation. | 51 |
+| `test_supervised_diagnostic.py` | Supervised diagnostic: dataset construction, MLP architecture, overfit test, training, evaluation, random forest, full pipeline. | 56 |
 
-**Total: ~348 tests** (8 skipped: need `.dbn.zst` fixture data).
+**Total: ~404 tests** (8 skipped: need `.dbn.zst` fixture data).
 
 ## Shared Test Helpers (`conftest.py`)
 
@@ -39,11 +40,12 @@ make_session_bars(n, base_price=4000.0, spread=2.0, volume=100) -> list[TradeBar
 - All test files import from `lob_rl.barrier.*` modules.
 - `test_label_pipeline.py` and `test_feature_pipeline.py` use helpers from `conftest.py`.
 - `test_gamblers_ruin.py` and `test_regime_switch.py` are self-contained (call validation module functions directly).
+- `test_supervised_diagnostic.py` uses helpers from `conftest.py` and imports from `lob_rl.barrier.supervised_diagnostic`.
 - `test_bar_pipeline.py` has its own helpers (`_make_trades`, `_make_trades_with_prices`, `_utc_ns`).
 
 ## Running
 
 ```bash
 cd build-release
-PYTHONPATH=.:../python uv run --with pytest --with gymnasium --with numpy --with pandas --with stable-baselines3 --with sb3-contrib --with scipy pytest ../python/tests/barrier/ -v
+PYTHONPATH=.:../python uv run --with pytest --with gymnasium --with numpy --with pandas --with stable-baselines3 --with sb3-contrib --with scipy --with torch --with scikit-learn pytest ../python/tests/barrier/ -v
 ```
