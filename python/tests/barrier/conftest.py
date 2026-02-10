@@ -3,10 +3,12 @@
 Provides synthetic bar construction utilities used across
 test_bar_pipeline.py, test_label_pipeline.py, test_feature_pipeline.py,
 test_reward_accounting.py, test_barrier_env.py, test_multi_session_env.py,
-and test_barrier_vec_env.py.
+test_barrier_vec_env.py, test_lob_features_fix.py,
+test_microstructure_features.py, and test_phase2_microstructure_features.py.
 """
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from lob_rl.barrier import TICK_SIZE, N_FEATURES
@@ -165,3 +167,61 @@ def run_episode(env, rng=None):
         if steps > 2000:
             pytest.fail("Episode did not terminate within 2000 steps")
     return total_reward, steps
+
+
+# ---------------------------------------------------------------------------
+# MBO DataFrame construction helpers (shared across book-feature tests)
+# ---------------------------------------------------------------------------
+
+def make_mbo_dataframe(records):
+    """Build a minimal MBO DataFrame from a list of dicts.
+
+    Each record should have: action, side, price, size, order_id, ts_event.
+    Returns a pandas DataFrame compatible with _compute_book_features.
+    """
+    df = pd.DataFrame(records)
+    for col in ["action", "side", "price", "size", "order_id", "ts_event"]:
+        assert col in df.columns, f"Missing column: {col}"
+    return df
+
+
+def make_mbo_df(records):
+    """Build an MBO DataFrame with enforced dtypes, sorted by ts_event.
+
+    Each record: {action, side, price, size, order_id, ts_event}.
+    """
+    df = pd.DataFrame(records)
+    df["action"] = df["action"].astype(str)
+    df["side"] = df["side"].astype(str)
+    df["price"] = df["price"].astype(np.float64)
+    df["size"] = df["size"].astype(np.int32)
+    df["order_id"] = df["order_id"].astype(np.int64)
+    df["ts_event"] = df["ts_event"].astype(np.int64)
+    return df.sort_values("ts_event").reset_index(drop=True)
+
+
+def make_simple_book_mbo(t_start, t_end, bid_price=4000.0, ask_price=4000.25,
+                         bid_qty=100, ask_qty=50, n_bid_levels=1, n_ask_levels=1):
+    """Create MBO records that build a simple order book within a bar's time range.
+
+    Returns a list of dicts (Add actions only) that establish a known book state.
+    """
+    records = []
+    oid = 1000
+    for lvl in range(n_bid_levels):
+        price = bid_price - lvl * TICK_SIZE
+        records.append({
+            "action": "A", "side": "B", "price": price,
+            "size": bid_qty, "order_id": oid,
+            "ts_event": t_start + lvl + 1,
+        })
+        oid += 1
+    for lvl in range(n_ask_levels):
+        price = ask_price + lvl * TICK_SIZE
+        records.append({
+            "action": "A", "side": "A", "price": price,
+            "size": ask_qty, "order_id": oid,
+            "ts_event": t_start + n_bid_levels + lvl + 1,
+        })
+        oid += 1
+    return records

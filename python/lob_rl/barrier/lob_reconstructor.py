@@ -205,6 +205,21 @@ class OrderBook:
         depth = self.ask_depth(n)
         return sum(q for _, q in depth)
 
+    def vamp(self, n=3):
+        """Volume-adjusted mid-price using top n levels on each side.
+
+        Returns 0.0 if either side has no levels.
+        """
+        bid_levels = self.bid_depth(n)
+        ask_levels = self.ask_depth(n)
+        if not bid_levels or not ask_levels:
+            return 0.0
+        total_qty = sum(q for _, q in bid_levels) + sum(q for _, q in ask_levels)
+        if total_qty == 0:
+            return 0.0
+        weighted = (sum(p * q for p, q in bid_levels) + sum(p * q for p, q in ask_levels))
+        return weighted / total_qty
+
     def is_empty(self):
         """Return True if both sides are empty."""
         return not self._bids and not self._asks

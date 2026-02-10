@@ -1,12 +1,12 @@
 # python/lob_rl/barrier/
 
-Offline barrier-label construction pipeline for LOB-RL. Reads raw MBO data, builds fixed-count trade bars, computes triple-barrier labels, extracts 13 bar-level features with trailing z-score normalization, and provides validation modules.
+Offline barrier-label construction pipeline for LOB-RL. Reads raw MBO data, builds fixed-count trade bars, computes triple-barrier labels, extracts 22 bar-level features with trailing z-score normalization, and provides validation modules.
 
 ## Files
 
 | File | Role |
 |------|------|
-| `__init__.py` | Package init. Exports `TICK_SIZE`, `RTH_OPEN_NS`, `RTH_DURATION_NS`, `build_synthetic_trades()`. |
+| `__init__.py` | Package init. Exports `TICK_SIZE`, `N_FEATURES`, `RTH_OPEN_NS`, `RTH_DURATION_NS`, `build_synthetic_trades()`. |
 | `bar_pipeline.py` | Bar construction: `TradeBar`, `build_bars_from_trades()`, `filter_rth_trades()`, `extract_trades_from_mbo()`, `build_session_bars()`, `build_dataset()`. |
 | `label_pipeline.py` | Barrier labels: `BarrierLabel`, `compute_labels()`, `calibrate_t_max()`, `compute_tiebreak_frequency()`, `compute_label_distribution()`. |
 | `feature_pipeline.py` | Features: `compute_bar_features()`, `normalize_features()`, `assemble_lookback()`, `build_feature_matrix()`. |
@@ -27,6 +27,7 @@ Offline barrier-label construction pipeline for LOB-RL. Reads raw MBO data, buil
 
 ```python
 TICK_SIZE = 0.25           # /MES tick size
+N_FEATURES = 22            # Number of bar-level feature columns
 RTH_OPEN_NS = 1655296200_000_000_000   # 2022-06-15 13:30 UTC
 RTH_DURATION_NS = 23400_000_000_000    # 6.5 hours in ns
 
@@ -70,14 +71,18 @@ compute_label_distribution(labels) -> dict  # {p_plus, p_minus, p_zero}
 # Module constants
 _REALIZED_VOL_WARMUP = 19    # bars 0..18 have NaN in col 8
 _SESSION_AGE_PERIOD = 20.0   # col 12 saturates at bar_index / 20
+_BOOK_COL_MAP = [1, 2, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+    # Maps book_features col index -> compute_bar_features col index
+_BOOK_DEFAULTS = (0.5, 0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    # Neutral defaults when mbo_data is None
 
-compute_bar_features(bars, mbo_data=None) -> np.ndarray  # shape (N, 13)
+compute_bar_features(bars, mbo_data=None) -> np.ndarray  # shape (N, 22)
 normalize_features(raw, window=2000) -> np.ndarray        # z-score, clipped [-5, +5]
-assemble_lookback(normed, h=10) -> np.ndarray             # shape (N-h+1, 13*h)
+assemble_lookback(normed, h=10) -> np.ndarray             # shape (N-h+1, 22*h)
 build_feature_matrix(bars, h=10, window=2000, mbo_data=None) -> np.ndarray
 ```
 
-Feature column layout (13 columns):
+Feature column layout (22 columns):
 | Col | Feature | Range |
 |-----|---------|-------|
 | 0 | Trade flow imbalance | [-1, +1] |
@@ -93,6 +98,15 @@ Feature column layout (13 columns):
 | 10 | Cancel rate asymmetry | [-1, +1] (0.0 default) |
 | 11 | Mean spread | > 0 (1.0 default) |
 | 12 | Session age | [0, 1] |
+| 13 | Order Flow Imbalance (OFI) | [-1, +1] (0.0 default) |
+| 14 | Multi-level depth ratio | [0, 1] (0.5 default) |
+| 15 | Weighted mid displacement | signed (0.0 default) |
+| 16 | Spread dynamics (std) | >= 0 (0.0 default) |
+| 17 | VAMP displacement | signed (0.0 default) |
+| 18 | Aggressor imbalance | [-1, +1] (0.0 default) |
+| 19 | Trade arrival rate | >= 0 (0.0 default) |
+| 20 | Cancel-to-trade ratio | >= 0 (0.0 default) |
+| 21 | Price impact per trade | signed (0.0 default) |
 
 ### `gamblers_ruin.py`
 
@@ -112,7 +126,7 @@ generate_regime_switch_trades(n_bars_low=5000, n_bars_high=5000, bar_size=500,
 validate_regime_switch(n_bars_low=5000, n_bars_high=5000, bar_size=500,
                         a=100, b=100, t_max=40, seed=42) -> dict
 compute_segment_stats(labels, start, end) -> dict  # {p_plus, p_minus, p_zero, mean_tau, median_tau}
-ks_test_features(features, boundary, window=500) -> dict  # {ks_p_col_0..ks_p_col_12}
+ks_test_features(features, boundary, window=500) -> dict  # {ks_p_col_0..ks_p_col_N}
 measure_normalization_adaptation(normed_features, boundary, col=8, threshold_sigma=1.0) -> int
 ```
 
@@ -123,7 +137,7 @@ measure_normalization_adaptation(normed_features, boundary, col=8, threshold_sig
 _OVERFIT_MAX_SAMPLES = 256   # max samples for overfit sanity check
 
 build_labeled_dataset(bars, labels, h=10) -> tuple[np.ndarray, np.ndarray]
-    # X: shape (n_usable, 13*h), float32; y: shape (n_usable,), int64
+    # X: shape (n_usable, N_FEATURES*h), float32; y: shape (n_usable,), int64
     # Label mapping: -1 -> 0, 0 -> 1, +1 -> 2
 
 class BarrierMLP(nn.Module):
@@ -192,7 +206,7 @@ class BarrierEnv(gymnasium.Env):
     reset(seed=None, options=None) -> tuple[np.ndarray, dict]
     step(action: int) -> tuple[np.ndarray, float, bool, bool, dict]
     action_masks() -> np.ndarray  # shape (4,), dtype int8
-    # Observation: shape (13*h + 2,) = features | position | unrealized_pnl
+    # Observation: shape (N_FEATURES*h + 2,) = features | position | unrealized_pnl
     # Action space: Discrete(4) = [long, short, flat, hold]
     # Info dict keys: position, bar_idx, exit_type, entry_price, n_trades
 ```
@@ -258,6 +272,6 @@ class BarrierDiagnosticCallback(BaseCallback):
 
 ## Modification Hints
 
-- To add a new feature column: update `compute_bar_features()` in `feature_pipeline.py`, increment the column count (currently 13), update the column layout table above, and update `__init__.py` constants if any.
+- To add a new feature column: update `compute_bar_features()` in `feature_pipeline.py`, increment `N_FEATURES` in `__init__.py` (currently 22), add to `_BOOK_COL_MAP` and `_BOOK_DEFAULTS` if book-derived, and update the column layout table above.
 - To add a new validation module: create `python/lob_rl/barrier/<name>.py`, use `build_synthetic_trades()` from `__init__.py` for trade generation, add tests in `python/tests/barrier/test_<name>.py`.
 - To add a new label resolution type: update `_label_single_bar()` and `_tiebreak()` in `label_pipeline.py`, handle the new type in the short-direction flip logic in `compute_labels()`.

@@ -23,56 +23,9 @@ from .conftest import (
     _RTH_DURATION_NS,
     make_bar as _make_bar,
     make_session_bars as _make_session_bars,
+    make_mbo_df as _make_mbo_df,
+    make_simple_book_mbo as _make_simple_book_mbo,
 )
-
-
-# ===========================================================================
-# Helpers — synthetic MBO data construction (test-only, no implementation logic)
-# ===========================================================================
-
-def _make_mbo_df(records):
-    """Build a DataFrame matching extract_all_mbo() schema from a list of dicts.
-
-    Each record: {action, side, price, size, order_id, ts_event}.
-    """
-    df = pd.DataFrame(records)
-    # Ensure correct dtypes
-    df["action"] = df["action"].astype(str)
-    df["side"] = df["side"].astype(str)
-    df["price"] = df["price"].astype(np.float64)
-    df["size"] = df["size"].astype(np.int32)
-    df["order_id"] = df["order_id"].astype(np.int64)
-    df["ts_event"] = df["ts_event"].astype(np.int64)
-    return df.sort_values("ts_event").reset_index(drop=True)
-
-
-def _make_simple_book_mbo(t_start, t_end, bid_price=4000.0, ask_price=4000.25,
-                           bid_qty=100, ask_qty=50, n_bid_levels=1, n_ask_levels=1):
-    """Create MBO records that build a simple order book within a bar's time range.
-
-    Returns a list of dicts (Add actions only) that establish a known book state.
-    """
-    records = []
-    oid = 1000
-    # Bid levels
-    for lvl in range(n_bid_levels):
-        price = bid_price - lvl * TICK_SIZE
-        records.append({
-            "action": "A", "side": "B", "price": price,
-            "size": bid_qty, "order_id": oid,
-            "ts_event": t_start + lvl + 1,
-        })
-        oid += 1
-    # Ask levels
-    for lvl in range(n_ask_levels):
-        price = ask_price + lvl * TICK_SIZE
-        records.append({
-            "action": "A", "side": "A", "price": price,
-            "size": ask_qty, "order_id": oid,
-            "ts_event": t_start + n_bid_levels + lvl + 1,
-        })
-        oid += 1
-    return records
 
 
 # ===========================================================================
@@ -1010,9 +963,9 @@ class TestNFeaturesConstant:
         assert isinstance(N_FEATURES, int)
 
     def test_n_features_value(self):
-        """N_FEATURES == 17."""
+        """N_FEATURES == 22."""
         from lob_rl.barrier import N_FEATURES
-        assert N_FEATURES == 17
+        assert N_FEATURES == 22
 
     def test_feature_pipeline_uses_n_features(self):
         """compute_bar_features output shape matches N_FEATURES columns."""
