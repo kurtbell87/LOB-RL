@@ -4,24 +4,25 @@
 
 ### Immediate next step
 
-**T8: Environment Implementation.** Write spec, run TDD cycle. Gymnasium-compatible barrier-hit trading environment that combines bars, labels, features, and reward accounting into a step-by-step RL environment.
+**T9: PPO Training Infrastructure.** Write spec, run TDD cycle. Multi-session BarrierEnv wrapper, MaskablePPO training script, training diagnostics.
 
-**Dependencies satisfied:** T1 (bars) ✓, T2 (labels) ✓, T3 (features) ✓, T7 (reward accounting) ✓.
+**Dependencies satisfied:** T1-T8 all complete. BarrierEnv (T8), reward_accounting (T7), features (T3), labels (T2), bars (T1).
 
-**T8 tests (from orchestrator):**
-1. Gymnasium API compliance: env.reset() returns valid observation, env.step() returns (obs, reward, terminated, truncated, info)
-2. Observation shape: (132,) = 13 features × 10 lookback + 2 position state
-3. Action space: Discrete(4) with correct masking via action_masks()
-4. Episode terminates at last bar of session
-5. Random agent runs for 100 episodes without crashing
-6. Random agent mean episode reward ≈ -0.20 per trade (within ±0.10)
-7. Position state transitions correct across full episode
-8. Barrier exits fire on correct bars (cross-reference with T2 labels)
-9. Force-close at session end applies MTM correctly
-10. Action masking prevents invalid actions
-11. No reward leakage: sum of rewards = realized PnL minus costs
+**T9 components (from orchestrator + spec Section 5):**
+1. `MultiSessionBarrierEnv` — Gymnasium wrapper that cycles through pre-built session data (bars, labels, features). Lazy-loads one session per reset(). Supports train/val/test splits.
+2. `scripts/train_barrier.py` — Training script using MaskablePPO from sb3-contrib with action masking. Hyperparameters from spec Section 5.2.
+3. Training diagnostics callback — Monitors entropy, value loss, flat action rate, episode reward, trade win rate per Section 5.3.
+4. Network architecture from Section 5.1: shared trunk [256,256] + policy head [64]→4 + value head [64]→1.
+5. Precompute step: convert .dbn.zst → bar/label/feature tuples → .npz cache for barrier env.
 
-**Remaining pipeline:** T8 → T9 (PPO Training, GPU) → T10 (Behavioral Inspection) → T11 (Hyperparameter Sweep) → T12 (OOS Evaluation).
+**T9 monitoring assertions (from orchestrator):**
+- Entropy on flat-state steps starts near 1.1, doesn't collapse below 0.3 in first 100 updates
+- Value loss has decreasing trend (moving avg over 50 updates)
+- Episode reward mean exceeds -0.20 (random baseline) within 500 updates
+- Flat action rate stays in [10%, 90%] throughout training
+- No NaN in losses or gradients
+
+**Remaining pipeline:** T9 → T10 (Behavioral Inspection) → T11 (Hyperparameter Sweep) → T12 (OOS Evaluation).
 
 ### Roll calendar
 
@@ -38,7 +39,7 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 
 ### What was just completed
 
-**PPO Barrier-Hit Agent pipeline T1-T6 complete (2026-02-09).** All six data pipeline + diagnostic tasks completed via strict TDD (`./tdd.sh`):
+**PPO Barrier-Hit Agent pipeline T1-T8 complete (2026-02-09).** All eight data pipeline + environment tasks completed via strict TDD (`./tdd.sh`):
 - **T1: Bar Construction Pipeline** — PR #20. `TradeBar`, `build_bars_from_trades()`, RTH filtering, dataset builder. 59 tests.
 - **T2: Label Construction Pipeline** — PR #21. `BarrierLabel`, `compute_labels()`, intrabar tiebreaking, T_max calibration. 65 tests.
 - **T3: Feature Extraction** — PR #22. 13 bar-level features, z-score normalization, lookback assembly. 92 tests.
@@ -46,8 +47,9 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 - **T5: Regime-Switch Validation** — PR #24. Low-vol/high-vol synthetic regime switch, KS tests, chi-squared, normalization adaptation. 51 tests.
 - **T6: Supervised Diagnostic** — PR #25. MLP classifier + random forest baseline for barrier label prediction. `_train_loop()` extracted, vectorized `compute_segment_stats()`, cached RTH boundaries. 56 tests.
 - **T7: Reward Accounting** — PR #26. `RewardConfig`, `PositionState`, `compute_entry()`, `compute_hold_reward()`, `compute_unrealized_pnl()`, `compute_reward_sequence()`, `get_action_mask()`. Hand-computed reward sequences for all exit types. 46 tests.
+- **T8: Barrier Environment** — PR #27. `BarrierEnv(gymnasium.Env)` — 132-dim obs, Discrete(4) action space, action masking, force-close at session end. Refactor: extracted `compute_mtm_reward()` and `classify_exit()` into reward_accounting.py. 41 tests.
 
-All code in `python/lob_rl/barrier/` with tests in `python/tests/barrier/`. 1758 Python tests total (1308 core + 450 barrier).
+All code in `python/lob_rl/barrier/` with tests in `python/tests/barrier/`. 1799 Python tests total (1308 core + 491 barrier).
 
 **Prior: AWS EC2 Spot migration (2026-02-09).** Replaces RunPod with AWS EC2 Spot for all remote training. Six new files in `aws/`, five existing files modified (~700 lines total):
 
@@ -222,8 +224,8 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 ## Test coverage
 
 - **418 C++ tests** — `cd build-release && ./lob_tests` (15 skipped: need `.dbn.zst` fixture)
-- **1758 Python tests** (1308 core + 450 barrier) — `PYTHONPATH=build-release:python uv run --with pandas --with scipy --with scikit-learn --with torch pytest python/tests/` (4 core + 8 barrier skipped: fixture-dependent)
-- **2176 total**, all passing.
+- **1799 Python tests** (1308 core + 491 barrier) — `PYTHONPATH=build-release:python uv run --with pandas --with scipy --with scikit-learn --with torch pytest python/tests/` (4 core + 8 barrier skipped: fixture-dependent)
+- **2217 total**, all passing.
 
 ## Remaining work
 

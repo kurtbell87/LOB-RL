@@ -15,6 +15,10 @@ Offline barrier-label construction pipeline for LOB-RL. Reads raw MBO data, buil
 | `supervised_diagnostic.py` | MLP classifier diagnostic: `build_labeled_dataset()`, `BarrierMLP`, `overfit_test()`, `train_mlp()`, `evaluate_classifier()`, `train_random_forest()`, `run_diagnostic()`. |
 | `reward_accounting.py` | Reward computation: `RewardConfig`, `PositionState`, `compute_entry()`, `compute_hold_reward()`, `compute_mtm_reward()`, `classify_exit()`, `compute_unrealized_pnl()`, `compute_reward_sequence()`, `get_action_mask()`. Action constants: `ACTION_LONG`, `ACTION_SHORT`, `ACTION_FLAT`, `ACTION_HOLD`. |
 | `barrier_env.py` | Gymnasium RL env: `BarrierEnv` — combines bars, labels, features, and reward accounting. One episode = one RTH session. `from_bars()` factory. `action_masks()` for SB3. |
+| `multi_session_env.py` | Multi-session wrapper: `MultiSessionBarrierEnv` — cycles through pre-built sessions, round-robin or shuffled. `from_bar_lists()` factory. |
+| `barrier_vec_env.py` | Vectorized env helpers: `make_barrier_env_fn()`, `make_barrier_vec_env()` — creates SB3-compatible DummyVecEnv/SubprocVecEnv. |
+| `training_diagnostics.py` | Training callback: `BarrierDiagnosticCallback` — monitors entropy, value loss, flat action rate, episode reward, trade win rate, NaN detection, red flags. Also `linear_schedule()`. |
+| `_sb3_compat.py` | SB3 compatibility shim: patches `MaskableActorCriticPolicy` and `MlpExtractor` for legacy `net_arch` format. Auto-applied on import. |
 
 ## API Signatures
 
@@ -185,6 +189,44 @@ class BarrierEnv(gymnasium.Env):
     # Info dict keys: position, bar_idx, exit_type, entry_price, n_trades
 ```
 
+### `multi_session_env.py`
+
+```python
+class MultiSessionBarrierEnv(gymnasium.Env):
+    __init__(sessions: list[dict], config: RewardConfig = None,
+             shuffle: bool = False, seed: int = None)
+    # sessions: each dict has keys {bars, labels, features}
+    from_bar_lists(cls, bar_lists: list[list[TradeBar]], h: int = 10,
+                   config: RewardConfig = None, **kwargs) -> MultiSessionBarrierEnv
+    reset(seed=None, options=None) -> tuple[np.ndarray, dict]
+    step(action: int) -> tuple[np.ndarray, float, bool, bool, dict]
+    action_masks() -> np.ndarray
+    current_session_index: int  # property
+```
+
+### `barrier_vec_env.py`
+
+```python
+make_barrier_env_fn(sessions, config=None, shuffle=False, seed=None) -> callable
+make_barrier_vec_env(sessions, n_envs=1, use_subprocess=False,
+                     config=None, shuffle=False, seed=None) -> VecEnv
+```
+
+### `training_diagnostics.py`
+
+```python
+linear_schedule(initial_value: float) -> callable
+    # Returns f(progress_remaining) -> current_value
+
+class BarrierDiagnosticCallback(BaseCallback):
+    __init__(check_freq: int = 1, output_dir: str = None, verbose: int = 0)
+    diagnostics: list[dict]  # accumulated snapshots
+    check_red_flags() -> list[str]  # red flag descriptions
+    # Snapshot keys: entropy_flat, value_loss, policy_loss,
+    #   episode_reward_mean, flat_action_rate, trade_win_rate,
+    #   n_trades, has_nan
+```
+
 ## Cross-File Dependencies
 
 - `bar_pipeline.py` depends on: `pandas`, `numpy`, `zoneinfo`, `__init__.py` (none from barrier)
@@ -195,6 +237,10 @@ class BarrierEnv(gymnasium.Env):
 - `supervised_diagnostic.py` depends on: `feature_pipeline.py`, `torch`, `numpy`, `sklearn.ensemble` (lazy import in `train_random_forest`)
 - `reward_accounting.py` depends on: `__init__.py` (`TICK_SIZE`)
 - `barrier_env.py` depends on: `__init__.py` (`TICK_SIZE`), `feature_pipeline.py`, `label_pipeline.py`, `reward_accounting.py`, `gymnasium`
+- `multi_session_env.py` depends on: `barrier_env.py`, `feature_pipeline.py`, `label_pipeline.py`, `reward_accounting.py`, `gymnasium`
+- `barrier_vec_env.py` depends on: `multi_session_env.py`, `_sb3_compat.py`, `stable_baselines3`
+- `training_diagnostics.py` depends on: `stable_baselines3`, `numpy`
+- `_sb3_compat.py` depends on: `sb3_contrib`, `stable_baselines3`, `torch`
 
 ## Modification Hints
 
