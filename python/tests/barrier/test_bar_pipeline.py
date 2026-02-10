@@ -21,17 +21,29 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _make_trades(n, price_start=4775.00, price_step=0.25, size=1,
-                 ts_start_ns=None, ts_step_ns=1_000_000):
+                 ts_start_ns=None, ts_step_ns=1_000_000, prices=None,
+                 sizes=None):
     """Create a structured array of n trades for testing.
+
+    If ``prices`` is provided, uses that explicit sequence (and ``n`` is
+    inferred from its length).  Otherwise generates ``n`` trades with a
+    cycling price pattern starting at ``price_start``.
 
     Returns numpy structured array with fields:
       price (float64), size (int32), timestamp (int64), side (int8)
     """
-    prices = np.array(
-        [price_start + (i % 5) * price_step for i in range(n)],
-        dtype=np.float64,
-    )
-    sizes = np.full(n, size, dtype=np.int32)
+    if prices is not None:
+        prices = np.asarray(prices, dtype=np.float64)
+        n = len(prices)
+    else:
+        prices = np.array(
+            [price_start + (i % 5) * price_step for i in range(n)],
+            dtype=np.float64,
+        )
+    if sizes is not None:
+        sizes = np.asarray(sizes, dtype=np.int32)
+    else:
+        sizes = np.full(n, size, dtype=np.int32)
     if ts_start_ns is None:
         # Default: 2022-06-15 14:00:00 UTC (9:00 AM CT during CDT)
         ts_start_ns = int(
@@ -58,34 +70,12 @@ def _make_trades(n, price_start=4775.00, price_step=0.25, size=1,
 
 def _make_trades_with_prices(prices, sizes=None, ts_start_ns=None,
                               ts_step_ns=1_000_000):
-    """Create trades with explicit price sequence for hand-computed verification."""
-    n = len(prices)
-    prices = np.asarray(prices, dtype=np.float64)
-    if sizes is None:
-        sizes = np.ones(n, dtype=np.int32)
-    else:
-        sizes = np.asarray(sizes, dtype=np.int32)
-    if ts_start_ns is None:
-        ts_start_ns = int(
-            datetime(2022, 6, 15, 14, 0, 0, tzinfo=timezone.utc).timestamp()
-            * 1e9
-        )
-    timestamps = np.array(
-        [ts_start_ns + i * ts_step_ns for i in range(n)], dtype=np.int64
-    )
-    sides = np.array([1 if i % 2 == 0 else -1 for i in range(n)], dtype=np.int8)
+    """Create trades with explicit price sequence for hand-computed verification.
 
-    trades = np.zeros(n, dtype=[
-        ("price", np.float64),
-        ("size", np.int32),
-        ("timestamp", np.int64),
-        ("side", np.int8),
-    ])
-    trades["price"] = prices
-    trades["size"] = sizes
-    trades["timestamp"] = timestamps
-    trades["side"] = sides
-    return trades
+    Thin wrapper around _make_trades with prices= kwarg.
+    """
+    return _make_trades(0, prices=prices, sizes=sizes,
+                        ts_start_ns=ts_start_ns, ts_step_ns=ts_step_ns)
 
 
 def _utc_ns(year, month, day, hour, minute, second=0, microsecond=0):
