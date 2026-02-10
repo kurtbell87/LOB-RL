@@ -1,6 +1,6 @@
 ## Current State (updated 2026-02-09)
 
-- **Build:** `build-release/` is current. 418 C++ tests pass (`./lob_tests`). 1304 Python tests pass. **1722 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
+- **Build:** `build-release/` is current. 418 C++ tests pass (`./lob_tests`). 1664 Python tests pass (1308 core + 356 barrier). **2082 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent) all installed.
 - **Shuffle split DONE:** `--shuffle-split` and `--seed 42` on `train.py`. Reproducible random train/val/test splits. Episodes are independent days. PR #14 merged.
@@ -36,7 +36,8 @@
 - **AWS compute in experiment.sh DONE:** FRAME agent declares `compute: local|aws` in specs. RUN agent dispatches to AWS when `compute: aws` — launches EC2 Spot instances, polls state, fetches from S3, evals locally. `runpod` kept as deprecated fallback.
 - **exp-001 REFUTED:** 199d does not fix OOS. LSTM 199d val -59.95, MLP 199d val -75.53 ≈ MLP 20d val -75.82. 199d eliminates memorization (expl_var 0.30 vs 0.97) but OOS unchanged. Data quantity is not the primary bottleneck.
 - **exp-002 REFUTED:** Removing exec cost improves OOS by ~35 points but doesn't flip positive. Val -4.43 without exec cost (vs -39.55 with). Gap to gross profitability is ~5 points.
-- **Next task:** P0 observation signal audit (supervised classifier on 21-dim obs). Also: 199d no-exec-cost at 10M+ steps (only positive OOS signal ever: exp-002 Run C val +10.93, undertrained). AWS infra ready but not yet smoke-tested.
+- **Barrier pipeline (T1-T5) DONE:** Bar construction (PR #20), label pipeline (PR #21), feature extraction (PR #22), Gambler's ruin validation (PR #23), regime-switch validation (PR #24). All via TDD. 356 barrier tests.
+- **Next task:** T6 Supervised Diagnostic — MLP classifier on barrier labels to verify obs signal. Then T7 Reward Accounting → T8 Environment → T9 PPO Training → T10-T12.
 - **Research kit installed:** `experiment.sh`, prompts, templates, QUESTIONS.md, DOMAIN_PRIORS.md, RESEARCH_LOG.md all configured.
 - **Experiments completed:** 9 total (1 confirmed, 8 refuted). All OOS results negative. See `RESEARCH_LOG.md`.
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.

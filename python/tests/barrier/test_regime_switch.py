@@ -10,8 +10,17 @@ and full pipeline validation.
 import numpy as np
 import pytest
 
-from lob_rl.barrier.bar_pipeline import TradeBar
 from lob_rl.barrier import TICK_SIZE
+from lob_rl.barrier.bar_pipeline import TradeBar
+from lob_rl.barrier.feature_pipeline import compute_bar_features, normalize_features
+from lob_rl.barrier.label_pipeline import BarrierLabel, compute_labels
+from lob_rl.barrier.regime_switch import (
+    compute_segment_stats,
+    generate_regime_switch_trades,
+    ks_test_features,
+    measure_normalization_adaptation,
+    validate_regime_switch,
+)
 
 
 # ===========================================================================
@@ -53,8 +62,6 @@ class TestSyntheticDataShape:
 
     def test_total_trade_count(self):
         """Total trades = (n_bars_low + n_bars_high) * bar_size."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-
         n_bars_low, n_bars_high, bar_size = 100, 100, 500
         trades, bars = generate_regime_switch_trades(
             n_bars_low=n_bars_low, n_bars_high=n_bars_high,
@@ -65,8 +72,6 @@ class TestSyntheticDataShape:
 
     def test_bar_count(self):
         """Number of bars = n_bars_low + n_bars_high."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-
         n_bars_low, n_bars_high = 100, 100
         trades, bars = generate_regime_switch_trades(
             n_bars_low=n_bars_low, n_bars_high=n_bars_high,
@@ -76,8 +81,6 @@ class TestSyntheticDataShape:
 
     def test_default_parameters_shape(self):
         """Default params (5000+5000 bars, 500 trades/bar) produce correct shape."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-
         trades, bars = generate_regime_switch_trades(seed=42)
         assert len(trades) == (5000 + 5000) * 500
         assert len(bars) == 10000
@@ -93,8 +96,6 @@ class TestLowVolTickIncrements:
 
     def test_low_vol_increments_are_one_tick(self):
         """All trade-to-trade price changes in low-vol are exactly +/- tick_size."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-
         n_bars_low, n_bars_high, bar_size = 100, 100, 500
         trades, bars = generate_regime_switch_trades(
             n_bars_low=n_bars_low, n_bars_high=n_bars_high,
@@ -114,8 +115,6 @@ class TestHighVolTickIncrements:
 
     def test_high_vol_includes_multi_tick_moves(self):
         """High-vol trade-to-trade changes include 2*tick and 3*tick magnitudes."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-
         n_bars_low, n_bars_high, bar_size = 100, 200, 500
         trades, bars = generate_regime_switch_trades(
             n_bars_low=n_bars_low, n_bars_high=n_bars_high,
@@ -142,8 +141,6 @@ class TestRegimeBoundary:
 
     def test_boundary_at_n_bars_low(self):
         """Bar index n_bars_low is the first high-vol bar."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-
         n_bars_low = 100
         trades, bars = generate_regime_switch_trades(
             n_bars_low=n_bars_low, n_bars_high=100,
@@ -165,8 +162,6 @@ class TestReproducibility:
 
     def test_same_seed_same_trades(self):
         """Two calls with seed=42 produce identical trade arrays."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-
         trades1, bars1 = generate_regime_switch_trades(
             n_bars_low=50, n_bars_high=50, bar_size=100, seed=42,
         )
@@ -178,8 +173,6 @@ class TestReproducibility:
 
     def test_same_seed_same_bars(self):
         """Two calls with seed=42 produce identical bars (close prices)."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-
         _, bars1 = generate_regime_switch_trades(
             n_bars_low=50, n_bars_high=50, bar_size=100, seed=42,
         )
@@ -193,8 +186,6 @@ class TestReproducibility:
 
     def test_different_seed_different_trades(self):
         """Different seeds produce different trade arrays."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-
         trades1, _ = generate_regime_switch_trades(
             n_bars_low=50, n_bars_high=50, bar_size=100, seed=42,
         )
@@ -214,8 +205,6 @@ class TestPriceContinuityAtBoundary:
 
     def test_continuous_price_at_regime_boundary(self):
         """The price series is continuous across the regime boundary."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-
         n_bars_low, bar_size = 100, 500
         trades, _ = generate_regime_switch_trades(
             n_bars_low=n_bars_low, n_bars_high=100,
@@ -243,8 +232,6 @@ class TestTimeoutRateHigherInLowVol:
 
     def test_low_vol_has_higher_timeout_rate(self):
         """low_vol['p_zero'] > high_vol['p_zero']."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(seed=42)
         assert result["low_vol"]["p_zero"] > result["high_vol"]["p_zero"]
 
@@ -254,8 +241,6 @@ class TestTimeoutRatioGT2:
 
     def test_timeout_ratio_exceeds_two(self):
         """low_vol timeout rate / high_vol timeout rate > 2.0."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(seed=42)
         assert result["timeout_ratio"] > 2.0, (
             f"Timeout ratio {result['timeout_ratio']} not > 2.0"
@@ -267,8 +252,6 @@ class TestMeanTauLongerInLowVol:
 
     def test_low_vol_mean_tau_greater(self):
         """low_vol['mean_tau'] > high_vol['mean_tau']."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(seed=42)
         assert result["low_vol"]["mean_tau"] > result["high_vol"]["mean_tau"]
 
@@ -278,8 +261,6 @@ class TestChiSquaredRejectsH0:
 
     def test_chi2_p_value_significant(self):
         """chi2_p_value < 0.01."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(seed=42)
         assert result["chi2_p_value"] < 0.01, (
             f"Chi2 p-value {result['chi2_p_value']} not < 0.01"
@@ -297,8 +278,6 @@ class TestLowVolTimeoutsNontrivial:
         (bars span ~22 ticks so barriers are often hit intrabar), but the
         rate should be meaningfully nonzero, proving the regime distinction.
         """
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(seed=42)
         assert result["low_vol"]["p_zero"] > 0.05, (
             f"p_zero={result['low_vol']['p_zero']} not > 0.05"
@@ -310,8 +289,6 @@ class TestHighVolResolvesQuickly:
 
     def test_high_vol_mean_tau_lt_5(self):
         """high_vol['mean_tau'] < 5 with 3-tick moves."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(seed=42)
         assert result["high_vol"]["mean_tau"] < 5, (
             f"High-vol mean_tau={result['high_vol']['mean_tau']} not < 5"
@@ -328,8 +305,6 @@ class TestKSBarRange:
 
     def test_ks_bar_range_significant(self):
         """ks_bar_range_p < 0.01 (bar range distributions clearly differ)."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(seed=42)
         assert result["ks_bar_range_p"] < 0.01, (
             f"KS bar range p={result['ks_bar_range_p']} not < 0.01"
@@ -341,8 +316,6 @@ class TestKSRealizedVol:
 
     def test_ks_realized_vol_significant(self):
         """ks_realized_vol_p < 0.01 (realized vol distributions clearly differ)."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(seed=42)
         assert result["ks_realized_vol_p"] < 0.01, (
             f"KS realized vol p={result['ks_realized_vol_p']} not < 0.01"
@@ -354,9 +327,6 @@ class TestBarRangeHigherInHighVol:
 
     def test_bar_range_higher_in_high_vol(self):
         """Compare mean bar range between segments."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-        from lob_rl.barrier.feature_pipeline import compute_bar_features
-
         n_bars_low, n_bars_high = 500, 500
         _, bars = generate_regime_switch_trades(
             n_bars_low=n_bars_low, n_bars_high=n_bars_high,
@@ -376,9 +346,6 @@ class TestRealizedVolHigherInHighVol:
 
     def test_realized_vol_higher_in_high_vol(self):
         """Compare mean realized vol between segments, skipping warmup bars."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-        from lob_rl.barrier.feature_pipeline import compute_bar_features
-
         n_bars_low, n_bars_high = 500, 500
         _, bars = generate_regime_switch_trades(
             n_bars_low=n_bars_low, n_bars_high=n_bars_high,
@@ -407,8 +374,6 @@ class TestNoDeadZone500:
 
     def test_norm_adaptation_lt_500(self):
         """norm_adaptation_bars < 500."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(seed=42)
         assert result["norm_adaptation_bars"] < 500, (
             f"Adaptation took {result['norm_adaptation_bars']} bars (>= 500)"
@@ -420,8 +385,6 @@ class TestAdaptationWithin200:
 
     def test_norm_adaptation_lt_200(self):
         """norm_adaptation_bars < 200."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(seed=42)
         assert result["norm_adaptation_bars"] < 200, (
             f"Adaptation took {result['norm_adaptation_bars']} bars (>= 200)"
@@ -434,9 +397,6 @@ class TestNormalizedVolShiftVisible:
     def test_visible_shift_after_boundary(self):
         """Mean normalized realized vol in [boundary+200, boundary+500] differs
         from [boundary-500, boundary-200] by >= 1.0 standard units."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-        from lob_rl.barrier.feature_pipeline import compute_bar_features, normalize_features
-
         n_bars_low, n_bars_high = 5000, 5000
         _, bars = generate_regime_switch_trades(
             n_bars_low=n_bars_low, n_bars_high=n_bars_high,
@@ -465,8 +425,6 @@ class TestFullPipelinePass:
 
     def test_all_tests_pass(self):
         """validate_regime_switch(seed=42)['pass'] == True."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(seed=42)
         assert result["pass"] is True, (
             f"Pipeline validation failed. Result keys: {list(result.keys())}"
@@ -478,9 +436,6 @@ class TestNoNaNInFeatures:
 
     def test_no_nan_after_warmup(self):
         """Raw features have no NaN after bar index 19."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-        from lob_rl.barrier.feature_pipeline import compute_bar_features
-
         n_bars_low, n_bars_high = 200, 200
         _, bars = generate_regime_switch_trades(
             n_bars_low=n_bars_low, n_bars_high=n_bars_high,
@@ -498,9 +453,6 @@ class TestNoInfInFeatures:
 
     def test_no_inf_anywhere(self):
         """Raw features have no Inf values."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-        from lob_rl.barrier.feature_pipeline import compute_bar_features
-
         n_bars_low, n_bars_high = 200, 200
         _, bars = generate_regime_switch_trades(
             n_bars_low=n_bars_low, n_bars_high=n_bars_high,
@@ -515,9 +467,6 @@ class TestLabelsValid:
 
     def test_label_values_valid(self):
         """All labels are -1, 0, or +1."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-        from lob_rl.barrier.label_pipeline import compute_labels
-
         n_bars_low, n_bars_high = 200, 200
         _, bars = generate_regime_switch_trades(
             n_bars_low=n_bars_low, n_bars_high=n_bars_high,
@@ -531,9 +480,6 @@ class TestLabelsValid:
 
     def test_tau_ge_1(self):
         """All tau >= 1."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-        from lob_rl.barrier.label_pipeline import compute_labels
-
         n_bars_low, n_bars_high = 200, 200
         _, bars = generate_regime_switch_trades(
             n_bars_low=n_bars_low, n_bars_high=n_bars_high,
@@ -545,9 +491,6 @@ class TestLabelsValid:
 
     def test_tau_le_t_max(self):
         """All tau <= t_max."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-        from lob_rl.barrier.label_pipeline import compute_labels
-
         t_max = 40
         n_bars_low, n_bars_high = 200, 200
         _, bars = generate_regime_switch_trades(
@@ -571,8 +514,6 @@ class TestSmallRegime:
 
     def test_small_regime_no_crash(self):
         """100 bars per regime produces results without error."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(
             n_bars_low=100, n_bars_high=100, bar_size=500, seed=42,
         )
@@ -586,8 +527,6 @@ class TestDeterministicSeed:
 
     def test_identical_results_same_seed(self):
         """validate_regime_switch(seed=42) called twice gives identical dicts."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result1 = validate_regime_switch(
             n_bars_low=100, n_bars_high=100, bar_size=500, seed=42,
         )
@@ -618,9 +557,6 @@ class TestComputeSegmentStats:
 
     def test_known_distribution(self):
         """Hand-crafted labels with known distribution."""
-        from lob_rl.barrier.regime_switch import compute_segment_stats
-        from lob_rl.barrier.label_pipeline import BarrierLabel
-
         labels = [
             BarrierLabel(bar_index=0, label=1, tau=5, resolution_type="upper",
                          entry_price=4000.0, resolution_bar=5),
@@ -644,9 +580,6 @@ class TestComputeSegmentStats:
 
     def test_subsegment_slicing(self):
         """start/end should slice the label list correctly."""
-        from lob_rl.barrier.regime_switch import compute_segment_stats
-        from lob_rl.barrier.label_pipeline import BarrierLabel
-
         labels = [
             BarrierLabel(bar_index=0, label=1, tau=5, resolution_type="upper",
                          entry_price=4000.0, resolution_bar=5),
@@ -663,9 +596,6 @@ class TestComputeSegmentStats:
 
     def test_returns_required_keys(self):
         """Stats dict has p_plus, p_minus, p_zero, mean_tau, median_tau."""
-        from lob_rl.barrier.regime_switch import compute_segment_stats
-        from lob_rl.barrier.label_pipeline import BarrierLabel
-
         labels = [
             BarrierLabel(bar_index=0, label=1, tau=5, resolution_type="upper",
                          entry_price=4000.0, resolution_bar=5),
@@ -685,8 +615,6 @@ class TestKSTestFeatures:
 
     def test_returns_p_values_for_all_columns(self):
         """Should return KS p-values for columns 0 through 12."""
-        from lob_rl.barrier.regime_switch import ks_test_features
-
         rng = np.random.default_rng(42)
         # Two distinct distributions
         features = np.vstack([
@@ -702,8 +630,6 @@ class TestKSTestFeatures:
 
     def test_detects_distribution_shift(self):
         """When distributions are clearly different, p-values should be small."""
-        from lob_rl.barrier.regime_switch import ks_test_features
-
         rng = np.random.default_rng(42)
         features = np.vstack([
             rng.normal(0, 1, (1000, 13)),
@@ -719,8 +645,6 @@ class TestKSTestFeatures:
 
     def test_same_distribution_not_significant(self):
         """When distributions are the same, p-values should be large."""
-        from lob_rl.barrier.regime_switch import ks_test_features
-
         rng = np.random.default_rng(42)
         features = rng.normal(0, 1, (2000, 13))
         boundary = 1000
@@ -746,8 +670,6 @@ class TestMeasureNormalizationAdaptation:
 
     def test_returns_integer(self):
         """Should return an integer number of bars."""
-        from lob_rl.barrier.regime_switch import measure_normalization_adaptation
-
         rng = np.random.default_rng(42)
         # Regime shift at bar 1000: mean jumps from 0 to 5
         normed = np.vstack([
@@ -759,8 +681,6 @@ class TestMeasureNormalizationAdaptation:
 
     def test_adapts_for_obvious_shift(self):
         """With a large distribution shift, should adapt eventually (not return -1)."""
-        from lob_rl.barrier.regime_switch import measure_normalization_adaptation
-
         rng = np.random.default_rng(42)
         normed = np.vstack([
             rng.normal(0, 1, (1000, 13)),
@@ -771,8 +691,6 @@ class TestMeasureNormalizationAdaptation:
 
     def test_returns_minus_one_when_no_adaptation(self):
         """Returns -1 when the feature never reaches the post-boundary mean."""
-        from lob_rl.barrier.regime_switch import measure_normalization_adaptation
-
         # Feature stays at 0 forever (no shift to adapt to)
         normed = np.zeros((2000, 13))
         # But set the "post-boundary steady-state" (boundary+500 onward) to be
@@ -798,8 +716,6 @@ class TestValidateReturnStructure:
 
     def test_all_top_level_keys_present(self):
         """All top-level keys from the spec are present."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(
             n_bars_low=100, n_bars_high=100, bar_size=500, seed=42,
         )
@@ -815,8 +731,6 @@ class TestValidateReturnStructure:
 
     def test_segment_stat_keys_present(self):
         """low_vol and high_vol sub-dicts have all required stat keys."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(
             n_bars_low=100, n_bars_high=100, bar_size=500, seed=42,
         )
@@ -831,8 +745,6 @@ class TestValidateReturnStructure:
 
     def test_boundary_bar_value(self):
         """boundary_bar should equal n_bars_low."""
-        from lob_rl.barrier.regime_switch import validate_regime_switch
-
         result = validate_regime_switch(
             n_bars_low=100, n_bars_high=100, bar_size=500, seed=42,
         )
@@ -852,8 +764,6 @@ class TestTradesStructuredArray:
 
     def test_trades_has_required_fields(self):
         """Trades array should have price, size, side, ts_event fields."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-
         trades, _ = generate_regime_switch_trades(
             n_bars_low=10, n_bars_high=10, bar_size=100, seed=42,
         )
@@ -865,8 +775,6 @@ class TestTradesStructuredArray:
 
     def test_bars_are_trade_bars(self):
         """Returned bars list should contain TradeBar instances."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-
         _, bars = generate_regime_switch_trades(
             n_bars_low=10, n_bars_high=10, bar_size=100, seed=42,
         )
@@ -876,8 +784,6 @@ class TestTradesStructuredArray:
 
     def test_start_price_applied(self):
         """First trade price should be close to start_price."""
-        from lob_rl.barrier.regime_switch import generate_regime_switch_trades
-
         trades, _ = generate_regime_switch_trades(
             n_bars_low=10, n_bars_high=10, bar_size=100,
             start_price=5000.0, seed=42,

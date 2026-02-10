@@ -4,36 +4,18 @@
 
 ### Immediate next step
 
-**Decide strategic direction.** Both P0 hypotheses (data quantity, execution cost masking) are REFUTED. The 21-dim bar-level observation space may lack sufficient predictive signal. Two paths forward:
+**T6: Supervised Diagnostic.** Write spec, run TDD cycle. This is a new barrier module (`supervised_diagnostic.py`) that trains an MLP classifier (256, 256, ReLU) to predict barrier labels H_k ∈ {+1, -1, 0} from feature matrix Z_k. Validates that the observation space contains learnable signal about barrier outcomes before proceeding to RL training.
 
-1. **P0: Observation signal audit (supervised classifier).** Train a simple classifier (logistic regression, random forest) to predict next-bar price direction from the 21-dim obs. If accuracy > 55%, signal exists and RL is failing to exploit it. If ~50%, the features lack predictive power and feature engineering is needed. This is cheap (local, no GPU).
+**Dependencies satisfied:** T2 (labels) ✓, T3 (features) ✓, T4 (Gambler's ruin) ✓, T5 (regime-switch) ✓.
 
-2. **P0: 199d + no exec cost at 10M+ steps on AWS.** The only positive OOS signal ever observed was exp-002 Run C (val +10.93, severely undertrained at expl_var=0.174). Test whether it persists at convergence. Needs AWS setup first (see below).
+**T6 tests (from orchestrator):**
+1. Overfitting test: MLP >95% train accuracy on 256 samples within 500 epochs
+2. Validation accuracy exceeds majority-class baseline
+3. Random forest baseline comparison
+4. Class-balanced accuracy reported
+5. Confusion matrix logged
 
-3. **Feature engineering.** If signal audit shows ~50% accuracy, the current obs space is insufficient. Consider: order flow imbalance, trade imbalance, volume-weighted features, microstructure features beyond BBO.
-
-**AWS setup (needed for GPU experiments):**
-```bash
-./aws/setup.sh                    # One-time infra
-# Export the printed env vars
-docker buildx build --platform linux/amd64 -t ${AWS_ECR_REPO}:latest --push .
-AWS_S3_BUCKET=lob-rl-training ./aws/upload-cache.sh
-./aws/launch.sh --total-timesteps 1000 --bar-size 1000 --execution-cost  # Smoke test
-```
-
-**Research agenda:** See `QUESTIONS.md` for 5 open questions (2x P0, 2x P1, 1x P2). See `RESEARCH_LOG.md` for 9 experiments (1 confirmed, 8 refuted). See `DOMAIN_PRIORS.md` for LOB-RL domain knowledge.
-
-**OOS results summary (all negative):**
-
-| Experiment | Model | Val Return | Test Return | Val Sortino | Test Sortino | Pos Val Eps |
-|-----------|-------|-----------|-------------|-------------|--------------|-------------|
-| pre-005 (20d GPU) | LSTM | -36.7 | -33.4 | -1.06 | -1.48 | 2/5 |
-| pre-006 (20d GPU) | MLP | -62.9 | -44.0 | -1.67 | -2.22 | 0/5 |
-| exp-001 (199d local) | LSTM 199d | -59.95 | -43.14 | -1.49 | -1.24 | 0/5 |
-| exp-001 (199d local) | MLP 199d | -75.53 | -44.81 | -1.19 | -1.02 | 0/5 |
-| exp-001 (20d local) | MLP 20d | -75.82 | -61.42 | -2.95 | -1.16 | 0/5 |
-| exp-002 (no exec cost) | MLP 20d | -4.43 | -5.03 | -0.43 | -0.27 | 2/5 |
-| exp-002 (199d no exec) | MLP 199d | +10.93 | -13.90 | +0.78 | -0.59 | 3/5 |
+**Remaining pipeline:** T6 → T7 (Reward Accounting) → T8 (Environment) → T9 (PPO Training, GPU) → T10 (Behavioral Inspection) → T11 (Hyperparameter Sweep) → T12 (OOS Evaluation).
 
 ### Roll calendar
 
@@ -50,15 +32,14 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 
 ### What was just completed
 
-**exp-001 OOS evaluation recovered + exp-002 completed (2026-02-09).** Ran retroactive `evaluate_sortino()` on all 4 exp-001 checkpoints. Verdict: **REFUTED.** Key findings:
-- LSTM 199d val -59.95 (threshold was -16.7) — failed SC-1 by 43 points
-- MLP 199d val -75.53 ≈ MLP 20d val -75.82 — more data did nothing for MLP
-- 0/20 positive val episodes across all 4 runs
-- 199d reduces memorization (expl_var 0.30 vs 0.97) but OOS is unchanged
-- Both P0 hypotheses (data quantity, exec cost masking) now REFUTED
-- New leading hypothesis H5: 21-dim bar-level obs space lacks sufficient predictive signal
-- Updated RESEARCH_LOG.md, QUESTIONS.md (6 answered, 5 open), CLAUDE.md
-- Eval script: `results/exp-001-does-increasing-training-data-from-20-to/eval_oos.py`
+**PPO Barrier-Hit Agent pipeline T1-T5 complete (2026-02-09).** All five data pipeline tasks completed via strict TDD (`./tdd.sh`):
+- **T1: Bar Construction Pipeline** — PR #20. `TradeBar`, `build_bars_from_trades()`, RTH filtering, dataset builder. 59 tests.
+- **T2: Label Construction Pipeline** — PR #21. `BarrierLabel`, `compute_labels()`, intrabar tiebreaking, T_max calibration. 65 tests.
+- **T3: Feature Extraction** — PR #22. 13 bar-level features, z-score normalization, lookback assembly. 92 tests.
+- **T4: Gambler's Ruin Validation** — PR #23. Analytic formula validation at 5 drift levels (p=0.485..0.510). 81 tests.
+- **T5: Regime-Switch Validation** — PR #24. Low-vol/high-vol synthetic regime switch, KS tests, chi-squared, normalization adaptation. 51 tests.
+
+All code in `python/lob_rl/barrier/` with tests in `python/tests/barrier/`. 1664 Python tests total (1308 core + 356 barrier).
 
 **Prior: AWS EC2 Spot migration (2026-02-09).** Replaces RunPod with AWS EC2 Spot for all remote training. Six new files in `aws/`, five existing files modified (~700 lines total):
 
@@ -233,8 +214,8 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 ## Test coverage
 
 - **418 C++ tests** — `cd build-release && ./lob_tests` (15 skipped: need `.dbn.zst` fixture)
-- **1304 Python tests** — `PYTHONPATH=build-release:python uv run pytest python/tests/` (4 skipped: fixture-dependent)
-- **1722 total**, all passing.
+- **1664 Python tests** (1308 core + 356 barrier) — `PYTHONPATH=build-release:python uv run --with pandas --with scipy pytest python/tests/` (4 skipped: fixture-dependent)
+- **2082 total**, all passing.
 
 ## Remaining work
 
