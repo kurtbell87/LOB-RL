@@ -6,6 +6,7 @@ from gymnasium import spaces
 
 from lob_rl.bar_aggregation import aggregate_bars
 from lob_rl._reward import compute_forced_flatten, compute_step_reward
+from lob_rl._statistics import rolling_std
 
 # Observation layout: 13 intra-bar + 7 cross-bar temporal + 1 position = 21
 _NUM_BAR_FEATURES = 13
@@ -90,24 +91,7 @@ class BarLevelEnv(gym.Env):
             self._temporal[5:, 3] = (cumsum_ret[5:num_bars] - cumsum_ret[:num_bars - 5]).astype(np.float32)
 
         # 4: rolling_vol_5 — std of bar_return[max(0,t-5):t] for t >= 2
-        # Use cumulative sums for O(num_bars) computation of rolling variance
-        cumsum_ret_sq = np.concatenate(([0.0], np.cumsum(bar_return.astype(np.float64) ** 2)))
-        cumsum_ret_f64 = np.concatenate(([0.0], np.cumsum(bar_return.astype(np.float64))))
-        for t in range(2, min(num_bars, 6)):
-            w = t  # window size: bar_return[0:t]
-            roll_sum = cumsum_ret_f64[t]
-            roll_sum2 = cumsum_ret_sq[t]
-            roll_mean = roll_sum / w
-            roll_var = roll_sum2 / w - roll_mean ** 2
-            self._temporal[t, 4] = np.sqrt(max(roll_var, 0.0))
-        if num_bars > 5:
-            w = 5
-            roll_sum = cumsum_ret_f64[5:num_bars] - cumsum_ret_f64[:num_bars - 5]
-            roll_sum2 = cumsum_ret_sq[5:num_bars] - cumsum_ret_sq[:num_bars - 5]
-            roll_mean = roll_sum / w
-            roll_var = roll_sum2 / w - roll_mean ** 2
-            np.maximum(roll_var, 0.0, out=roll_var)
-            self._temporal[5:, 4] = np.sqrt(roll_var).astype(np.float32)
+        self._temporal[:, 4] = rolling_std(bar_return, window=5)
 
         # 5: imb_delta_3 — imbalance_close[t] - imbalance_close[t-3]
         if num_bars > 3:

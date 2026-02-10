@@ -29,7 +29,7 @@ if [ -f /usr/sbin/sshd ]; then
 fi
 
 # Construct unique output dir: /workspace/runs/{exp_name}_{pod_id}
-RUN_NAME="${EXP_NAME:-exp}_${RUNPOD_POD_ID:-$(date +%Y%m%d_%H%M%S)}"
+RUN_NAME="${EXP_NAME:-exp}_${RUN_ID:-${RUNPOD_POD_ID:-$(date +%Y%m%d_%H%M%S)}}"
 OUTPUT_DIR="/workspace/runs/${RUN_NAME}"
 LOG_DIR="$OUTPUT_DIR"
 LOG_FILE="$LOG_DIR/train.log"

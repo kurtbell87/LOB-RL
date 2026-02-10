@@ -31,7 +31,14 @@
 - **Cache uploaded:** 249 `.npz` files (18GB) on RunPod volume `4w2m8hek66` at `cache/mes/`. Verified via `aws s3 ls`.
 - **GPU experiments DONE:** 3x RTX 4090 pods completed 5M steps each. Results recovered from RunPod volume (auto-fetch failed). Report: `research/experiment_report.md`.
 - **GPU results:** LSTM best OOS (val -36.7 / test -33.4), MLP (val -62.9 / test -44.0), frame-stack (val -82.3 / test -49.4). **All negative.** No architecture generalizes.
-- **Next task:** Investigate negative OOS — increase training days (20→199), ablate execution cost, evaluate 4M checkpoints.
+- **RunPod compute in experiment.sh DONE (deprecated):** FRAME agent declares `compute: local|runpod` in specs. RUN agent dispatches to RunPod when `compute: runpod`. Env vars: `RUNPOD_VOLUME_ID`, `DOCKERHUB_USER`, `RUNPOD_GPU_TYPE`. **Superseded by AWS.**
+- **AWS EC2 Spot infrastructure DONE:** `aws/` scripts (setup, launch, fetch-results, upload-cache, monitor). EC2 Spot replaces RunPod — 60% cheaper GPU (g5.xlarge A10G ~$0.24/hr), dedicated CPU instances (c7a.4xlarge ~$0.39/hr). S3 for cache + results, ECR for Docker image. Spot interruption handled via metadata polling + checkpoint upload. Auto-detect: `--recurrent` → GPU, else → CPU. Env vars: `AWS_S3_BUCKET`, `AWS_ECR_REPO`, `AWS_INSTANCE_TYPE`, `AWS_REGION`.
+- **AWS compute in experiment.sh DONE:** FRAME agent declares `compute: local|aws` in specs. RUN agent dispatches to AWS when `compute: aws` — launches EC2 Spot instances, polls state, fetches from S3, evals locally. `runpod` kept as deprecated fallback.
+- **exp-001 REFUTED:** 199d does not fix OOS. LSTM 199d val -59.95, MLP 199d val -75.53 ≈ MLP 20d val -75.82. 199d eliminates memorization (expl_var 0.30 vs 0.97) but OOS unchanged. Data quantity is not the primary bottleneck.
+- **exp-002 REFUTED:** Removing exec cost improves OOS by ~35 points but doesn't flip positive. Val -4.43 without exec cost (vs -39.55 with). Gap to gross profitability is ~5 points.
+- **Next task:** P0 observation signal audit (supervised classifier on 21-dim obs). Also: 199d no-exec-cost at 10M+ steps (only positive OOS signal ever: exp-002 Run C val +10.93, undertrained). AWS infra ready but not yet smoke-tested.
+- **Research kit installed:** `experiment.sh`, prompts, templates, QUESTIONS.md, DOMAIN_PRIORS.md, RESEARCH_LOG.md all configured.
+- **Experiments completed:** 9 total (1 confirmed, 8 refuted). All OOS results negative. See `RESEARCH_LOG.md`.
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
 - **Precompute hint:** If cache needs rebuilding: `precompute_cache.py --roll-calendar ... --workers 8` (script supports `--workers N` via `ProcessPoolExecutor`).
 - **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42`
@@ -39,19 +46,23 @@
 ## Don't
 
 - Don't verify the build or run C++ tests unless asked or unless you changed C++ code.
-- Don't explore the codebase to "understand" it — read `LAST_TOUCH.md` and directory `README.md` files instead.
+- Don't explore the codebase to "understand" it — read `LAST_TOUCH.md`, `RESEARCH_LOG.md`, and directory `README.md` files instead.
 - Don't read `PRD.md` unless you need requirements for a new feature. `LAST_TOUCH.md` has the current state.
+- Don't read `QUESTIONS.md` unless you need the research agenda. `RESEARCH_LOG.md` has what's been tried.
 - Don't check if dependencies are installed — they are.
 - Don't read source files to understand architecture — read the `README.md` in each directory first.
+- Don't run training or experiments outside the experiment pipeline (`./experiment.sh`).
 
 ## Breadcrumb Maintenance (MANDATORY)
 
 After every session that changes the codebase, you MUST maintain these navigation files so the next agent starts fast:
 
 1. **`LAST_TOUCH.md`** — Update the "What to do next" and "Key files" sections. This is a cold-start briefing, not a journal. Keep it actionable and concise.
-2. **`CLAUDE.md` "Current State" section** — Update build status, test counts, and next task.
-3. **Directory `README.md` files** — If you add/rename/delete files in a directory, update that directory's `README.md`. If a directory doesn't have one, create it. **See format requirements below.**
-4. **Spec docs in `docs/`** — Archived automatically by `./tdd.sh ship`. The spec is deleted from the working tree but preserved in git history. Don't manually delete specs before shipping.
+2. **`CLAUDE.md` "Current State" section** — Update build status, test counts, experiment counts, and next task.
+3. **`RESEARCH_LOG.md`** — Append results of any completed experiment. This is the cumulative knowledge base.
+4. **`QUESTIONS.md`** — Update question statuses and move answered questions to the answered section.
+5. **Directory `README.md` files** — If you add/rename/delete files in a directory, update that directory's `README.md`. If a directory doesn't have one, create it. **See format requirements below.**
+6. **Spec docs in `docs/`** — Archived automatically by `./tdd.sh ship`. The spec is deleted from the working tree but preserved in git history. Don't manually delete specs before shipping.
 
 The goal: a new agent session (or TDD sub-agent) should be able to orient itself by reading only `CLAUDE.md` → `LAST_TOUCH.md` → relevant directory `README.md`, **without grepping or reading source files**.
 
@@ -161,6 +172,86 @@ While a phase is running, you (or the user) can monitor it in a separate termina
 - **One spec per cycle.** Don't try to spec everything at once.
 - **Always run `./tdd.sh` with `run_in_background: true`**, then block-wait with `TaskOutput(block: true, timeout: 600000)`. Repeat the `TaskOutput` call if it times out. Do NOT poll with short intervals.
 - If a `./tdd.sh` phase fails or produces incomplete results, diagnose the issue, fix the spec or environment, and re-run the phase. Do not manually patch implementation code outside the pipeline.
+
+## How You Work: Research Experiment Workflow (MANDATORY)
+
+This project uses a **strict SURVEY-FRAME-RUN-READ-LOG cycle** for all research experiments. You MUST follow this process. You do NOT implement experiments directly — you orchestrate the pipeline.
+
+### Step 0: Identify the Question
+
+Read `RESEARCH_LOG.md` and `QUESTIONS.md` to determine the next question to investigate. Pick the highest-priority open question.
+
+### Step 1: SURVEY — Review Prior Work
+
+```bash
+./experiment.sh survey "your research question"
+```
+
+This spawns a dedicated survey agent that reviews prior experiments, existing infrastructure, and known failure modes.
+
+### Step 2: FRAME — Design the Experiment
+
+```bash
+./experiment.sh frame experiments/exp-NNN-name.md
+```
+
+This spawns a dedicated experiment design agent that writes a rigorous spec with falsifiable hypothesis and pre-committed success criteria.
+
+**The spec becomes immutable once RUN begins.** Success criteria cannot be changed after seeing results.
+
+### Step 3: RUN — Execute the Experiment
+
+```bash
+./experiment.sh run experiments/exp-NNN-name.md
+```
+
+This spawns a dedicated execution agent. The experiment spec is OS-locked (read-only). Writes ALL metrics to `results/exp-NNN/metrics.json`. Does NOT interpret results.
+
+**IMPORTANT: Run in background and block-wait.** Use `run_in_background: true`, then block-wait with `TaskOutput(block: true, timeout: 600000)`.
+
+### Step 4: READ — Analyze Results
+
+```bash
+./experiment.sh read experiments/exp-NNN-name.md
+```
+
+This spawns a dedicated analysis agent. Metrics are locked. Renders verdict: CONFIRMED, REFUTED, or INCONCLUSIVE. Updates RESEARCH_LOG.md.
+
+### Step 5: LOG — Commit Results
+
+```bash
+./experiment.sh log experiments/exp-NNN-name.md
+```
+
+Creates a feature branch, commits all results, and opens a PR.
+
+### Shortcuts
+
+```bash
+./experiment.sh cycle experiments/exp-NNN-name.md          # frame -> run -> read -> log
+./experiment.sh full "question" experiments/exp-NNN-name.md # survey -> frame -> run -> read -> log
+./experiment.sh program                                     # Auto-advance through open questions
+./experiment.sh status                                      # Show research program status
+```
+
+### Critical Rules
+
+- **You are the orchestrator, not the implementor.** Steps 1-4 MUST use `./experiment.sh` commands.
+- **One experiment per cycle.** Don't batch multiple hypotheses.
+- **Failure is a first-class outcome.** REFUTED experiments are valuable.
+- **Always run ./experiment.sh with `run_in_background: true`**, then block-wait with `TaskOutput(block: true, timeout: 600000)`.
+- **Never modify metrics after the RUN phase.** The numbers are sacred.
+- **Never modify the spec after the FRAME phase.** The contract is sacred.
+
+## When to Use Which Workflow
+
+| Situation | Workflow | Example |
+|-----------|----------|---------|
+| **New feature, bug fix, refactoring** | TDD (`./tdd.sh`) | Add early stopping, fix VecNormalize leak, refactor reward module |
+| **Research experiment, hypothesis testing** | Research (`./experiment.sh`) | Test 199 training days, ablate execution cost, evaluate checkpoints |
+| **Infrastructure change needed by research** | Handoff (Research → TDD) | READ agent creates `HANDOFF.md` when experiment needs env code changes |
+
+**Key distinction:** TDD changes **code**. Research changes **knowledge** (and may write temporary scripts, but core env/training code changes go through TDD via handoff).
 
 ## Python Environment
 
