@@ -9,7 +9,7 @@ and test_barrier_vec_env.py.
 import numpy as np
 import pytest
 
-from lob_rl.barrier import TICK_SIZE
+from lob_rl.barrier import TICK_SIZE, N_FEATURES
 from lob_rl.barrier.bar_pipeline import TradeBar
 from lob_rl.barrier.feature_pipeline import build_feature_matrix
 from lob_rl.barrier.label_pipeline import compute_labels
@@ -123,8 +123,8 @@ def make_session_bars(n, base_price=4000.0, spread=2.0, volume=100):
 
 # Default lookback and derived dimensions
 DEFAULT_H = 10
-DEFAULT_FEATURE_DIM = 13 * DEFAULT_H  # 130
-DEFAULT_OBS_DIM = DEFAULT_FEATURE_DIM + 2  # 132
+DEFAULT_FEATURE_DIM = N_FEATURES * DEFAULT_H  # 170
+DEFAULT_OBS_DIM = DEFAULT_FEATURE_DIM + 2  # 172
 
 
 def make_session_data(n_bars=40, base_price=4000.0, h=DEFAULT_H):
