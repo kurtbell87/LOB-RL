@@ -104,18 +104,16 @@ def compute_segment_stats(labels, start, end):
             "median_tau": 0.0,
         }
 
-    n_plus = sum(1 for lbl in segment if lbl.label == 1)
-    n_minus = sum(1 for lbl in segment if lbl.label == -1)
-    n_zero = sum(1 for lbl in segment if lbl.label == 0)
-
-    taus = [lbl.tau for lbl in segment]
+    # Extract into arrays for vectorized counting
+    label_arr = np.array([lbl.label for lbl in segment])
+    tau_arr = np.array([lbl.tau for lbl in segment])
 
     return {
-        "p_plus": n_plus / n,
-        "p_minus": n_minus / n,
-        "p_zero": n_zero / n,
-        "mean_tau": float(np.mean(taus)),
-        "median_tau": float(np.median(taus)),
+        "p_plus": float(np.sum(label_arr == 1) / n),
+        "p_minus": float(np.sum(label_arr == -1) / n),
+        "p_zero": float(np.sum(label_arr == 0) / n),
+        "mean_tau": float(np.mean(tau_arr)),
+        "median_tau": float(np.median(tau_arr)),
     }
 
 

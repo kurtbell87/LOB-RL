@@ -12,6 +12,7 @@ Offline barrier-label construction pipeline for LOB-RL. Reads raw MBO data, buil
 | `feature_pipeline.py` | Features: `compute_bar_features()`, `normalize_features()`, `assemble_lookback()`, `build_feature_matrix()`. |
 | `gamblers_ruin.py` | Validation: `gamblers_ruin_analytic()`, `generate_random_walk()`, `validate_drift_level()`, `run_validation()`. |
 | `regime_switch.py` | Validation: `generate_regime_switch_trades()`, `validate_regime_switch()`, `compute_segment_stats()`, `ks_test_features()`, `measure_normalization_adaptation()`. |
+| `supervised_diagnostic.py` | MLP classifier diagnostic: `build_labeled_dataset()`, `BarrierMLP`, `overfit_test()`, `train_mlp()`, `evaluate_classifier()`, `train_random_forest()`, `run_diagnostic()`. |
 
 ## API Signatures
 
@@ -104,6 +105,29 @@ ks_test_features(features, boundary, window=500) -> dict  # {ks_p_col_0..ks_p_co
 measure_normalization_adaptation(normed_features, boundary, col=8, threshold_sigma=1.0) -> int
 ```
 
+### `supervised_diagnostic.py`
+
+```python
+build_labeled_dataset(bars, labels, h=10) -> tuple[np.ndarray, np.ndarray]
+    # X: shape (n_usable, 13*h), float32; y: shape (n_usable,), int64
+    # Label mapping: -1 -> 0, 0 -> 1, +1 -> 2
+
+class BarrierMLP(nn.Module):
+    __init__(input_dim, hidden_dim=256, n_classes=3)
+    forward(x) -> Tensor
+
+overfit_test(X, y, epochs=500, batch_size=256, seed=42) -> dict
+    # {train_accuracy: float, passed: bool}  (passed = accuracy > 0.95)
+train_mlp(X, y, epochs=100, batch_size=256, hidden_dim=256, lr=1e-3, seed=42)
+    -> tuple[BarrierMLP, dict]  # dict: {train_accuracy, train_loss}
+evaluate_classifier(model, X_test, y_test) -> dict
+    # {accuracy, balanced_accuracy, majority_class, majority_baseline,
+    #  beats_baseline, confusion_matrix, per_class}
+train_random_forest(X_train, y_train, X_test, y_test, seed=42, n_estimators=100) -> dict
+run_diagnostic(bars, labels, h=10, train_frac=0.8, epochs=100, seed=42) -> dict
+    # {n_samples, n_train, n_test, label_distribution, overfit_test, mlp, random_forest, passed}
+```
+
 ## Cross-File Dependencies
 
 - `bar_pipeline.py` depends on: `pandas`, `numpy`, `zoneinfo`, `__init__.py` (none from barrier)
@@ -111,6 +135,7 @@ measure_normalization_adaptation(normed_features, boundary, col=8, threshold_sig
 - `feature_pipeline.py` depends on: `__init__.py` (`TICK_SIZE`)
 - `gamblers_ruin.py` depends on: `__init__.py` (`TICK_SIZE`, `RTH_OPEN_NS`, `RTH_DURATION_NS`, `build_synthetic_trades`), `bar_pipeline.py`, `label_pipeline.py`
 - `regime_switch.py` depends on: `__init__.py` (same as gamblers_ruin), `bar_pipeline.py`, `label_pipeline.py`, `feature_pipeline.py`, `scipy.stats`
+- `supervised_diagnostic.py` depends on: `feature_pipeline.py`, `torch`, `numpy`, `sklearn.ensemble` (lazy import in `train_random_forest`)
 
 ## Modification Hints
 
