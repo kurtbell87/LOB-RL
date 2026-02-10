@@ -4,7 +4,7 @@ import numpy as np
 
 # Shared constants
 TICK_SIZE = 0.25  # /MES tick size (quarter-point)
-N_FEATURES = 17   # Number of bar-level feature columns
+N_FEATURES = 22   # Number of bar-level feature columns
 
 # Reference RTH window for synthetic data generation
 # 2022-06-15 RTH: 13:30 UTC to 20:00 UTC (6.5 hours)

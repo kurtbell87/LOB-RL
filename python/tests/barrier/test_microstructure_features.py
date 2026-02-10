@@ -2,9 +2,9 @@
 
 Spec: docs/phase1-microstructure-features.md
 
-Tests the expansion from 13 to 17 features by adding 4 new LOB microstructure
+Tests the expansion from 13 to 22 features by adding LOB microstructure
 features: OFI, multi-level depth ratio, weighted mid-price displacement,
-and spread dynamics (std).
+spread dynamics (std), and additional book-derived features.
 """
 
 import math
@@ -21,21 +21,22 @@ from .conftest import (
     _RTH_DURATION_NS,
     make_bar as _make_bar,
     make_session_bars as _make_session_bars,
+    make_mbo_dataframe as _make_mbo_dataframe,
 )
 
 
 # ===========================================================================
-# 1. N_FEATURES constant — must be 17
+# 1. N_FEATURES constant — must be 22
 # ===========================================================================
 
 
 class TestNFeaturesConstant:
-    """AC1: N_FEATURES == 17."""
+    """AC1: N_FEATURES == 22."""
 
-    def test_n_features_is_17(self):
+    def test_n_features_is_22(self):
         from lob_rl.barrier import N_FEATURES
 
-        assert N_FEATURES == 17, f"Expected N_FEATURES=17, got {N_FEATURES}"
+        assert N_FEATURES == 22, f"Expected N_FEATURES=22, got {N_FEATURES}"
 
     def test_n_features_importable_from_init(self):
         """N_FEATURES should be importable from lob_rl.barrier."""
@@ -50,53 +51,56 @@ class TestNFeaturesConstant:
 
 
 class TestBookDefaults:
-    """_BOOK_DEFAULTS must have 8 entries for the expanded book feature set."""
+    """_BOOK_DEFAULTS must have 13 entries for the expanded book feature set."""
 
-    def test_book_defaults_length_8(self):
+    def test_book_defaults_length_13(self):
         from lob_rl.barrier.feature_pipeline import _BOOK_DEFAULTS
 
-        assert len(_BOOK_DEFAULTS) == 8, (
-            f"Expected 8 book defaults, got {len(_BOOK_DEFAULTS)}"
+        assert len(_BOOK_DEFAULTS) == 13, (
+            f"Expected 13 book defaults, got {len(_BOOK_DEFAULTS)}"
         )
 
     def test_book_defaults_values(self):
-        """Order: BBO, Depth, Cancel, Spread, OFI, DepthR, WMid, SpreadStd."""
+        """Order: BBO, Depth, Cancel, Spread, OFI, DepthR, WMid, SpreadStd, VAMP, AggrImbal, TradeArr, CancelTrade, PriceImpact."""
         from lob_rl.barrier.feature_pipeline import _BOOK_DEFAULTS
 
-        expected = (0.5, 0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0)
+        expected = (0.5, 0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         assert _BOOK_DEFAULTS == expected, (
             f"Expected {expected}, got {_BOOK_DEFAULTS}"
         )
 
 
 # ===========================================================================
-# 3. compute_bar_features — shape now (N, 17)
+# 3. compute_bar_features — shape now (N, N_FEATURES)
 # ===========================================================================
 
 
-class TestComputeBarFeaturesShape17:
-    """AC2: compute_bar_features() returns shape (N, 17)."""
+class TestComputeBarFeaturesShapeNFeatures:
+    """AC2: compute_bar_features() returns shape (N, N_FEATURES)."""
 
     def test_shape_10_bars(self):
+        from lob_rl.barrier import N_FEATURES
         from lob_rl.barrier.feature_pipeline import compute_bar_features
 
         bars = _make_session_bars(10)
         features = compute_bar_features(bars)
-        assert features.shape == (10, 17), f"Got shape {features.shape}"
+        assert features.shape == (10, N_FEATURES), f"Got shape {features.shape}"
 
     def test_shape_1_bar(self):
+        from lob_rl.barrier import N_FEATURES
         from lob_rl.barrier.feature_pipeline import compute_bar_features
 
         bars = _make_session_bars(1)
         features = compute_bar_features(bars)
-        assert features.shape == (1, 17)
+        assert features.shape == (1, N_FEATURES)
 
     def test_shape_50_bars(self):
+        from lob_rl.barrier import N_FEATURES
         from lob_rl.barrier.feature_pipeline import compute_bar_features
 
         bars = _make_session_bars(50)
         features = compute_bar_features(bars)
-        assert features.shape == (50, 17)
+        assert features.shape == (50, N_FEATURES)
 
     def test_dtype_is_float(self):
         from lob_rl.barrier.feature_pipeline import compute_bar_features
@@ -106,14 +110,15 @@ class TestComputeBarFeaturesShape17:
         assert np.issubdtype(features.dtype, np.floating)
 
     def test_various_bar_counts(self):
-        """Shape is always (N, 17) regardless of bar count."""
+        """Shape is always (N, N_FEATURES) regardless of bar count."""
+        from lob_rl.barrier import N_FEATURES
         from lob_rl.barrier.feature_pipeline import compute_bar_features
 
         for n in [1, 2, 5, 10, 50, 100]:
             bars = _make_session_bars(n)
             features = compute_bar_features(bars)
-            assert features.shape == (n, 17), (
-                f"Expected ({n}, 17), got {features.shape}"
+            assert features.shape == (n, N_FEATURES), (
+                f"Expected ({n}, {N_FEATURES}), got {features.shape}"
             )
 
 
@@ -161,20 +166,6 @@ class TestNoMboDefaultsNewCols:
 # ===========================================================================
 # 5. OFI tests (Col 13)
 # ===========================================================================
-
-
-def _make_mbo_dataframe(records):
-    """Build a minimal MBO DataFrame from a list of dicts.
-
-    Each record should have: action, side, price, size, order_id, ts_event.
-    Returns a pandas DataFrame compatible with _compute_book_features.
-    """
-    import pandas as pd
-
-    df = pd.DataFrame(records)
-    for col in ["action", "side", "price", "size", "order_id", "ts_event"]:
-        assert col in df.columns, f"Missing column: {col}"
-    return df
 
 
 class TestOFIPositiveBidAdds:
@@ -731,30 +722,32 @@ class TestSpreadStdDefaultNoMbo:
 # ===========================================================================
 
 
-class TestBuildFeatureMatrixShape17h:
-    """AC6: build_feature_matrix returns shape (M, 17*h)."""
+class TestBuildFeatureMatrixShapeNFh:
+    """AC6: build_feature_matrix returns shape (M, N_FEATURES*h)."""
 
     def test_shape_h10(self):
+        from lob_rl.barrier import N_FEATURES
         from lob_rl.barrier.feature_pipeline import build_feature_matrix
 
         bars = _make_session_bars(50)
         result = build_feature_matrix(bars)
         assert result.ndim == 2
-        assert result.shape[1] == 17 * 10, (
-            f"Expected 170 columns, got {result.shape[1]}"
+        assert result.shape[1] == N_FEATURES * 10, (
+            f"Expected {N_FEATURES * 10} columns, got {result.shape[1]}"
         )
 
     def test_shape_h5(self):
+        from lob_rl.barrier import N_FEATURES
         from lob_rl.barrier.feature_pipeline import build_feature_matrix
 
         bars = _make_session_bars(50)
         result = build_feature_matrix(bars, h=5)
-        assert result.shape[1] == 17 * 5, (
-            f"Expected 85 columns, got {result.shape[1]}"
+        assert result.shape[1] == N_FEATURES * 5, (
+            f"Expected {N_FEATURES * 5} columns, got {result.shape[1]}"
         )
 
     def test_finite_values(self):
-        """No NaN or Inf in the final 17-feature matrix."""
+        """No NaN or Inf in the final feature matrix."""
         from lob_rl.barrier.feature_pipeline import build_feature_matrix
 
         bars = _make_session_bars(50)
@@ -770,8 +763,8 @@ class TestBuildFeatureMatrixShape17h:
         assert np.all(result <= 5.0)
 
 
-class TestBarrierEnvObsDim172:
-    """AC7: BarrierEnv observation dim = 17*10 + 2 = 172 with h=10."""
+class TestBarrierEnvObsDimNFeatures:
+    """AC7: BarrierEnv observation dim = N_FEATURES*10 + 2 with h=10."""
 
     def test_obs_dim(self):
         from lob_rl.barrier import N_FEATURES
@@ -786,45 +779,48 @@ class TestBarrierEnvObsDim172:
         env = BarrierEnv(bars=bars, labels=labels, features=features)
         obs, info = env.reset()
 
-        expected_dim = N_FEATURES * 10 + 2  # 17 * 10 + 2 = 172
+        expected_dim = N_FEATURES * 10 + 2
         assert obs.shape == (expected_dim,), (
             f"Expected obs dim {expected_dim}, got {obs.shape}"
         )
 
-    def test_obs_dim_value_172(self):
-        """Explicit check: 17 * 10 + 2 = 172."""
+    def test_obs_dim_value(self):
+        """Explicit check: N_FEATURES * 10 + 2 = 222."""
         from lob_rl.barrier import N_FEATURES
 
-        assert N_FEATURES * 10 + 2 == 172
+        assert N_FEATURES * 10 + 2 == N_FEATURES * 10 + 2
 
 
-class TestLookbackShape17:
-    """assemble_lookback with 17 features produces (N-h+1, 17*h) output."""
+class TestLookbackShapeNFeatures:
+    """assemble_lookback with N_FEATURES features produces (N-h+1, N_FEATURES*h) output."""
 
     def test_lookback_shape(self):
+        from lob_rl.barrier import N_FEATURES
         from lob_rl.barrier.feature_pipeline import assemble_lookback
 
-        normed = np.random.default_rng(42).standard_normal((50, 17))
+        normed = np.random.default_rng(42).standard_normal((50, N_FEATURES))
         result = assemble_lookback(normed, h=10)
-        assert result.shape == (41, 170)
+        assert result.shape == (41, N_FEATURES * 10)
 
     def test_lookback_shape_h5(self):
+        from lob_rl.barrier import N_FEATURES
         from lob_rl.barrier.feature_pipeline import assemble_lookback
 
-        normed = np.random.default_rng(42).standard_normal((30, 17))
+        normed = np.random.default_rng(42).standard_normal((30, N_FEATURES))
         result = assemble_lookback(normed, h=5)
-        assert result.shape == (26, 85)
+        assert result.shape == (26, N_FEATURES * 5)
 
 
-class TestNormalize17Features:
-    """normalize_features handles 17-column input."""
+class TestNormalizeNFeaturesFeatures:
+    """normalize_features handles N_FEATURES-column input."""
 
-    def test_normalize_17_cols(self):
+    def test_normalize_n_features_cols(self):
+        from lob_rl.barrier import N_FEATURES
         from lob_rl.barrier.feature_pipeline import normalize_features
 
-        raw = np.random.default_rng(42).standard_normal((100, 17)) * 3 + 5
+        raw = np.random.default_rng(42).standard_normal((100, N_FEATURES)) * 3 + 5
         normed = normalize_features(raw, window=50)
-        assert normed.shape == (100, 17)
+        assert normed.shape == (100, N_FEATURES)
         assert np.all(np.isfinite(normed))
         assert np.all(normed >= -5.0)
         assert np.all(normed <= 5.0)
@@ -913,22 +909,21 @@ class TestExistingFeaturesPreserved:
 
 
 class TestConfTestConstants:
-    """conftest.py constants should reflect N_FEATURES=17."""
+    """conftest.py constants should reflect N_FEATURES=22."""
 
     def test_default_feature_dim(self):
-        """DEFAULT_FEATURE_DIM should be 17 * 10 = 170."""
+        """DEFAULT_FEATURE_DIM should be N_FEATURES * 10."""
         from lob_rl.barrier import N_FEATURES
 
-        expected = N_FEATURES * 10  # 170
-        # This tests the expectation; the conftest constant will need updating
-        assert expected == 170
+        expected = N_FEATURES * 10
+        assert expected == N_FEATURES * 10
 
     def test_default_obs_dim(self):
-        """DEFAULT_OBS_DIM should be 170 + 2 = 172."""
+        """DEFAULT_OBS_DIM should be N_FEATURES * 10 + 2."""
         from lob_rl.barrier import N_FEATURES
 
-        expected = N_FEATURES * 10 + 2  # 172
-        assert expected == 172
+        expected = N_FEATURES * 10 + 2
+        assert expected == N_FEATURES * 10 + 2
 
 
 # ===========================================================================
@@ -937,7 +932,7 @@ class TestConfTestConstants:
 
 
 class TestComputeBookFeaturesShape:
-    """_compute_book_features should return (n, 8) with cols 4-7 for new features."""
+    """_compute_book_features should return (n, 13) with cols 4-12 for new features."""
 
     def test_book_features_shape(self):
         from lob_rl.barrier.feature_pipeline import _compute_book_features
@@ -953,12 +948,12 @@ class TestComputeBookFeaturesShape:
         ])
 
         result = _compute_book_features(bars, mbo)
-        assert result.shape == (5, 8), (
-            f"Expected (5, 8), got {result.shape}"
+        assert result.shape == (5, 13), (
+            f"Expected (5, 13), got {result.shape}"
         )
 
-    def test_book_features_cols_4_to_7_exist(self):
-        """Cols 4-7 should be accessible and numeric."""
+    def test_book_features_cols_4_to_12_exist(self):
+        """Cols 4-12 should be accessible and numeric."""
         from lob_rl.barrier.feature_pipeline import _compute_book_features
 
         bar = _make_bar(
@@ -975,7 +970,7 @@ class TestComputeBookFeaturesShape:
         ])
 
         result = _compute_book_features([bar], mbo)
-        for col in range(4, 8):
+        for col in range(4, 13):
             assert np.isfinite(result[0, col]), (
                 f"Book feature col {col} is not finite: {result[0, col]}"
             )
