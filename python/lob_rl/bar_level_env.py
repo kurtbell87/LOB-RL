@@ -5,14 +5,17 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from lob_rl.bar_aggregation import aggregate_bars
+from lob_rl._bar_layout import (
+    BAR_RETURN, SPREAD_CLOSE, IMBALANCE_CLOSE,
+    NUM_BAR_FEATURES as _NUM_BAR_FEATURES,
+)
 from lob_rl._reward import ACTION_MAP, compute_forced_flatten, compute_step_reward
 from lob_rl._statistics import rolling_std
 
 # Observation layout: 13 intra-bar + 7 cross-bar temporal + 1 position = 21
-_NUM_BAR_FEATURES = 13
 _NUM_TEMPORAL = 7
-_OBS_SIZE = 21
-_POSITION_IDX = 20
+_OBS_SIZE = _NUM_BAR_FEATURES + _NUM_TEMPORAL + 1
+_POSITION_IDX = _NUM_BAR_FEATURES + _NUM_TEMPORAL
 
 
 class BarLevelEnv(gym.Env):
@@ -67,9 +70,9 @@ class BarLevelEnv(gym.Env):
         if num_bars == 0:
             return
 
-        bar_return = self._bar_features[:, 0]
-        imbalance_close = self._bar_features[:, 6]
-        spread_close = self._bar_features[:, 4]
+        bar_return = self._bar_features[:, BAR_RETURN]
+        imbalance_close = self._bar_features[:, IMBALANCE_CLOSE]
+        spread_close = self._bar_features[:, SPREAD_CLOSE]
 
         # 0: return_lag1 — bar_return shifted by 1
         if num_bars > 1:
