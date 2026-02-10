@@ -71,9 +71,11 @@ class TestBarSizeDefault:
 
     def test_default_is_zero(self):
         """Parsing with no --bar-size should give bar_size=0."""
+        import re
         source = open(TRAIN_SCRIPT).read()
-        # Should have default=0 for bar-size
-        assert "default=0" in source or "default = 0" in source, (
+        # Should have default=0 (or default=cfg('bar_size', 0)) for bar-size
+        pattern = r"--bar-size.*?default\s*=\s*(?:cfg\([^,]+,\s*)?0\b"
+        assert re.search(pattern, source, re.DOTALL) is not None, (
             "bar-size default should be 0"
         )
 

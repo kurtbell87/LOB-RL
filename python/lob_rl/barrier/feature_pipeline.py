@@ -10,6 +10,10 @@ import numpy as np
 
 from lob_rl.barrier import TICK_SIZE
 
+# Default book feature values when MBO data is unavailable.
+# Order: [BBO imbalance, Depth imbalance, Cancel asymmetry, Mean spread]
+_BOOK_DEFAULTS = (0.5, 0.5, 0.0, 1.0)
+
 # RTH session boundaries for /MES (used for normalized session time)
 # Open: 8:30 CT, Close: 15:00 CT
 # RTH duration = 6.5 hours = 23400 seconds = 23400e9 nanoseconds
@@ -65,15 +69,24 @@ def compute_bar_features(bars, mbo_data=None):
     # We compute RTH boundaries from the session_date using America/Chicago TZ.
     rth_open_ns, rth_close_ns = _compute_rth_bounds(bars)
 
+    # Compute book features from MBO data if available
+    book_features = _compute_book_features(bars, mbo_data) if mbo_data is not None and len(mbo_data) > 0 else None
+
     for i, bar in enumerate(bars):
         # Col 0: Trade flow imbalance
         features[i, 0] = _trade_flow_imbalance(bar)
 
-        # Col 1: BBO imbalance (neutral default; TODO: compute from MBO data)
-        features[i, 1] = 0.5
-
-        # Col 2: Depth imbalance (neutral default; TODO: compute from MBO data)
-        features[i, 2] = 0.5
+        # Cols 1, 2, 10, 11: Book features
+        if book_features is not None:
+            features[i, 1] = book_features[i, 0]   # BBO imbalance
+            features[i, 2] = book_features[i, 1]   # Depth imbalance
+            features[i, 10] = book_features[i, 2]  # Cancel asymmetry
+            features[i, 11] = book_features[i, 3]  # Mean spread
+        else:
+            features[i, 1] = _BOOK_DEFAULTS[0]   # BBO imbalance
+            features[i, 2] = _BOOK_DEFAULTS[1]   # Depth imbalance
+            features[i, 10] = _BOOK_DEFAULTS[2]  # Cancel asymmetry
+            features[i, 11] = _BOOK_DEFAULTS[3]  # Mean spread
 
         # Col 3: Bar range in ticks
         bar_range = bar.high - bar.low
@@ -113,16 +126,113 @@ def compute_bar_features(bars, mbo_data=None):
         else:
             features[i, 9] = 0.0
 
-        # Col 10: Cancel rate asymmetry (zero default; TODO: compute from MBO data)
-        features[i, 10] = 0.0
-
-        # Col 11: Mean spread (unit default; TODO: compute from MBO data)
-        features[i, 11] = 1.0
-
         # Col 12: Session age
         features[i, 12] = min(bar.bar_index / 20.0, 1.0)
 
     return features
+
+
+def _compute_book_features(bars, mbo_data):
+    """Compute book-derived features from MBO data.
+
+    Returns np.ndarray of shape (n_bars, 4):
+        col 0: BBO imbalance [0, 1]
+        col 1: Depth imbalance [0, 1]
+        col 2: Cancel asymmetry [-1, +1]
+        col 3: Mean spread (ticks) > 0
+    """
+    from lob_rl.barrier.lob_reconstructor import OrderBook
+
+    n = len(bars)
+    result = np.zeros((n, 4), dtype=np.float64)
+    # Defaults (matches _BOOK_DEFAULTS order)
+    result[:, 0] = _BOOK_DEFAULTS[0]  # BBO imbalance
+    result[:, 1] = _BOOK_DEFAULTS[1]  # Depth imbalance
+    result[:, 2] = _BOOK_DEFAULTS[2]  # Cancel asymmetry
+    result[:, 3] = _BOOK_DEFAULTS[3]  # Mean spread
+
+    if mbo_data is None or len(mbo_data) == 0:
+        return result
+
+    # Extract arrays from DataFrame for speed
+    actions = mbo_data["action"].values
+    sides = mbo_data["side"].values
+    prices = mbo_data["price"].values.astype(np.float64)
+    sizes = mbo_data["size"].values.astype(np.int32)
+    order_ids = mbo_data["order_id"].values.astype(np.int64)
+    ts_events = mbo_data["ts_event"].values.astype(np.int64)
+
+    # Build bar boundary arrays for searchsorted
+    bar_t_ends = np.array([b.t_end for b in bars], dtype=np.int64)
+
+    # Assign each MBO message to a bar using searchsorted on bar t_end
+    # Messages with ts <= bar[i].t_end and ts > bar[i-1].t_end belong to bar i
+    bar_assignments = np.searchsorted(bar_t_ends, ts_events, side="left")
+
+    book = OrderBook()
+
+    for bar_idx in range(n):
+        # Get messages for this bar
+        mask = bar_assignments == bar_idx
+        bar_actions = actions[mask]
+        bar_sides = sides[mask]
+        bar_prices = prices[mask]
+        bar_sizes = sizes[mask]
+        bar_oids = order_ids[mask]
+
+        bid_cancels = 0
+        ask_cancels = 0
+        spread_samples = []
+
+        for j in range(len(bar_actions)):
+            act = bar_actions[j]
+            side = bar_sides[j]
+            price = bar_prices[j]
+            size = int(bar_sizes[j])
+            oid = int(bar_oids[j])
+
+            book.apply(act, side, price, size, order_id=oid)
+
+            # Count cancels per side
+            if act == "C":
+                if side == "B":
+                    bid_cancels += 1
+                elif side == "A":
+                    ask_cancels += 1
+
+            # Sample spread after each event
+            s = book.spread_ticks()
+            if s > 0:
+                spread_samples.append(s)
+
+        # Snapshot book at bar close
+        bid_qty = book.best_bid_qty()
+        ask_qty = book.best_ask_qty()
+        total_bbo = bid_qty + ask_qty
+        if total_bbo > 0:
+            result[bar_idx, 0] = bid_qty / total_bbo
+        else:
+            result[bar_idx, 0] = 0.5
+
+        total_bid = book.total_bid_depth(5)
+        total_ask = book.total_ask_depth(5)
+        total_depth = total_bid + total_ask
+        if total_depth > 0:
+            result[bar_idx, 1] = total_bid / total_depth
+        else:
+            result[bar_idx, 1] = 0.5
+
+        # Cancel asymmetry
+        total_cancels = bid_cancels + ask_cancels
+        result[bar_idx, 2] = (bid_cancels - ask_cancels) / (total_cancels + 1e-10)
+
+        # Mean spread
+        if spread_samples:
+            result[bar_idx, 3] = np.mean(spread_samples)
+        else:
+            result[bar_idx, 3] = 1.0
+
+    return result
 
 
 def _compute_rth_bounds(bars):

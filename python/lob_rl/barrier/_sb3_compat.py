@@ -44,10 +44,6 @@ def _convert_legacy_net_arch(net_arch):
     return dict(pi=pi_layers, vf=vf_layers), shared
 
 
-# Store shared sizes per policy instance for MlpExtractor patching
-_pending_shared_sizes = {}
-
-
 def patch_sb3_net_arch():
     """Monkey-patch MaskableActorCriticPolicy and MlpExtractor."""
     try:
@@ -59,13 +55,9 @@ def patch_sb3_net_arch():
 
         def _patched_policy_init(self, *args, **kwargs):
             if "net_arch" in kwargs and kwargs["net_arch"] is not None:
-                converted, shared = _convert_legacy_net_arch(kwargs["net_arch"])
+                converted, _shared = _convert_legacy_net_arch(kwargs["net_arch"])
                 kwargs["net_arch"] = converted
-                if shared is not None:
-                    _pending_shared_sizes[id(self)] = shared
             _original_policy_init(self, *args, **kwargs)
-            # Clean up
-            _pending_shared_sizes.pop(id(self), None)
 
         if not getattr(MaskableActorCriticPolicy, "_net_arch_patched", False):
             MaskableActorCriticPolicy.__init__ = _patched_policy_init

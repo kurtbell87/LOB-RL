@@ -54,7 +54,7 @@ class TestCheckpointFreqFlag:
 
     def test_checkpoint_freq_default_is_zero(self):
         """--checkpoint-freq default should be 0."""
-        pattern = r"add_argument\s*\(\s*['\"]--checkpoint-freq['\"].*?default\s*=\s*0\b"
+        pattern = r"add_argument\s*\(\s*['\"]--checkpoint-freq['\"].*?default\s*=\s*(?:cfg\([^,]+,\s*)?0\b"
         match = re.search(pattern, self.source, re.DOTALL)
         assert match is not None, "--checkpoint-freq default should be 0"
 
@@ -675,7 +675,7 @@ class TestEdgeCases:
 
     def test_checkpoint_freq_zero_is_default(self):
         """Default checkpoint_freq=0 means no checkpointing."""
-        pattern = r"add_argument\s*\(\s*['\"]--checkpoint-freq['\"].*?default\s*=\s*0"
+        pattern = r"add_argument\s*\(\s*['\"]--checkpoint-freq['\"].*?default\s*=\s*(?:cfg\([^,]+,\s*)?0"
         match = re.search(pattern, self.source, re.DOTALL)
         assert match is not None, "Default checkpoint-freq should be 0 (disabled)"
 

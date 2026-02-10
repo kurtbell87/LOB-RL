@@ -206,6 +206,50 @@ def extract_trades_from_mbo(filepath, instrument_id=None):
     return trades
 
 
+def extract_all_mbo(filepath, instrument_id=None):
+    """Read a .dbn.zst file and extract ALL MBO messages (not just trades).
+
+    Parameters
+    ----------
+    filepath : str
+        Path to .dbn.zst file.
+    instrument_id : int, optional
+        Filter to specific contract.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: action (str), side (str), price (float64), size (int32),
+                 order_id (int64), ts_event (int64).
+        Sorted by ts_event ascending.
+    """
+    import databento as db
+
+    store = db.DBNStore.from_file(filepath)
+    df = store.to_df()
+
+    if instrument_id is not None:
+        df = df[df["instrument_id"] == instrument_id]
+
+    result = pd.DataFrame()
+    if len(df) == 0:
+        result = pd.DataFrame(columns=["action", "side", "price", "size", "order_id", "ts_event"])
+        return result
+
+    result["action"] = df["action"].astype(str)
+    result["side"] = df["side"].astype(str)
+    result["price"] = df["price"].values.astype(np.float64)
+    result["size"] = df["size"].values.astype(np.int32)
+    result["order_id"] = df["order_id"].values.astype(np.int64)
+
+    if "ts_event" in df.columns:
+        result["ts_event"] = df["ts_event"].astype(np.int64).values
+    else:
+        result["ts_event"] = df.index.astype(np.int64).values
+
+    return result.sort_values("ts_event").reset_index(drop=True)
+
+
 def build_session_bars(filepath, n=500, instrument_id=None):
     """End-to-end: read MBO file, extract trades, filter RTH, build bars.
 
