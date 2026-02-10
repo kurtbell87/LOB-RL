@@ -84,12 +84,14 @@ static Message convert_flat(const FlatRecord& rec) {
     return msg;
 }
 
+static constexpr char BIN_MAGIC[4] = {'L', 'O', 'B', 'R'};
+
 static bool is_bin_format(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) return false;
     char magic[4] = {};
     file.read(magic, 4);
-    return file.good() && std::memcmp(magic, "LOBR", 4) == 0;
+    return file.good() && std::memcmp(magic, BIN_MAGIC, 4) == 0;
 }
 
 // ── Impl with enum-based dispatch ──────────────────────────────────────
@@ -128,7 +130,7 @@ struct DbnFileSource::Impl {
         file.read(reinterpret_cast<char*>(&record_count), sizeof(record_count));
         file.read(reinterpret_cast<char*>(&inst_id), sizeof(inst_id));
 
-        if (!file.good() || std::memcmp(magic, "LOBR", 4) != 0) {
+        if (!file.good() || std::memcmp(magic, BIN_MAGIC, 4) != 0) {
             throw std::runtime_error("Invalid binary file: " + path);
         }
 

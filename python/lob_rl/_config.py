@@ -15,12 +15,9 @@ def make_session_config(session_config):
         return lob_rl_core.SessionConfig.default_rth()
     elif isinstance(session_config, dict):
         cfg = lob_rl_core.SessionConfig()
-        if "rth_open_ns" in session_config:
-            cfg.rth_open_ns = session_config["rth_open_ns"]
-        if "rth_close_ns" in session_config:
-            cfg.rth_close_ns = session_config["rth_close_ns"]
-        if "warmup_messages" in session_config:
-            cfg.warmup_messages = session_config["warmup_messages"]
+        for key in ("rth_open_ns", "rth_close_ns", "warmup_messages"):
+            if key in session_config:
+                setattr(cfg, key, session_config[key])
         return cfg
     else:
         return session_config
