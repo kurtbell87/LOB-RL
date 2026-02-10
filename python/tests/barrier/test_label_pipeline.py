@@ -13,58 +13,7 @@ import pytest
 
 from lob_rl.barrier.bar_pipeline import TradeBar
 
-
-# ---------------------------------------------------------------------------
-# Synthetic bar helpers (test-only, no implementation logic)
-# ---------------------------------------------------------------------------
-
-TICK_SIZE = 0.25  # /MES tick size
-
-
-def _make_bar(bar_index, open_price, high, low, close,
-              trade_prices=None, trade_sizes=None, volume=100,
-              t_start=0, t_end=1, session_date="2022-06-15"):
-    """Create a TradeBar with explicit OHLC and optional trade sequences."""
-    if trade_prices is None:
-        trade_prices = np.array([close], dtype=np.float64)
-    else:
-        trade_prices = np.asarray(trade_prices, dtype=np.float64)
-    if trade_sizes is None:
-        trade_sizes = np.ones(len(trade_prices), dtype=np.int32)
-    else:
-        trade_sizes = np.asarray(trade_sizes, dtype=np.int32)
-    return TradeBar(
-        bar_index=bar_index,
-        open=open_price,
-        high=high,
-        low=low,
-        close=close,
-        volume=volume,
-        vwap=(high + low) / 2.0,
-        t_start=t_start,
-        t_end=t_end,
-        session_date=session_date,
-        trade_prices=trade_prices,
-        trade_sizes=trade_sizes,
-    )
-
-
-def _make_flat_bars(n, base_price=4000.0, spread=1.0):
-    """Create n bars that stay within a narrow range around base_price.
-
-    These bars will NOT trigger any barriers with default a=20, b=10.
-    """
-    bars = []
-    for k in range(n):
-        bars.append(_make_bar(
-            bar_index=k,
-            open_price=base_price,
-            high=base_price + spread * TICK_SIZE,
-            low=base_price - spread * TICK_SIZE,
-            close=base_price,
-            trade_prices=np.array([base_price], dtype=np.float64),
-        ))
-    return bars
+from .conftest import TICK_SIZE, make_bar as _make_bar, make_flat_bars as _make_flat_bars
 
 
 # ===========================================================================

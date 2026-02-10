@@ -16,6 +16,7 @@ Gymnasium wrappers and utilities on top of the C++ `lob_rl_core` module.
 | `_obs_layout.py` | C++ observation layout constants (index slices, sizes). Shared by `precomputed_env.py` and `bar_aggregation.py`. |
 | `_reward.py` | Shared reward/flatten logic: `ACTION_MAP`, `compute_forced_flatten()`, `compute_step_reward()`. Used by `precomputed_env.py` and `bar_level_env.py`. |
 | `_statistics.py` | Shared statistical utilities: `rolling_std(arr, window, warmup=True)`. Used by `precomputed_env.py` and `bar_level_env.py`. |
+| `barrier/` | Barrier pipeline subpackage. `TICK_SIZE=0.25` in `__init__.py`. `bar_pipeline.py` (bar construction), `label_pipeline.py` (label construction), `feature_pipeline.py` (feature extraction). |
 | ~~`convert_dbn.py`~~ | Deleted (PR #11). |
 
 ## API Signatures
