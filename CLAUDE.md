@@ -1,6 +1,6 @@
 ## Current State (updated 2026-02-09)
 
-- **Build:** `build-release/` is current. 418 C++ tests pass (`./lob_tests`). 1836 Python tests pass (1308 core + 528 barrier). **2254 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
+- **Build:** `build-release/` is current. 418 C++ tests pass (`./lob_tests`). 1858 Python tests pass (1308 core + 550 barrier). **2276 total.** (15 C++ + 4 Python skipped — need `.dbn.zst` fixture.)
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent) all installed.
 - **Shuffle split DONE:** `--shuffle-split` and `--seed 42` on `train.py`. Reproducible random train/val/test splits. Episodes are independent days. PR #14 merged.
@@ -36,10 +36,12 @@
 - **AWS compute in experiment.sh DONE:** FRAME agent declares `compute: local|aws` in specs. RUN agent dispatches to AWS when `compute: aws` — launches EC2 Spot instances, polls state, fetches from S3, evals locally. `runpod` kept as deprecated fallback.
 - **exp-001 REFUTED:** 199d does not fix OOS. LSTM 199d val -59.95, MLP 199d val -75.53 ≈ MLP 20d val -75.82. 199d eliminates memorization (expl_var 0.30 vs 0.97) but OOS unchanged. Data quantity is not the primary bottleneck.
 - **exp-002 REFUTED:** Removing exec cost improves OOS by ~35 points but doesn't flip positive. Val -4.43 without exec cost (vs -39.55 with). Gap to gross profitability is ~5 points.
-- **Barrier pipeline (T1-T9) DONE:** Bar construction (PR #20), label pipeline (PR #21), feature extraction (PR #22), Gambler's ruin validation (PR #23), regime-switch validation (PR #24), supervised diagnostic (PR #25), reward accounting (PR #26), barrier env (PR #27), PPO training infra (PR #28). All via TDD. 528 barrier tests.
+- **Barrier pipeline (T1-T9b) DONE:** Bar construction (PR #20), label pipeline (PR #21), feature extraction (PR #22), Gambler's ruin validation (PR #23), regime-switch validation (PR #24), supervised diagnostic (PR #25), reward accounting (PR #26), barrier env (PR #27), PPO training infra (PR #28), training script (PR #29). All via TDD. 550 barrier tests.
 - **T9 PPO Training Infrastructure DONE (PR #28):** `multi_session_env.py` — `MultiSessionBarrierEnv` multi-session Gymnasium wrapper. `barrier_vec_env.py` — SB3-compatible VecEnv helpers. `training_diagnostics.py` — `BarrierDiagnosticCallback` with entropy/value loss/flat rate/win rate tracking + red flag detection + CSV output. `_sb3_compat.py` — SB3/PyTorch compatibility shim. `linear_schedule()` for LR decay. 41 tests (12 multi-session + 6 vec env + 13 diagnostics + 10 PPO training).
-- **Next task:** Create `scripts/train_barrier.py` CLI script (wiring T9 modules), then T10-T12 require GPU training runs via `./experiment.sh`.
+- **T9b Training Script DONE (PR #29):** `scripts/train_barrier.py` — CLI training script with `parse_args()`, `split_sessions()`, `build_model()`, `main()`. Section 5.2 hyperparameters hardcoded. 22 tests.
+- **Next task:** T10-T12 require GPU training runs via `./experiment.sh`. T10: Behavioral Inspection, T11: Hyperparameter Sweep, T12: OOS Evaluation.
 - **Research kit installed:** `experiment.sh`, prompts, templates, QUESTIONS.md, DOMAIN_PRIORS.md, RESEARCH_LOG.md all configured.
+- **Architecture exploration UNBLOCKED (doc-only):** QUESTIONS.md, DOMAIN_PRIORS.md updated to allow architecture comparison experiments (Transformer, SSM, custom SB3 feature extractors) once P0 supervised diagnostic confirms signal in 132-dim barrier features. No code changes — SB3 `features_extractor_class` is the extension point. See DOMAIN_PRIORS.md "Architecture exploration" section.
 - **Experiments completed:** 9 total (1 confirmed, 8 refuted). All OOS results negative. See `RESEARCH_LOG.md`.
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
 - **Precompute hint:** If cache needs rebuilding: `precompute_cache.py --roll-calendar ... --workers 8` (script supports `--workers N` via `ProcessPoolExecutor`).
@@ -54,6 +56,8 @@
 - Don't check if dependencies are installed — they are.
 - Don't read source files to understand architecture — read the `README.md` in each directory first.
 - Don't run training or experiments outside the experiment pipeline (`./experiment.sh`).
+- Don't propose architecture experiments before the P0 supervised diagnostic on barrier features passes. Architecture amplifies signal; it can't create it.
+- Don't build custom training loops for architecture experiments. Use SB3's `features_extractor_class` instead.
 
 ## Breadcrumb Maintenance (MANDATORY)
 

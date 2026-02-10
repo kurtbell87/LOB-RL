@@ -4,22 +4,17 @@
 
 ### Immediate next step
 
-**Create `scripts/train_barrier.py`.** The T9 TDD cycle built all supporting modules (MultiSessionBarrierEnv, barrier_vec_env, training_diagnostics, _sb3_compat) but the standalone CLI training script was not created. This script wires the modules together into an end-to-end training pipeline.
+**T10-T12 require GPU training runs.** All code infrastructure is complete (T1-T9b). The remaining tasks need actual GPU training with real data via `./experiment.sh`:
 
-**Script requirements:**
-- CLI args: `--data-dir`, `--output-dir`, `--bar-size`, `--lookback`, `--n-envs`, `--total-timesteps`, `--eval-freq`, `--checkpoint-freq`, `--train-frac`, `--seed`, `--resume`
-- Data loading: discover .dbn.zst files → build bars/labels/features per session → split train/val/test
-- Model: MaskablePPO with Section 5.2 hyperparams (lr=1e-4 linear decay, batch=2048, mini-batch=256, epochs=10, gamma=0.99, gae_lambda=0.95, clip=0.2, ent_coef=0.01)
-- Architecture: net_arch=[256,256,dict(pi=[64],vf=[64])], ReLU
-- Callbacks: BarrierDiagnosticCallback, eval callback, checkpoint callback
-- Output: model checkpoint, VecNormalize stats, diagnostic CSV, tensorboard logs
+- **T10: Behavioral Inspection** — Train policy on GPU, then inspect action distributions, position holding times, trade frequency, and exit type breakdown. Requires a trained checkpoint from `scripts/train_barrier.py`.
+- **T11: Hyperparameter Sweep** — Multiple training runs with different hyperparameter configurations. Requires AWS EC2 Spot infrastructure.
+- **T12: OOS Evaluation** — Evaluate best policy from sweep on held-out test data.
 
-**After training script:** T10-T12 require GPU training runs via `./experiment.sh`:
-- T10: Behavioral Inspection — needs trained policy from actual GPU training
-- T11: Hyperparameter Sweep — needs multiple training runs
-- T12: OOS Evaluation — needs best policy from sweep
+**Training script ready:** `scripts/train_barrier.py` has CLI args (`--data-dir`, `--output-dir`, `--bar-size`, `--lookback`, `--n-envs`, `--total-timesteps`, etc.), Section 5.2 hyperparameters, MaskablePPO with net_arch=[256,256,dict(pi=[64],vf=[64])].
 
-**Remaining pipeline:** train_barrier.py → actual GPU training → T10 → T11 → T12.
+**Remaining pipeline:** GPU training → T10 → T11 → T12.
+
+**After T10-T12 (if supervised diagnostic confirms signal):** Architecture comparison is the next high-value experiment. DOMAIN_PRIORS.md has candidate architectures and implementation guidance via SB3's `features_extractor_class`. QUESTIONS.md has the decision gate. Do not start this before the P0 gate passes.
 
 ### Roll calendar
 
@@ -36,7 +31,7 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 
 ### What was just completed
 
-**PPO Barrier-Hit Agent pipeline T1-T9 complete (2026-02-09).** All nine data pipeline + environment + training infra tasks completed via strict TDD (`./tdd.sh`):
+**PPO Barrier-Hit Agent pipeline T1-T9b complete (2026-02-09).** All data pipeline + environment + training infra tasks completed via strict TDD (`./tdd.sh`):
 - **T1: Bar Construction Pipeline** — PR #20. `TradeBar`, `build_bars_from_trades()`, RTH filtering, dataset builder. 59 tests.
 - **T2: Label Construction Pipeline** — PR #21. `BarrierLabel`, `compute_labels()`, intrabar tiebreaking, T_max calibration. 65 tests.
 - **T3: Feature Extraction** — PR #22. 13 bar-level features, z-score normalization, lookback assembly. 92 tests.
@@ -46,8 +41,9 @@ Source: `data/symbology.json` from Databento download. Roll dates are ~1 week be
 - **T7: Reward Accounting** — PR #26. `RewardConfig`, `PositionState`, `compute_entry()`, `compute_hold_reward()`, `compute_unrealized_pnl()`, `compute_reward_sequence()`, `get_action_mask()`. Hand-computed reward sequences for all exit types. 46 tests.
 - **T8: Barrier Environment** — PR #27. `BarrierEnv(gymnasium.Env)` — 132-dim obs, Discrete(4) action space, action masking, force-close at session end. Refactor: extracted `compute_mtm_reward()` and `classify_exit()` into reward_accounting.py. 41 tests.
 - **T9: PPO Training Infrastructure** — PR #28. `MultiSessionBarrierEnv` multi-session wrapper, `barrier_vec_env` SB3 helpers, `BarrierDiagnosticCallback` with Section 5.3 metrics, `_sb3_compat` shim, `linear_schedule`. 41 tests.
+- **T9b: Training Script** — PR #29. `scripts/train_barrier.py` CLI entry point with `parse_args()`, `split_sessions()`, `build_model()`, `main()`. Section 5.2 hyperparameters. 22 tests.
 
-All code in `python/lob_rl/barrier/` with tests in `python/tests/barrier/`. 1836 Python tests total (1308 core + 528 barrier).
+All code in `python/lob_rl/barrier/` + `scripts/` with tests in `python/tests/barrier/`. 1858 Python tests total (1308 core + 550 barrier).
 
 **Prior: AWS EC2 Spot migration (2026-02-09).** Replaces RunPod with AWS EC2 Spot for all remote training. Six new files in `aws/`, five existing files modified (~700 lines total):
 
@@ -190,7 +186,7 @@ Key finding: **More training steps made things worse, not better.** MLP val went
 
 ## Don't waste time on
 
-- **Build verification** — `build-release/` is current, 418 C++ + 1304 Python = 1722 tests pass.
+- **Build verification** — `build-release/` is current, 418 C++ + 1858 Python = 2276 tests pass.
 - **Dependency checks** — SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp all installed.
 - **Reading PRD.md** — everything relevant is in this file.
 - **Codebase exploration** — read directory `README.md` files instead.
@@ -222,8 +218,8 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 ## Test coverage
 
 - **418 C++ tests** — `cd build-release && ./lob_tests` (15 skipped: need `.dbn.zst` fixture)
-- **1836 Python tests** (1308 core + 528 barrier) — `PYTHONPATH=build-release:python uv run --with pytest --with pandas --with scipy --with scikit-learn --with torch --with sb3-contrib pytest python/tests/` (4 core + 8 barrier skipped: fixture-dependent)
-- **2254 total**, all passing.
+- **1858 Python tests** (1308 core + 550 barrier) — `PYTHONPATH=build-release:python uv run --with pytest --with pandas --with scipy --with scikit-learn --with torch --with sb3-contrib pytest python/tests/` (4 core + 8 barrier skipped: fixture-dependent)
+- **2276 total**, all passing.
 
 ## Remaining work
 
@@ -247,6 +243,7 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 | **Observation signal audit** | **P0 — Critical** | Supervised classifier on 21-dim obs to determine if signal exists. If ~50% accuracy, feature engineering needed. |
 | **199d no-exec-cost 10M+ steps** | **P0** | Only positive OOS ever (exp-002 Run C val +10.93, undertrained). Needs AWS GPU. |
 | **Feature engineering** | **P0 (if signal audit fails)** | Order flow imbalance, trade imbalance, microstructure features beyond BBO. |
+| **Architecture comparison** | **P1 (gated on P0 signal audit)** | Transformer / SSM / LSTM on 132-dim barrier features via SB3 `features_extractor_class`. Blocked until supervised diagnostic confirms signal. See DOMAIN_PRIORS.md. |
 | Checkpoint early stopping | P1 | eval 4M vs 5M checkpoints. |
 | VecNormalize audit | P1 | Check for cross-day information leakage. |
 | More data (second year) | Low | 2023-2024 as complement if 2022 generalizes well. |
