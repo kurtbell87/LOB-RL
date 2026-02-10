@@ -134,7 +134,7 @@ def _compute_rth_bounds(bars):
     if not bars:
         return 0, 1
 
-    session_date = bars[0].session_date if bars else ""
+    session_date = bars[0].session_date
 
     if session_date:
         try:
@@ -175,28 +175,27 @@ def _trade_flow_imbalance(bar):
     if len(prices) <= 1:
         return 0.0
 
-    buy_vol = 0.0
-    sell_vol = 0.0
-    prev_side = 0  # 0 = unknown
+    # Compute price diffs: +1 for uptick, -1 for downtick, 0 for unchanged
+    diffs = np.sign(np.diff(prices))
 
-    for j in range(len(prices)):
-        if j == 0:
-            # First trade: classify as neutral or use open direction
-            prev_side = 0
+    # Build side array: first trade is neutral (0), rest from diffs
+    # Forward-fill zeros (equal prices keep previous side)
+    sides = np.empty(len(prices), dtype=np.float64)
+    sides[0] = 0.0
+    sides[1:] = diffs
+
+    # Forward-fill: replace 0s with the last non-zero value
+    prev = 0.0
+    for j in range(len(sides)):
+        if sides[j] != 0.0:
+            prev = sides[j]
         else:
-            if prices[j] > prices[j - 1]:
-                prev_side = 1
-            elif prices[j] < prices[j - 1]:
-                prev_side = -1
-            # if equal, keep prev_side
+            sides[j] = prev
 
-        if prev_side > 0:
-            buy_vol += sizes[j]
-        elif prev_side < 0:
-            sell_vol += sizes[j]
-        # neutral trades not counted
-
+    buy_vol = float(np.sum(sizes[sides > 0]))
+    sell_vol = float(np.sum(sizes[sides < 0]))
     total = buy_vol + sell_vol
+
     if total == 0:
         return 0.0
 
