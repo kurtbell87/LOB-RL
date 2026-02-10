@@ -24,7 +24,6 @@ from .conftest import (
 
 _H = DEFAULT_H
 _OBS_DIM = DEFAULT_OBS_DIM
-_make_session_data_list = make_session_data_list
 
 
 # ===========================================================================
@@ -39,7 +38,7 @@ class TestMakeBarrierEnvFn:
         """make_barrier_env_fn() returns a callable that creates a valid env."""
         from lob_rl.barrier.barrier_vec_env import make_barrier_env_fn
 
-        sessions = _make_session_data_list(n_sessions=3)
+        sessions = make_session_data_list(n_sessions=3)
         fn = make_barrier_env_fn(sessions, seed=42)
 
         assert callable(fn), "make_barrier_env_fn must return a callable"
@@ -66,7 +65,7 @@ class TestMakeBarrierVecEnvDummy:
         """make_barrier_vec_env(use_subprocess=False) creates a working DummyVecEnv."""
         from lob_rl.barrier.barrier_vec_env import make_barrier_vec_env
 
-        sessions = _make_session_data_list(n_sessions=3)
+        sessions = make_session_data_list(n_sessions=3)
         vec_env = make_barrier_vec_env(
             sessions, n_envs=2, use_subprocess=False, seed=42,
         )
@@ -80,7 +79,7 @@ class TestMakeBarrierVecEnvDummy:
         """Created VecEnv has correct num_envs."""
         from lob_rl.barrier.barrier_vec_env import make_barrier_vec_env
 
-        sessions = _make_session_data_list(n_sessions=3)
+        sessions = make_session_data_list(n_sessions=3)
         n_envs = 3
         vec_env = make_barrier_vec_env(
             sessions, n_envs=n_envs, use_subprocess=False, seed=42,
@@ -104,7 +103,7 @@ class TestVecEnvShapes:
         from lob_rl.barrier.barrier_vec_env import make_barrier_vec_env
 
         n_envs = 2
-        sessions = _make_session_data_list(n_sessions=3)
+        sessions = make_session_data_list(n_sessions=3)
         vec_env = make_barrier_vec_env(
             sessions, n_envs=n_envs, use_subprocess=False, seed=42,
         )
@@ -131,7 +130,7 @@ class TestVecEnvShapes:
         from lob_rl.barrier.barrier_vec_env import make_barrier_vec_env
 
         n_envs = 2
-        sessions = _make_session_data_list(n_sessions=3)
+        sessions = make_session_data_list(n_sessions=3)
         vec_env = make_barrier_vec_env(
             sessions, n_envs=n_envs, use_subprocess=False, seed=42,
         )
@@ -155,7 +154,7 @@ class TestVecEnvRandomAgent:
         from lob_rl.barrier.barrier_vec_env import make_barrier_vec_env
 
         n_envs = 2
-        sessions = _make_session_data_list(n_sessions=3, n_bars=30)
+        sessions = make_session_data_list(n_sessions=3, n_bars=30)
         vec_env = make_barrier_vec_env(
             sessions, n_envs=n_envs, use_subprocess=False, seed=42,
         )

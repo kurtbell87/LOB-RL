@@ -18,8 +18,13 @@ import types
 
 def pytest_configure(config):
     """Register python/tests as a namespace package in sys.modules."""
-    tests_dir = os.path.join(os.path.dirname(__file__), "python", "tests")
+    project_root = os.path.dirname(__file__)
+    tests_dir = os.path.join(project_root, "python", "tests")
     barrier_dir = os.path.join(tests_dir, "barrier")
+
+    # Add project root to sys.path so `from scripts.xxx import ...` works
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
 
     # 1. Register 'tests' as a namespace package
     if "tests" not in sys.modules:

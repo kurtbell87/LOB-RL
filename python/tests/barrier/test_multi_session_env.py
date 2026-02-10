@@ -25,24 +25,19 @@ from .conftest import (
 
 
 # ---------------------------------------------------------------------------
-# Helpers — aliases for backward compatibility within this module
+# Helpers
 # ---------------------------------------------------------------------------
 
 _H = DEFAULT_H
 _OBS_DIM = DEFAULT_OBS_DIM
-_make_session_data = make_session_data
-_make_session_data_list = make_session_data_list
 
 
 def _make_multi_env(n_sessions=5, n_bars=40, config=None, shuffle=False, seed=None):
     """Create a MultiSessionBarrierEnv from synthetic data."""
     from lob_rl.barrier.multi_session_env import MultiSessionBarrierEnv
 
-    sessions = _make_session_data_list(n_sessions=n_sessions, n_bars=n_bars)
+    sessions = make_session_data_list(n_sessions=n_sessions, n_bars=n_bars)
     return MultiSessionBarrierEnv(sessions, config=config, shuffle=shuffle, seed=seed)
-
-
-_run_episode = run_episode
 
 
 # ===========================================================================
@@ -182,7 +177,7 @@ class TestShuffleAndDeterminism:
     def test_multi_session_deterministic_seed(self):
         """Same seed produces same session order."""
         n_sessions = 5
-        sessions = _make_session_data_list(n_sessions=n_sessions)
+        sessions = make_session_data_list(n_sessions=n_sessions)
 
         from lob_rl.barrier.multi_session_env import MultiSessionBarrierEnv
 
@@ -226,10 +221,10 @@ class TestSkipShortSessions:
 
         h = _H
         # Create mix: 2 good sessions (40 bars) and 2 short sessions (5 bars < h=10)
-        good1 = _make_session_data(n_bars=40, base_price=4000.0, h=h)
-        short1 = _make_session_data(n_bars=5, base_price=4010.0, h=h)
-        good2 = _make_session_data(n_bars=40, base_price=4020.0, h=h)
-        short2 = _make_session_data(n_bars=3, base_price=4030.0, h=h)
+        good1 = make_session_data(n_bars=40, base_price=4000.0, h=h)
+        short1 = make_session_data(n_bars=5, base_price=4010.0, h=h)
+        good2 = make_session_data(n_bars=40, base_price=4020.0, h=h)
+        short2 = make_session_data(n_bars=3, base_price=4030.0, h=h)
 
         # short sessions will have features with 0 rows → should be skipped
         # Actually, with n_bars=5 < h=10, feature matrix has shape (0, 130)
@@ -360,7 +355,7 @@ class TestRandomAgentMultiSession:
 
         total_rewards = []
         for ep in range(10):
-            reward, steps = _run_episode(env, rng)
+            reward, steps = run_episode(env, rng)
             total_rewards.append(reward)
             assert isinstance(reward, (float, int, np.floating)), (
                 f"Episode {ep}: non-numeric reward {reward}"
