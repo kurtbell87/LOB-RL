@@ -2,7 +2,7 @@
 
 pytest-based tests. Run with: `cd build-release && PYTHONPATH=.:../python uv run pytest ../python/tests/`
 
-**1520 tests** (1304 core + 216 barrier), all passing (4 core + 8 barrier skipped: fixture-dependent).
+**1664 tests** (1308 core + 356 barrier), all passing (4 core + 8 barrier skipped: fixture-dependent).
 
 ## Test files
 
@@ -39,6 +39,8 @@ pytest-based tests. Run with: `cd build-release && PYTHONPATH=.:../python uv run
 | `barrier/test_bar_pipeline.py` | 59 tests: TradeBar dataclass, `build_bars_from_trades()`, `filter_rth_trades()`, `build_session_bars()`, `build_dataset()` |
 | `barrier/test_label_pipeline.py` | 65 tests: BarrierLabel, `compute_labels()`, barrier hit detection, tiebreaking, short direction, T_max calibration |
 | `barrier/test_feature_pipeline.py` | 92 tests: 13-feature computation, z-score normalization, lookback assembly, `build_feature_matrix()` |
+| `barrier/test_gamblers_ruin.py` | 81 tests: `gamblers_ruin_analytic()`, `generate_random_walk()`, `validate_drift_level()`, `run_validation()`, 5 drift levels |
+| `barrier/test_regime_switch.py` | 51 tests: `generate_regime_switch_trades()`, `validate_regime_switch()`, KS tests, normalization adaptation, regime boundary detection |
 | `barrier/conftest.py` | Shared helpers: `make_bar()`, `make_flat_bars()`, `make_session_bars()`, `TICK_SIZE`, RTH constants |
 
 ## Fixtures
