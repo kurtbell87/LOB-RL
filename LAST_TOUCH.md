@@ -4,17 +4,24 @@
 
 ### Immediate next step
 
-**T10-T12 require GPU training runs.** All code infrastructure is complete (T1-T9b). The remaining tasks need actual GPU training with real data via `./experiment.sh`:
+**T6 CONFIRMED — weak signal. Proceed to T10-T12 GPU training.**
 
-- **T10: Behavioral Inspection** — Train policy on GPU, then inspect action distributions, position holding times, trade frequency, and exit type breakdown. Requires a trained checkpoint from `scripts/train_barrier.py`.
-- **T11: Hyperparameter Sweep** — Multiple training runs with different hyperparameter configurations. Requires AWS EC2 Spot infrastructure.
-- **T12: OOS Evaluation** — Evaluate best policy from sweep on held-out test data.
+The T6 supervised diagnostic (2026-02-10) shows **weak but real directional signal** in the barrier features:
+- Bidirectional framing: {long_profit, short_profit, flat} — balanced 33/33/35%
+- MLP 39.3% / RF 40.5% vs 34.5% baseline (+5pp above chance)
+- Consistent across shuffle-split and chronological splits
+- Signal is real but small; massive overfitting gap (90% train → 39% test)
 
-**Training script ready:** `scripts/train_barrier.py` has CLI args (`--data-dir`, `--output-dir`, `--bar-size`, `--lookback`, `--n-envs`, `--total-timesteps`, etc.), Section 5.2 hyperparameters, MaskablePPO with net_arch=[256,256,dict(pi=[64],vf=[64])].
+**P0 gate PASSED.** RL has something to learn. Architecture comparison is now unblocked.
 
-**Remaining pipeline:** GPU training → T10 → T11 → T12.
+**Action items (in priority order):**
+1. **T10-T12 GPU training** via `./experiment.sh` — train barrier PPO on the 247-session cache. Use `scripts/train_barrier.py`.
+2. **Fix dead book features (P1):** `precompute_barrier_cache.py` needs `mbo_data` passed to `compute_bar_features()`. 4/13 features are constant zero (BBO imbal, depth imbal, cancel asym, spread). Activating these may boost signal from 40% → higher.
+3. **Architecture comparison (P1, now unblocked):** Transformer / SSM / LSTM on barrier features via SB3 `features_extractor_class`. RF slightly beats MLP, suggesting architecture matters.
 
-**After T10-T12 (if supervised diagnostic confirms signal):** Architecture comparison is the next high-value experiment. DOMAIN_PRIORS.md has candidate architectures and implementation guidance via SB3's `features_extractor_class`. QUESTIONS.md has the decision gate. Do not start this before the P0 gate passes.
+**Key insight from T6:** τ_{+} (long profit) and τ_{-} (short profit) are **mutually exclusive** events. If price rises a=20 before falling b=10 (long profit), the short already stopped at +10. The correct classification target is the *direction* (long/short/flat), not the single-direction barrier outcome.
+
+**Training script ready:** `scripts/train_barrier.py` with CLI args, Section 5.2 hyperparameters, MaskablePPO with net_arch=[256,256,dict(pi=[64],vf=[64])].
 
 ### Roll calendar
 
@@ -30,6 +37,26 @@
 Source: `data/symbology.json` from Databento download. Roll dates are ~1 week before CME 3rd-Friday expiry.
 
 ### What was just completed
+
+**T6 Supervised Diagnostic run (2026-02-10).** Result: **CONFIRMED — weak signal.**
+
+v1 (long-only, misleading): MLP 61.6% vs 67.4% baseline on imbalanced 67/33/0% classes. Appeared to show no signal. This framing was wrong — it tests gambler's ruin, not directional predictability.
+
+v2 (bidirectional, correct): Classifies {long_profitable, short_profitable, flat}. Key insight: τ_{+} and τ_{-} are mutually exclusive (long profit at +20 precludes short profit; short stops at +10 first). Distribution is balanced (33/33/35%).
+
+| Model | Shuffle Acc | Chrono Acc | Baseline | Signal |
+|-------|-----------|-----------|----------|--------|
+| MLP [256,256] | 39.3% | 39.1% | 34.5% | +4.8pp |
+| RF (100 trees) | 40.5% | 39.6% | 34.5% | +5.9pp |
+
+- Overfit test PASSED (100% on 256 samples)
+- Signal is weak but real, consistent across both splits
+- Massive overfitting gap: 90% train → 39% test (regularization matters)
+- RF slightly outperforms MLP (architecture matters)
+- 4/13 features dead (book features) — activating these is P1
+- Top features: trade flow imbalance (0.128), bar range, volume, vwap displacement
+- New files: `scripts/run_barrier_diagnostic.py` (v1), `scripts/run_barrier_diagnostic_v2.py` (v2), `cache/t6_diagnostic_results.json`, `cache/t6_diagnostic_v2_results.json`
+- Updated: RESEARCH_LOG.md, QUESTIONS.md, DOMAIN_PRIORS.md, CLAUDE.md, LAST_TOUCH.md
 
 **PPO Barrier-Hit Agent pipeline T1-T9b complete (2026-02-09).** All data pipeline + environment + training infra tasks completed via strict TDD (`./tdd.sh`):
 - **T1: Bar Construction Pipeline** — PR #20. `TradeBar`, `build_bars_from_trades()`, RTH filtering, dataset builder. 59 tests.
@@ -159,6 +186,12 @@ Key finding: **More training steps made things worse, not better.** MLP val went
 
 | File | Role |
 |---|---|
+| `scripts/run_barrier_diagnostic.py` | T6 supervised diagnostic runner — loads barrier cache, runs overfit/MLP/RF tests |
+| `scripts/precompute_barrier_cache.py` | Barrier cache builder — `.dbn.zst` → bars → labels → features → `.npz`. **Needs fix: pass mbo_data to compute_bar_features()** |
+| `cache/barrier/` | 247 barrier `.npz` files (130-dim features, bar_size=500). **4/13 features dead.** |
+| `cache/t6_diagnostic_results.json` | Full T6 diagnostic results in JSON format |
+| `python/lob_rl/barrier/supervised_diagnostic.py` | MLP classifier + RF baseline functions for barrier label prediction |
+| `python/lob_rl/barrier/feature_pipeline.py` | Feature extraction — `compute_bar_features(bars, mbo_data=None)`. Dead features when mbo_data=None. |
 | `experiment.sh` | Research experiment orchestrator — survey, frame, run, read, log, program |
 | `aws/setup.sh` | One-time AWS infra setup: S3, ECR, IAM, security group |
 | `aws/launch.sh` | Launch EC2 Spot instance: `EXP_NAME=<label> ./aws/launch.sh <train.py args>` |
@@ -240,10 +273,10 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 | ~~Run experiments on RunPod~~ | ~~Done~~ | All 3 completed 5M steps. LSTM best (val -36.7), all negative OOS. See `research/experiment_report.md`. |
 | ~~Install research kit~~ | ~~Done~~ | claude-research-kit installed, configured, research files populated. |
 | ~~Investigate negative OOS~~ | ~~Done (P0s REFUTED)~~ | exp-001 (data scaling) REFUTED, exp-002 (exec cost) REFUTED. Both P0 hypotheses eliminated. |
-| **Observation signal audit** | **P0 — Critical** | Supervised classifier on 21-dim obs to determine if signal exists. If ~50% accuracy, feature engineering needed. |
-| **199d no-exec-cost 10M+ steps** | **P0** | Only positive OOS ever (exp-002 Run C val +10.93, undertrained). Needs AWS GPU. |
-| **Feature engineering** | **P0 (if signal audit fails)** | Order flow imbalance, trade imbalance, microstructure features beyond BBO. |
-| **Architecture comparison** | **P1 (gated on P0 signal audit)** | Transformer / SSM / LSTM on 132-dim barrier features via SB3 `features_extractor_class`. Blocked until supervised diagnostic confirms signal. See DOMAIN_PRIORS.md. |
+| **T10-T12 barrier GPU training** | **P0** | Signal confirmed. Train barrier PPO via `./experiment.sh`. |
+| **Fix dead book features** | **P1** | `precompute_barrier_cache.py` needs `mbo_data` pass-through. 4/13 features dead. May boost signal. |
+| **Architecture comparison** | **P1 (now unblocked)** | Transformer / SSM / LSTM on barrier features via SB3 `features_extractor_class`. RF > MLP suggests architecture matters. |
+| **199d no-exec-cost 10M+ steps** | **P1** | Only positive OOS ever (exp-002 Run C val +10.93, undertrained). Needs GPU. |
 | Checkpoint early stopping | P1 | eval 4M vs 5M checkpoints. |
 | VecNormalize audit | P1 | Check for cross-day information leakage. |
 | More data (second year) | Low | 2023-2024 as complement if 2022 generalizes well. |
