@@ -10,9 +10,14 @@ from lob_rl._obs_layout import (
     IMBALANCE as _IMBALANCE,
     TIME_LEFT as _TIME_LEFT,
 )
-
-# Number of intra-bar features
-NUM_BAR_FEATURES = 13
+from lob_rl._bar_layout import (
+    BAR_RETURN, BAR_RANGE, BAR_VOLATILITY,
+    SPREAD_MEAN, SPREAD_CLOSE,
+    IMBALANCE_MEAN, IMBALANCE_CLOSE,
+    BID_VOLUME_MEAN, ASK_VOLUME_MEAN, VOLUME_IMBALANCE,
+    MICROPRICE_OFFSET, TIME_REMAINING, N_TICKS_NORM,
+    NUM_BAR_FEATURES,
+)
 
 
 def aggregate_bars(obs, mid, spread, bar_size):
@@ -67,45 +72,28 @@ def aggregate_bars(obs, mid, spread, bar_size):
         mid_high = np.max(mid_chunk)
         mid_low = np.min(mid_chunk)
 
-        # 0: bar_return
-        bar_features[b, 0] = (mid_close - mid_open) / mid_open if mid_open != 0 else 0.0
+        bar_features[b, BAR_RETURN] = (mid_close - mid_open) / mid_open if mid_open != 0 else 0.0
+        bar_features[b, BAR_RANGE] = (mid_high - mid_low) / mid_open if mid_open != 0 else 0.0
 
-        # 1: bar_range
-        bar_features[b, 1] = (mid_high - mid_low) / mid_open if mid_open != 0 else 0.0
-
-        # 2: bar_volatility
         if n_ticks >= 2:
-            bar_features[b, 2] = float(np.std(mid_chunk) / mid_open) if mid_open != 0 else 0.0
-        else:
-            bar_features[b, 2] = 0.0
+            bar_features[b, BAR_VOLATILITY] = float(np.std(mid_chunk) / mid_open) if mid_open != 0 else 0.0
 
-        # 3: spread_mean
-        bar_features[b, 3] = float(np.mean(spread_chunk))
+        bar_features[b, SPREAD_MEAN] = float(np.mean(spread_chunk))
+        bar_features[b, SPREAD_CLOSE] = float(spread_chunk[-1])
+        bar_features[b, IMBALANCE_MEAN] = float(np.mean(obs_chunk[:, _IMBALANCE]))
+        bar_features[b, IMBALANCE_CLOSE] = float(obs_chunk[-1, _IMBALANCE])
 
-        # 4: spread_close
-        bar_features[b, 4] = float(spread_chunk[-1])
-
-        # 5: imbalance_mean
-        bar_features[b, 5] = float(np.mean(obs_chunk[:, _IMBALANCE]))
-
-        # 6: imbalance_close
-        bar_features[b, 6] = float(obs_chunk[-1, _IMBALANCE])
-
-        # 7: bid_volume_mean
         bid_sums = np.sum(obs_chunk[:, _BID_SIZES], axis=1)
-        bar_features[b, 7] = float(np.mean(bid_sums))
+        bar_features[b, BID_VOLUME_MEAN] = float(np.mean(bid_sums))
 
-        # 8: ask_volume_mean
         ask_sums = np.sum(obs_chunk[:, _ASK_SIZES], axis=1)
-        bar_features[b, 8] = float(np.mean(ask_sums))
+        bar_features[b, ASK_VOLUME_MEAN] = float(np.mean(ask_sums))
 
-        # 9: volume_imbalance
         denom = bid_sums + ask_sums
         safe_denom = np.where(denom > 0, denom, 1.0)
         vi_per_tick = np.where(denom > 0, (bid_sums - ask_sums) / safe_denom, 0.0)
-        bar_features[b, 9] = float(np.mean(vi_per_tick))
+        bar_features[b, VOLUME_IMBALANCE] = float(np.mean(vi_per_tick))
 
-        # 10: microprice_offset
         bid0 = obs_chunk[-1, _BID_PRICES.start]
         bidsize0 = obs_chunk[-1, _BID_SIZES.start]
         ask0 = obs_chunk[-1, _ASK_PRICES.start]
@@ -113,15 +101,10 @@ def aggregate_bars(obs, mid, spread, bar_size):
         denom_mp = bidsize0 + asksize0
         if denom_mp > 0:
             microprice = (ask0 * bidsize0 + bid0 * asksize0) / denom_mp
-            bar_features[b, 10] = float(microprice / mid_close - 1.0)
-        else:
-            bar_features[b, 10] = 0.0
+            bar_features[b, MICROPRICE_OFFSET] = float(microprice / mid_close - 1.0)
 
-        # 11: time_remaining
-        bar_features[b, 11] = float(obs_chunk[-1, _TIME_LEFT])
-
-        # 12: n_ticks_norm
-        bar_features[b, 12] = float(n_ticks / bar_size)
+        bar_features[b, TIME_REMAINING] = float(obs_chunk[-1, _TIME_LEFT])
+        bar_features[b, N_TICKS_NORM] = float(n_ticks / bar_size)
 
         # Output arrays
         bar_mid_close[b] = mid_close

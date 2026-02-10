@@ -43,4 +43,4 @@ pytest-based tests. Run with: `cd build-release && PYTHONPATH=.:../python uv run
 
 ## Fixtures
 
-`python/tests/fixtures/` — binary test data. `conftest.py` provides shared pytest fixtures including `make_tick_data()`, `save_cache_with_instrument_id()`, `save_cache_without_instrument_id()`, and train.py source helpers (`TRAIN_SCRIPT`, `load_train_source()`, `extract_main_body()`, `extract_evaluate_sortino_body()`).
+`python/tests/fixtures/` — binary test data. `conftest.py` provides shared pytest fixtures including `make_tick_data()`, `save_cache_with_instrument_id()`, `save_cache_without_instrument_id()`, and train.py source helpers (`TRAIN_SCRIPT`, `load_train_source()`, `extract_main_body()`, `extract_evaluate_sortino_body()`). Array factories use named constants from `lob_rl._obs_layout` (`BASE_OBS_SIZE`, `BID_PRICES`, etc.) instead of magic numbers.
