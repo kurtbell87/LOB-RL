@@ -5,7 +5,7 @@ Hand-computed reward sequences for long/short entries with profit barriers,
 stop barriers, timeout (mark-to-market), and transaction cost accounting.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from lob_rl.barrier import TICK_SIZE
 

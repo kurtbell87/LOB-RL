@@ -836,18 +836,19 @@ class TestBookFeaturesBackwardCompat:
         np.testing.assert_allclose(features[:, 11], 1.0)
 
     def test_features_shape_unchanged(self):
-        """Output shape is still (N, 13) with or without mbo_data."""
+        """Output shape is still (N, N_FEATURES) with or without mbo_data."""
+        from lob_rl.barrier import N_FEATURES
         from lob_rl.barrier.feature_pipeline import compute_bar_features
 
         bars = _make_session_bars(5)
         features_no_mbo = compute_bar_features(bars)
-        assert features_no_mbo.shape == (5, 13)
+        assert features_no_mbo.shape == (5, N_FEATURES)
 
         # With minimal mbo_data
         records = _make_simple_book_mbo(bars[0].t_start, bars[-1].t_end)
         mbo_data = _make_mbo_df(records)
         features_with_mbo = compute_bar_features(bars, mbo_data=mbo_data)
-        assert features_with_mbo.shape == (5, 13)
+        assert features_with_mbo.shape == (5, N_FEATURES)
 
     def test_empty_mbo_falls_back(self):
         """Empty DataFrame → neutral defaults."""
@@ -1009,9 +1010,9 @@ class TestNFeaturesConstant:
         assert isinstance(N_FEATURES, int)
 
     def test_n_features_value(self):
-        """N_FEATURES == 13."""
+        """N_FEATURES == 17."""
         from lob_rl.barrier import N_FEATURES
-        assert N_FEATURES == 13
+        assert N_FEATURES == 17
 
     def test_feature_pipeline_uses_n_features(self):
         """compute_bar_features output shape matches N_FEATURES columns."""

@@ -11,6 +11,7 @@ import math
 import numpy as np
 import pytest
 
+from lob_rl.barrier import N_FEATURES
 from lob_rl.barrier.bar_pipeline import TradeBar
 
 from .conftest import (
@@ -50,32 +51,32 @@ class TestFeaturePipelineImports:
 
 
 class TestComputeBarFeaturesShape:
-    """compute_bar_features returns (N, 13) ndarray."""
+    """compute_bar_features returns (N, N_FEATURES) ndarray."""
 
     def test_shape_10_bars(self):
-        """10 bars → shape (10, 13)."""
+        """10 bars → shape (10, N_FEATURES)."""
         from lob_rl.barrier.feature_pipeline import compute_bar_features
 
         bars = _make_session_bars(10)
         features = compute_bar_features(bars)
         assert isinstance(features, np.ndarray)
-        assert features.shape == (10, 13)
+        assert features.shape == (10, N_FEATURES)
 
     def test_shape_1_bar(self):
-        """Single bar → shape (1, 13)."""
+        """Single bar → shape (1, N_FEATURES)."""
         from lob_rl.barrier.feature_pipeline import compute_bar_features
 
         bars = _make_session_bars(1)
         features = compute_bar_features(bars)
-        assert features.shape == (1, 13)
+        assert features.shape == (1, N_FEATURES)
 
     def test_shape_50_bars(self):
-        """50 bars → shape (50, 13)."""
+        """50 bars → shape (50, N_FEATURES)."""
         from lob_rl.barrier.feature_pipeline import compute_bar_features
 
         bars = _make_session_bars(50)
         features = compute_bar_features(bars)
-        assert features.shape == (50, 13)
+        assert features.shape == (50, N_FEATURES)
 
     def test_dtype_is_float(self):
         """Features should be floating point."""
@@ -704,13 +705,13 @@ class TestZScoreNormalization:
 
         # Create a raw feature matrix with known statistics
         rng = np.random.default_rng(42)
-        raw = rng.standard_normal((3000, 13)) * 5 + 10  # mean=10, std=5
+        raw = rng.standard_normal((3000, N_FEATURES)) * 5 + 10  # mean=10, std=5
         normed = normalize_features(raw, window=2000)
 
         # After the warmup period, features in the last 1000 rows should
         # have mean ≈ 0 within the trailing window
         tail = normed[2000:]
-        for col in range(13):
+        for col in range(N_FEATURES):
             col_mean = np.mean(tail[:, col])
             assert abs(col_mean) < 1.0, (
                 f"Col {col} mean={col_mean}, expected near 0"
@@ -720,11 +721,11 @@ class TestZScoreNormalization:
         from lob_rl.barrier.feature_pipeline import normalize_features
 
         rng = np.random.default_rng(42)
-        raw = rng.standard_normal((3000, 13)) * 5 + 10
+        raw = rng.standard_normal((3000, N_FEATURES)) * 5 + 10
         normed = normalize_features(raw, window=2000)
 
         tail = normed[2000:]
-        for col in range(13):
+        for col in range(N_FEATURES):
             col_std = np.std(tail[:, col])
             assert 0.1 < col_std < 5.0, (
                 f"Col {col} std={col_std}, expected near 1"
@@ -739,7 +740,7 @@ class TestNormalizationClipping:
 
         rng = np.random.default_rng(42)
         # Include extreme outliers
-        raw = rng.standard_normal((500, 13))
+        raw = rng.standard_normal((500, N_FEATURES))
         raw[0, :] = 1000.0  # extreme outlier
         raw[1, :] = -1000.0
         normed = normalize_features(raw, window=200)
@@ -750,7 +751,7 @@ class TestNormalizationClipping:
         """Values that would be > 5 sigma get clipped to exactly 5."""
         from lob_rl.barrier.feature_pipeline import normalize_features
 
-        raw = np.ones((100, 13))
+        raw = np.ones((100, N_FEATURES))
         raw[99, 0] = 10000.0  # massive outlier in last row
         normed = normalize_features(raw, window=50)
         assert normed[99, 0] == pytest.approx(5.0)
@@ -763,7 +764,7 @@ class TestNoNanOrInfInOutput:
         from lob_rl.barrier.feature_pipeline import normalize_features
 
         rng = np.random.default_rng(42)
-        raw = rng.standard_normal((200, 13)) * 3.0 + 5.0
+        raw = rng.standard_normal((200, N_FEATURES)) * 3.0 + 5.0
         normed = normalize_features(raw, window=100)
         assert np.all(np.isfinite(normed)), "Normalized features have NaN or Inf"
 
@@ -771,7 +772,7 @@ class TestNoNanOrInfInOutput:
         """A constant column (std=0) should not produce NaN after normalization."""
         from lob_rl.barrier.feature_pipeline import normalize_features
 
-        raw = np.ones((100, 13))
+        raw = np.ones((100, N_FEATURES))
         raw[:, 0] = 5.0  # constant column
         normed = normalize_features(raw, window=50)
         assert np.all(np.isfinite(normed[:, 0])), "Constant column has NaN after norm"
@@ -784,10 +785,10 @@ class TestTrailingWindowBehavior:
         """Features at start of sequence (fewer than window bars) should work."""
         from lob_rl.barrier.feature_pipeline import normalize_features
 
-        raw = np.random.default_rng(42).standard_normal((50, 13))
+        raw = np.random.default_rng(42).standard_normal((50, N_FEATURES))
         # Window is 2000 but only 50 rows — should still work
         normed = normalize_features(raw, window=2000)
-        assert normed.shape == (50, 13)
+        assert normed.shape == (50, N_FEATURES)
         assert np.all(np.isfinite(normed))
 
     def test_output_shape_matches_input(self):
@@ -795,9 +796,9 @@ class TestTrailingWindowBehavior:
         from lob_rl.barrier.feature_pipeline import normalize_features
 
         for n in [10, 100, 500]:
-            raw = np.random.default_rng(42).standard_normal((n, 13))
+            raw = np.random.default_rng(42).standard_normal((n, N_FEATURES))
             normed = normalize_features(raw, window=200)
-            assert normed.shape == (n, 13)
+            assert normed.shape == (n, N_FEATURES)
 
 
 # ===========================================================================
@@ -806,29 +807,29 @@ class TestTrailingWindowBehavior:
 
 
 class TestLookbackShape:
-    """Spec test #23: Lookback output shape is (N-h+1, 13*h)."""
+    """Spec test #23: Lookback output shape is (N-h+1, N_FEATURES*h)."""
 
     def test_shape_h10(self):
         from lob_rl.barrier.feature_pipeline import assemble_lookback
 
-        normed = np.random.default_rng(42).standard_normal((50, 13))
+        normed = np.random.default_rng(42).standard_normal((50, N_FEATURES))
         result = assemble_lookback(normed, h=10)
-        assert result.shape == (50 - 10 + 1, 13 * 10)  # (41, 130)
+        assert result.shape == (50 - 10 + 1, N_FEATURES * 10)
 
     def test_shape_h5(self):
         from lob_rl.barrier.feature_pipeline import assemble_lookback
 
-        normed = np.random.default_rng(42).standard_normal((30, 13))
+        normed = np.random.default_rng(42).standard_normal((30, N_FEATURES))
         result = assemble_lookback(normed, h=5)
-        assert result.shape == (30 - 5 + 1, 13 * 5)  # (26, 65)
+        assert result.shape == (30 - 5 + 1, N_FEATURES * 5)
 
     def test_shape_h1(self):
         """h=1 means no stacking, output is same as input."""
         from lob_rl.barrier.feature_pipeline import assemble_lookback
 
-        normed = np.random.default_rng(42).standard_normal((20, 13))
+        normed = np.random.default_rng(42).standard_normal((20, N_FEATURES))
         result = assemble_lookback(normed, h=1)
-        assert result.shape == (20, 13)
+        assert result.shape == (20, N_FEATURES)
 
 
 class TestLookbackCorrectness:
@@ -838,7 +839,7 @@ class TestLookbackCorrectness:
         from lob_rl.barrier.feature_pipeline import assemble_lookback
 
         rng = np.random.default_rng(42)
-        normed = rng.standard_normal((20, 13))
+        normed = rng.standard_normal((20, N_FEATURES))
         h = 5
         result = assemble_lookback(normed, h=h)
 
@@ -853,7 +854,7 @@ class TestLookbackCorrectness:
         """First row should be features[0:h].flatten()."""
         from lob_rl.barrier.feature_pipeline import assemble_lookback
 
-        normed = np.arange(130, dtype=np.float64).reshape(10, 13)
+        normed = np.arange(10 * N_FEATURES, dtype=np.float64).reshape(10, N_FEATURES)
         result = assemble_lookback(normed, h=3)
         expected = normed[:3].flatten()
         np.testing.assert_array_equal(result[0], expected)
@@ -862,7 +863,7 @@ class TestLookbackCorrectness:
         """Last row should be features[-h:].flatten()."""
         from lob_rl.barrier.feature_pipeline import assemble_lookback
 
-        normed = np.arange(130, dtype=np.float64).reshape(10, 13)
+        normed = np.arange(10 * N_FEATURES, dtype=np.float64).reshape(10, N_FEATURES)
         h = 3
         result = assemble_lookback(normed, h=h)
         expected = normed[-h:].flatten()
@@ -870,14 +871,14 @@ class TestLookbackCorrectness:
 
 
 class TestLookbackDefaultH10:
-    """Spec test #25: Default h=10 gives 130-dim output."""
+    """Spec test #25: Default h=10 gives N_FEATURES*10-dim output."""
 
     def test_default_h(self):
         from lob_rl.barrier.feature_pipeline import assemble_lookback
 
-        normed = np.random.default_rng(42).standard_normal((50, 13))
+        normed = np.random.default_rng(42).standard_normal((50, N_FEATURES))
         result = assemble_lookback(normed)  # default h=10
-        assert result.shape[1] == 130
+        assert result.shape[1] == N_FEATURES * 10
 
 
 # ===========================================================================
@@ -889,18 +890,18 @@ class TestSingleBarSession:
     """Spec test #26: Single bar session."""
 
     def test_features_computed(self):
-        """Single bar should produce features of shape (1, 13)."""
+        """Single bar should produce features of shape (1, N_FEATURES)."""
         from lob_rl.barrier.feature_pipeline import compute_bar_features
 
         bars = _make_session_bars(1)
         features = compute_bar_features(bars)
-        assert features.shape == (1, 13)
+        assert features.shape == (1, N_FEATURES)
 
     def test_lookback_impossible_with_h_gt_1(self):
         """Lookback with h > 1 on single-bar features → empty output."""
         from lob_rl.barrier.feature_pipeline import assemble_lookback
 
-        normed = np.random.default_rng(42).standard_normal((1, 13))
+        normed = np.random.default_rng(42).standard_normal((1, N_FEATURES))
         result = assemble_lookback(normed, h=5)
         # N=1, h=5 → N-h+1 = -3 → should be empty or zero rows
         assert result.shape[0] == 0
@@ -919,7 +920,7 @@ class TestAllSamePriceBar:
             t_start=_RTH_OPEN_NS, t_end=_RTH_OPEN_NS + 1000,
         )
         features = compute_bar_features([bar])
-        assert features.shape == (1, 13)
+        assert features.shape == (1, N_FEATURES)
 
         # Range should be 0
         assert features[0, 3] == pytest.approx(0.0)
@@ -935,7 +936,7 @@ class TestAllSamePriceBar:
 
 
 class TestFeaturesShapeAlwaysN13:
-    """Spec test #28: Features shape is always (N, 13) regardless of input."""
+    """Spec test #28: Features shape is always (N, N_FEATURES) regardless of input."""
 
     def test_various_bar_counts(self):
         from lob_rl.barrier.feature_pipeline import compute_bar_features
@@ -943,8 +944,8 @@ class TestFeaturesShapeAlwaysN13:
         for n in [1, 2, 5, 10, 50, 100]:
             bars = _make_session_bars(n)
             features = compute_bar_features(bars)
-            assert features.shape == (n, 13), (
-                f"Expected ({n}, 13), got {features.shape}"
+            assert features.shape == (n, N_FEATURES), (
+                f"Expected ({n}, {N_FEATURES}), got {features.shape}"
             )
 
 
@@ -963,13 +964,13 @@ class TestBuildFeatureMatrixEndToEnd:
         bars = _make_session_bars(50)
         result = build_feature_matrix(bars)
         # 50 bars, h=10, warmup for realized vol is 19 bars
-        # After feature computation: (50, 13)
-        # After normalization: (50, 13)
-        # After lookback: (50 - 10 + 1, 130) = (41, 130)
+        # After feature computation: (50, N_FEATURES)
+        # After normalization: (50, N_FEATURES)
+        # After lookback: (50 - 10 + 1, N_FEATURES * 10)
         # But bars with NaN in realized vol (first 19) may be dropped
         # Actual shape depends on implementation of warmup handling
         assert result.ndim == 2
-        assert result.shape[1] == 130  # 13 * 10
+        assert result.shape[1] == N_FEATURES * 10
 
     def test_output_is_finite(self):
         """No NaN or Inf in the final matrix."""
@@ -994,7 +995,7 @@ class TestBuildFeatureMatrixEndToEnd:
 
         bars = _make_session_bars(50)
         result = build_feature_matrix(bars, h=5)
-        assert result.shape[1] == 65  # 13 * 5
+        assert result.shape[1] == N_FEATURES * 5
 
     def test_custom_window(self):
         """Custom window should not crash."""
@@ -1003,7 +1004,7 @@ class TestBuildFeatureMatrixEndToEnd:
         bars = _make_session_bars(50)
         result = build_feature_matrix(bars, window=20)
         assert result.ndim == 2
-        assert result.shape[1] == 130
+        assert result.shape[1] == N_FEATURES * 10
 
     def test_accepts_mbo_data_none(self):
         """Passing mbo_data=None explicitly should work (LOB features use neutral defaults)."""
@@ -1028,7 +1029,7 @@ class TestFeatureColumnOrder:
 
         bars = _make_session_bars(5)
         features = compute_bar_features(bars)
-        assert features.shape[1] == 13
+        assert features.shape[1] == N_FEATURES
 
     def test_bar_range_is_nonneg_at_col3(self):
         """Column 3 is bar range (should be non-negative)."""
@@ -1081,7 +1082,7 @@ class TestNormalizationWithNaN:
         """Raw features with NaN (from realized vol) should be handled in normalization."""
         from lob_rl.barrier.feature_pipeline import normalize_features
 
-        raw = np.random.default_rng(42).standard_normal((50, 13))
+        raw = np.random.default_rng(42).standard_normal((50, N_FEATURES))
         # Set first 19 rows of col 8 to NaN (realized vol warmup)
         raw[:19, 8] = np.nan
         normed = normalize_features(raw, window=30)
@@ -1103,7 +1104,7 @@ class TestLargeSequence:
 
         bars = _make_session_bars(200)
         features = compute_bar_features(bars)
-        assert features.shape == (200, 13)
+        assert features.shape == (200, N_FEATURES)
 
     def test_end_to_end_200_bars(self):
         from lob_rl.barrier.feature_pipeline import build_feature_matrix
@@ -1111,7 +1112,7 @@ class TestLargeSequence:
         bars = _make_session_bars(200)
         result = build_feature_matrix(bars)
         assert result.ndim == 2
-        assert result.shape[1] == 130
+        assert result.shape[1] == N_FEATURES * 10
         assert np.all(np.isfinite(result))
 
     def test_end_to_end_200_bars_values_clipped(self):
@@ -1134,10 +1135,10 @@ class TestNormalizationDefaultWindow:
     def test_default_window_accepted(self):
         from lob_rl.barrier.feature_pipeline import normalize_features
 
-        raw = np.random.default_rng(42).standard_normal((100, 13))
+        raw = np.random.default_rng(42).standard_normal((100, N_FEATURES))
         # Call without explicit window — should default to 2000
         normed = normalize_features(raw)
-        assert normed.shape == (100, 13)
+        assert normed.shape == (100, N_FEATURES)
 
 
 # ===========================================================================

@@ -1,6 +1,6 @@
 """Barrier feature extraction pipeline.
 
-Computes 13 bar-level features, applies z-score normalization with a trailing
+Computes 17 bar-level features, applies z-score normalization with a trailing
 window, assembles lookback matrices, and provides an end-to-end builder.
 """
 
@@ -8,21 +8,24 @@ import math
 
 import numpy as np
 
-from lob_rl.barrier import TICK_SIZE
+from lob_rl.barrier import TICK_SIZE, N_FEATURES
+from lob_rl.barrier.lob_reconstructor import OrderBook
 
 # Default book feature values when MBO data is unavailable.
-# Order: [BBO imbalance, Depth imbalance, Cancel asymmetry, Mean spread]
-_BOOK_DEFAULTS = (0.5, 0.5, 0.0, 1.0)
+# Order: [BBO imbalance, Depth imbalance, Cancel asymmetry, Mean spread,
+#         OFI, Depth ratio, WMid displacement, Spread std]
+_BOOK_DEFAULTS = (0.5, 0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 0.0)
 
-# RTH session boundaries for /MES (used for normalized session time)
-# Open: 8:30 CT, Close: 15:00 CT
-# RTH duration = 6.5 hours = 23400 seconds = 23400e9 nanoseconds
-# These are used as relative offsets; the actual UTC values depend on CDT/CST.
-# For session time, we use t_end relative to the session's first bar.
+# Realized volatility requires 20 close prices (indices 0..19) to compute
+# 19 log returns.  Bars at index < _REALIZED_VOL_WARMUP have NaN in col 8.
+_REALIZED_VOL_WARMUP = 19
+
+# Session-age feature saturates at this many bars (col 12 = min(bar_index / N, 1)).
+_SESSION_AGE_PERIOD = 20.0
 
 
 def compute_bar_features(bars, mbo_data=None):
-    """Compute 13 features for each bar.
+    """Compute 17 features for each bar.
 
     Column layout:
         0  Trade flow imbalance       [-1, +1]
@@ -38,6 +41,10 @@ def compute_bar_features(bars, mbo_data=None):
        10  Cancel rate asymmetry      [-1, +1]  (0.0 if mbo_data=None)
        11  Mean spread                > 0       (1.0 if mbo_data=None)
        12  Session age                [0, 1]    min(bar_index/20, 1.0)
+       13  Order Flow Imbalance (OFI) [-1, +1]  (0.0 if mbo_data=None)
+       14  Multi-level depth ratio    [0, 1]    (0.5 if mbo_data=None)
+       15  Weighted mid displacement  signed    (0.0 if mbo_data=None)
+       16  Spread dynamics (std)      >= 0      (0.0 if mbo_data=None)
 
     Parameters
     ----------
@@ -47,10 +54,10 @@ def compute_bar_features(bars, mbo_data=None):
 
     Returns
     -------
-    np.ndarray of shape (N, 13), dtype float64
+    np.ndarray of shape (N, 17), dtype float64
     """
     n = len(bars)
-    features = np.zeros((n, 13), dtype=np.float64)
+    features = np.zeros((n, N_FEATURES), dtype=np.float64)
 
     # Pre-extract close prices for realized vol computation
     closes = np.array([b.close for b in bars], dtype=np.float64)
@@ -76,17 +83,25 @@ def compute_bar_features(bars, mbo_data=None):
         # Col 0: Trade flow imbalance
         features[i, 0] = _trade_flow_imbalance(bar)
 
-        # Cols 1, 2, 10, 11: Book features
+        # Cols 1, 2, 10, 11, 13-16: Book features
         if book_features is not None:
             features[i, 1] = book_features[i, 0]   # BBO imbalance
             features[i, 2] = book_features[i, 1]   # Depth imbalance
             features[i, 10] = book_features[i, 2]  # Cancel asymmetry
             features[i, 11] = book_features[i, 3]  # Mean spread
+            features[i, 13] = book_features[i, 4]  # OFI
+            features[i, 14] = book_features[i, 5]  # Multi-level depth ratio
+            features[i, 15] = book_features[i, 6]  # Weighted mid displacement
+            features[i, 16] = book_features[i, 7]  # Spread std
         else:
             features[i, 1] = _BOOK_DEFAULTS[0]   # BBO imbalance
             features[i, 2] = _BOOK_DEFAULTS[1]   # Depth imbalance
             features[i, 10] = _BOOK_DEFAULTS[2]  # Cancel asymmetry
             features[i, 11] = _BOOK_DEFAULTS[3]  # Mean spread
+            features[i, 13] = _BOOK_DEFAULTS[4]  # OFI
+            features[i, 14] = _BOOK_DEFAULTS[5]  # Multi-level depth ratio
+            features[i, 15] = _BOOK_DEFAULTS[6]  # Weighted mid displacement
+            features[i, 16] = _BOOK_DEFAULTS[7]  # Spread std
 
         # Col 3: Bar range in ticks
         bar_range = bar.high - bar.low
@@ -110,10 +125,9 @@ def compute_bar_features(bars, mbo_data=None):
         # Col 7: Volume (log)
         features[i, 7] = math.log(max(bar.volume, 1))
 
-        # Col 8: Trailing realized vol (NaN for first 19 bars)
-        if i >= 19:
-            # Use closes[i-19:i+1] (20 close prices → 19 log returns)
-            window_closes = closes[i - 19:i + 1]
+        # Col 8: Trailing realized vol (NaN during warmup)
+        if i >= _REALIZED_VOL_WARMUP:
+            window_closes = closes[i - _REALIZED_VOL_WARMUP:i + 1]
             log_returns = np.log(window_closes[1:] / window_closes[:-1])
             features[i, 8] = np.std(log_returns, ddof=0)
         else:
@@ -127,7 +141,7 @@ def compute_bar_features(bars, mbo_data=None):
             features[i, 9] = 0.0
 
         # Col 12: Session age
-        features[i, 12] = min(bar.bar_index / 20.0, 1.0)
+        features[i, 12] = min(bar.bar_index / _SESSION_AGE_PERIOD, 1.0)
 
     return features
 
@@ -135,21 +149,21 @@ def compute_bar_features(bars, mbo_data=None):
 def _compute_book_features(bars, mbo_data):
     """Compute book-derived features from MBO data.
 
-    Returns np.ndarray of shape (n_bars, 4):
+    Returns np.ndarray of shape (n_bars, 8):
         col 0: BBO imbalance [0, 1]
         col 1: Depth imbalance [0, 1]
         col 2: Cancel asymmetry [-1, +1]
         col 3: Mean spread (ticks) > 0
+        col 4: Order Flow Imbalance (OFI) [-1, +1]
+        col 5: Multi-level depth ratio [0, 1]
+        col 6: Weighted mid-price displacement (ticks) signed
+        col 7: Spread dynamics std (ticks) >= 0
     """
-    from lob_rl.barrier.lob_reconstructor import OrderBook
-
     n = len(bars)
-    result = np.zeros((n, 4), dtype=np.float64)
+    result = np.zeros((n, 8), dtype=np.float64)
     # Defaults (matches _BOOK_DEFAULTS order)
-    result[:, 0] = _BOOK_DEFAULTS[0]  # BBO imbalance
-    result[:, 1] = _BOOK_DEFAULTS[1]  # Depth imbalance
-    result[:, 2] = _BOOK_DEFAULTS[2]  # Cancel asymmetry
-    result[:, 3] = _BOOK_DEFAULTS[3]  # Mean spread
+    for col_idx in range(8):
+        result[:, col_idx] = _BOOK_DEFAULTS[col_idx]
 
     if mbo_data is None or len(mbo_data) == 0:
         return result
@@ -163,6 +177,7 @@ def _compute_book_features(bars, mbo_data):
     ts_events = mbo_data["ts_event"].values.astype(np.int64)
 
     # Build bar boundary arrays for searchsorted
+    bar_t_starts = np.array([b.t_start for b in bars], dtype=np.int64)
     bar_t_ends = np.array([b.t_end for b in bars], dtype=np.int64)
 
     # Assign each MBO message to a bar using searchsorted on bar t_end
@@ -174,15 +189,27 @@ def _compute_book_features(bars, mbo_data):
     for bar_idx in range(n):
         # Get messages for this bar
         mask = bar_assignments == bar_idx
+        bar_msg_ts = ts_events[mask]
         bar_actions = actions[mask]
         bar_sides = sides[mask]
         bar_prices = prices[mask]
         bar_sizes = sizes[mask]
         bar_oids = order_ids[mask]
 
+        # Which messages are within the bar's actual time window
+        in_bar_mask = bar_msg_ts >= bar_t_starts[bar_idx]
+
         bid_cancels = 0
         ask_cancels = 0
         spread_samples = []
+
+        # OFI tracking
+        ofi_signed_volume = 0.0
+        total_add_volume = 0.0
+
+        # Weighted mid displacement: record start-of-bar wmid
+        wmid_start = book.weighted_mid_price()
+        wmid_first = None  # first valid wmid after a message in the bar
 
         for j in range(len(bar_actions)):
             act = bar_actions[j]
@@ -190,20 +217,44 @@ def _compute_book_features(bars, mbo_data):
             price = bar_prices[j]
             size = int(bar_sizes[j])
             oid = int(bar_oids[j])
+            in_bar = bool(in_bar_mask[j])
+
+            # OFI: only count Add messages within the bar's time window
+            if act == "A" and in_bar:
+                total_add_volume += size
+                best_bid = book.best_bid()
+                best_ask = book.best_ask()
+                if side == "B" and best_bid > 0 and price >= best_bid:
+                    ofi_signed_volume += size
+                elif side == "A" and best_ask > 0 and price <= best_ask:
+                    ofi_signed_volume -= size
+                # If book is empty on one side, BBO-level add at any price
+                # counts (first order establishes BBO)
+                elif side == "B" and best_bid == 0:
+                    ofi_signed_volume += size
+                elif side == "A" and best_ask == 0:
+                    ofi_signed_volume -= size
 
             book.apply(act, side, price, size, order_id=oid)
 
-            # Count cancels per side
-            if act == "C":
-                if side == "B":
-                    bid_cancels += 1
-                elif side == "A":
-                    ask_cancels += 1
+            if in_bar:
+                # Track first valid wmid for displacement
+                if wmid_first is None:
+                    w = book.weighted_mid_price()
+                    if w > 0:
+                        wmid_first = w
 
-            # Sample spread after each event
-            s = book.spread_ticks()
-            if s > 0:
-                spread_samples.append(s)
+                # Count cancels per side
+                if act == "C":
+                    if side == "B":
+                        bid_cancels += 1
+                    elif side == "A":
+                        ask_cancels += 1
+
+                # Sample spread after each event
+                s = book.spread_ticks()
+                if s > 0:
+                    spread_samples.append(s)
 
         # Snapshot book at bar close
         bid_qty = book.best_bid_qty()
@@ -231,6 +282,45 @@ def _compute_book_features(bars, mbo_data):
             result[bar_idx, 3] = np.mean(spread_samples)
         else:
             result[bar_idx, 3] = 1.0
+
+        # New features: only compute from in-bar messages
+        has_in_bar_msgs = bool(np.any(in_bar_mask))
+
+        # Col 4: OFI — normalized and clamped to [-1, +1]
+        eps = 1e-10
+        if total_add_volume > 0:
+            ofi_norm = ofi_signed_volume / (total_add_volume + eps)
+            result[bar_idx, 4] = max(-1.0, min(1.0, ofi_norm))
+        else:
+            result[bar_idx, 4] = 0.0
+
+        # Col 5: Multi-level depth ratio — top3 / top10
+        if has_in_bar_msgs:
+            top3_bid = book.total_bid_depth(3)
+            top3_ask = book.total_ask_depth(3)
+            top10_bid = book.total_bid_depth(10)
+            top10_ask = book.total_ask_depth(10)
+            total_3 = top3_bid + top3_ask
+            total_10 = top10_bid + top10_ask
+            if total_10 > 0:
+                result[bar_idx, 5] = total_3 / (total_10 + eps)
+            else:
+                result[bar_idx, 5] = 0.5  # default for empty book
+        else:
+            result[bar_idx, 5] = 0.5
+
+        # Col 6: Weighted mid-price displacement
+        wmid_end = book.weighted_mid_price()
+        if wmid_first is not None and wmid_end > 0:
+            result[bar_idx, 6] = (wmid_end - wmid_first) / TICK_SIZE
+        else:
+            result[bar_idx, 6] = 0.0
+
+        # Col 7: Spread dynamics (std)
+        if len(spread_samples) >= 2:
+            result[bar_idx, 7] = float(np.std(spread_samples, ddof=0))
+        else:
+            result[bar_idx, 7] = 0.0
 
     return result
 
@@ -321,13 +411,13 @@ def normalize_features(raw, window=2000):
 
     Parameters
     ----------
-    raw : np.ndarray of shape (N, 13)
+    raw : np.ndarray of shape (N, F)
     window : int
         Trailing window size (default 2000).
 
     Returns
     -------
-    np.ndarray of shape (N, 13), dtype float64
+    np.ndarray of shape (N, F), dtype float64
     """
     n, ncols = raw.shape
     # Replace NaN with 0 for computation
@@ -398,7 +488,7 @@ def build_feature_matrix(bars, h=10, window=2000, mbo_data=None):
 
     Returns
     -------
-    np.ndarray of shape (M, 13*h) where M depends on bar count and warmup.
+    np.ndarray of shape (M, 17*h) where M depends on bar count and warmup.
     """
     raw = compute_bar_features(bars, mbo_data=mbo_data)
 

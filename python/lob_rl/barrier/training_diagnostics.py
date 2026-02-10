@@ -12,6 +12,12 @@ import os
 import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
 
+# Red-flag thresholds (Section 5.3 of PRD)
+_ENTROPY_COLLAPSE_THRESHOLD = 0.3
+_ENTROPY_COLLAPSE_WINDOW = 100        # first N rollouts to check
+_FLAT_RATE_LOW = 0.10                 # flat action rate floor
+_FLAT_RATE_HIGH = 0.90                # flat action rate ceiling
+
 
 def linear_schedule(initial_value):
     """Return a callable that linearly decays from initial_value to 0.
@@ -75,9 +81,42 @@ class BarrierDiagnosticCallback(BaseCallback):
             if val is not None:
                 val = float(val)
                 return val, math.isnan(val)
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             pass
         return None, False
+
+    def _read_episode_metrics(self):
+        """Read episode reward mean, trade win rate, and trade count.
+
+        Returns (episode_reward_mean, trade_win_rate, n_trades).
+        """
+        episode_reward_mean = None
+        trade_win_rate = None
+        n_trades = 0
+        try:
+            ep_info = self.model.ep_info_buffer
+            if ep_info and len(ep_info) > 0:
+                rewards = [info["r"] for info in ep_info]
+                episode_reward_mean = float(np.mean(rewards))
+                n_trades = len(ep_info)
+                wins = sum(1 for info in ep_info if info.get("r", 0) > 0)
+                trade_win_rate = float(wins / n_trades)
+        except (AttributeError, KeyError, TypeError):
+            pass
+        return episode_reward_mean, trade_win_rate, n_trades
+
+    def _read_flat_action_rate(self):
+        """Read flat action rate from the rollout buffer."""
+        try:
+            buf = self.model.rollout_buffer
+            if hasattr(buf, "actions"):
+                actions = buf.actions.flatten()
+                if len(actions) > 0:
+                    flat_count = np.sum(actions == 2)  # ACTION_FLAT=2
+                    return float(flat_count / len(actions))
+        except (AttributeError, TypeError):
+            pass
+        return None
 
     def _collect_snapshot(self):
         """Collect diagnostic metrics from the current training state."""
@@ -92,39 +131,8 @@ class BarrierDiagnosticCallback(BaseCallback):
         policy_loss, nan = self._read_logger_metric("train/policy_gradient_loss")
         has_nan = has_nan or nan
 
-        # Episode reward mean from rollout buffer info
-        episode_reward_mean = None
-        try:
-            ep_info = self.model.ep_info_buffer
-            if ep_info and len(ep_info) > 0:
-                rewards = [info["r"] for info in ep_info]
-                episode_reward_mean = float(np.mean(rewards))
-        except Exception:
-            pass
-
-        # Flat action rate and trade win rate from rollout buffer
-        flat_action_rate = None
-        trade_win_rate = None
-        n_trades = 0
-        try:
-            buf = self.model.rollout_buffer
-            if hasattr(buf, "actions"):
-                actions = buf.actions.flatten()
-                if len(actions) > 0:
-                    flat_count = np.sum(actions == 2)  # ACTION_FLAT=2
-                    flat_action_rate = float(flat_count / len(actions))
-        except Exception:
-            pass
-
-        # Trade win rate from episode info
-        try:
-            ep_info = self.model.ep_info_buffer
-            if ep_info and len(ep_info) > 0:
-                wins = sum(1 for info in ep_info if info.get("r", 0) > 0)
-                n_trades = len(ep_info)
-                trade_win_rate = float(wins / n_trades) if n_trades > 0 else None
-        except Exception:
-            pass
+        episode_reward_mean, trade_win_rate, n_trades = self._read_episode_metrics()
+        flat_action_rate = self._read_flat_action_rate()
 
         return {
             "entropy_flat": entropy_flat,
@@ -156,29 +164,30 @@ class BarrierDiagnosticCallback(BaseCallback):
                 flags.append("NaN detected in training metrics")
                 break
 
-        # Entropy collapse: entropy < 0.3 in first 100 updates
-        early_snapshots = self.diagnostics[:100]
+        # Entropy collapse: entropy below threshold in early rollouts
+        early_snapshots = self.diagnostics[:_ENTROPY_COLLAPSE_WINDOW]
         for snap in early_snapshots:
             ent = snap.get("entropy_flat")
-            if ent is not None and not math.isnan(ent) and ent < 0.3:
+            if ent is not None and not math.isnan(ent) and ent < _ENTROPY_COLLAPSE_THRESHOLD:
                 flags.append(
-                    f"Entropy collapse: flat-state entropy {ent:.3f} < 0.3 "
-                    f"in first 100 updates"
+                    f"Entropy collapse: flat-state entropy {ent:.3f} < "
+                    f"{_ENTROPY_COLLAPSE_THRESHOLD} "
+                    f"in first {_ENTROPY_COLLAPSE_WINDOW} updates"
                 )
                 break
 
-        # Flat action rate outside [10%, 90%]
+        # Flat action rate outside acceptable range
         for snap in self.diagnostics:
             rate = snap.get("flat_action_rate")
             if rate is not None:
-                if rate < 0.10:
+                if rate < _FLAT_RATE_LOW:
                     flags.append(
-                        f"Flat action rate {rate:.3f} < 10%"
+                        f"Flat action rate {rate:.3f} < {_FLAT_RATE_LOW:.0%}"
                     )
                     break
-                if rate > 0.90:
+                if rate > _FLAT_RATE_HIGH:
                     flags.append(
-                        f"Flat action rate {rate:.3f} > 90%"
+                        f"Flat action rate {rate:.3f} > {_FLAT_RATE_HIGH:.0%}"
                     )
                     break
 

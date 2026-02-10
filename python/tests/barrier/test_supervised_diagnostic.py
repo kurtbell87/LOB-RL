@@ -10,6 +10,8 @@ label prediction from bar-level features.
 import numpy as np
 import pytest
 
+from lob_rl.barrier import N_FEATURES
+
 from .conftest import make_session_bars
 
 
@@ -22,7 +24,7 @@ class TestBuildLabeledDatasetShape:
     """Spec test #1: Output shapes match expectations."""
 
     def test_shape_basic(self):
-        """Given N bars and M labels, X has shape (M - h + 1, 13 * h)
+        """Given N bars and M labels, X has shape (M - h + 1, N_FEATURES * h)
         and y has shape (M - h + 1,)."""
         from lob_rl.barrier.supervised_diagnostic import build_labeled_dataset
         from lob_rl.barrier.label_pipeline import compute_labels
@@ -33,15 +35,15 @@ class TestBuildLabeledDatasetShape:
         X, y = build_labeled_dataset(bars, labels, h=h)
 
         n_usable = len(labels) - h + 1
-        assert X.shape == (n_usable, 13 * h), (
-            f"Expected X shape ({n_usable}, {13 * h}), got {X.shape}"
+        assert X.shape == (n_usable, N_FEATURES * h), (
+            f"Expected X shape ({n_usable}, {N_FEATURES * h}), got {X.shape}"
         )
         assert y.shape == (n_usable,), (
             f"Expected y shape ({n_usable},), got {y.shape}"
         )
 
     def test_shape_with_h5(self):
-        """h=5 gives feature dim 65."""
+        """h=5 gives feature dim N_FEATURES * 5."""
         from lob_rl.barrier.supervised_diagnostic import build_labeled_dataset
         from lob_rl.barrier.label_pipeline import compute_labels
 
@@ -51,7 +53,7 @@ class TestBuildLabeledDatasetShape:
         X, y = build_labeled_dataset(bars, labels, h=h)
 
         n_usable = len(labels) - h + 1
-        assert X.shape[1] == 13 * h
+        assert X.shape[1] == N_FEATURES * h
         assert X.shape[0] == n_usable
         assert y.shape[0] == n_usable
 

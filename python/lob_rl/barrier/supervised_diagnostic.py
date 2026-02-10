@@ -15,6 +15,9 @@ from lob_rl.barrier.feature_pipeline import (
     assemble_lookback,
 )
 
+# Maximum samples for the overfit sanity check (keeps it fast).
+_OVERFIT_MAX_SAMPLES = 256
+
 
 # ---------------------------------------------------------------------------
 # Dataset construction
@@ -409,8 +412,8 @@ def run_diagnostic(bars, labels, h=10, train_frac=0.8, epochs=100, seed=42):
     X_train, y_train = X[train_idx], y[train_idx]
     X_test, y_test = X[test_idx], y[test_idx]
 
-    # Overfit test: use up to 256 samples from training set
-    overfit_n = min(256, n_train)
+    # Overfit test: use up to _OVERFIT_MAX_SAMPLES from training set
+    overfit_n = min(_OVERFIT_MAX_SAMPLES, n_train)
     X_overfit = X_train[:overfit_n]
     y_overfit = y_train[:overfit_n]
     overfit_result = overfit_test(X_overfit, y_overfit, epochs=500, seed=seed)
