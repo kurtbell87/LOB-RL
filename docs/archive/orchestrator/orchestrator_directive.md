@@ -2,7 +2,7 @@
 
 ## Mission
 
-Execute the attached specification (`ppo_barrier_hit_agent_mes_spec_v1.md`) to completion. The spec defines a PPO agent that learns entry timing on /MES futures using barrier-hit events as the reward signal. Your job is to decompose this into parallelizable work streams, assign infrastructure, enforce TDD discipline, and gate progression on explicit pass/fail criteria.
+Execute the attached specification (`docs/archive/orchestrator/ppo_barrier_hit_agent_mes_spec_v1.md`) to completion. The spec defines a PPO agent that learns entry timing on /MES futures using barrier-hit events as the reward signal. Your job is to decompose this into parallelizable work streams, assign infrastructure, enforce TDD discipline, and gate progression on explicit pass/fail criteria.
 
 **Read the full spec before planning. Every section is referenced below by number.**
 
@@ -408,4 +408,4 @@ Total Compute Cost: {AWS: $X, RunPod: $Y}
 
 ## Spec Document
 
-The full specification is attached as `ppo_barrier_hit_agent_mes_spec_v1.md`. It is the single source of truth for all implementation details, parameter values, formulas, and pass/fail criteria. If this orchestrator directive and the spec conflict, the spec wins.
+The full specification is attached as `docs/archive/orchestrator/ppo_barrier_hit_agent_mes_spec_v1.md`. It is the single source of truth for all implementation details, parameter values, formulas, and pass/fail criteria. If this orchestrator directive and the spec conflict, the spec wins.
