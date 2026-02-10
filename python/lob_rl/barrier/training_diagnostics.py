@@ -50,7 +50,6 @@ class BarrierDiagnosticCallback(BaseCallback):
         self.output_dir = output_dir
         self.diagnostics = []
         self._rollout_count = 0
-        self._csv_written = False
 
     def _on_step(self) -> bool:
         return True

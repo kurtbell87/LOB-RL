@@ -9,7 +9,7 @@ import numpy as np
 import gymnasium
 from gymnasium import spaces
 
-from lob_rl.barrier import TICK_SIZE
+from lob_rl.barrier import TICK_SIZE, N_FEATURES
 from lob_rl.barrier.feature_pipeline import build_feature_matrix
 from lob_rl.barrier.label_pipeline import compute_labels
 from lob_rl.barrier.reward_accounting import (
@@ -51,7 +51,7 @@ class BarrierEnv(gymnasium.Env):
 
         # Infer lookback h from feature dimensions (feature_dim = 13 * h)
         self._feature_dim = features.shape[1] if features.ndim == 2 else 130
-        self._h = self._feature_dim // 13
+        self._h = self._feature_dim // N_FEATURES
 
         # Bar offset: usable bar i corresponds to bars[i + h - 1]
         self._bar_offset = self._h - 1
