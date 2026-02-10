@@ -14,6 +14,7 @@ from lob_rl._obs_layout import (
     BASE_OBS_SIZE as _BASE_OBS_SIZE,
 )
 from lob_rl._reward import compute_forced_flatten, compute_step_reward
+from lob_rl._statistics import rolling_std
 
 _FULL_OBS_SIZE = 54
 _POSITION_IDX = 53
@@ -139,19 +140,7 @@ class PrecomputedEnv(gym.Env):
         if N > 1:
             denom = np.where(mid[:-1] != 0, mid[:-1], 1.0)
             ret1[1:] = (mid[1:] - mid[:-1]) / denom
-        vol_20 = np.zeros(N, dtype=np.float32)
-        if N > 20:
-            window = 20
-            # Cumulative sums for O(N) rolling variance
-            cumsum_ret = np.concatenate(([0.0], np.cumsum(ret1)))
-            cumsum_ret_sq = np.concatenate(([0.0], np.cumsum(ret1 ** 2)))
-            roll_sum = cumsum_ret[window:N] - cumsum_ret[:N - window]
-            roll_sum2 = cumsum_ret_sq[window:N] - cumsum_ret_sq[:N - window]
-            roll_mean = roll_sum / window
-            roll_var = roll_sum2 / window - roll_mean ** 2
-            np.maximum(roll_var, 0.0, out=roll_var)
-            vol_20[window:N] = np.sqrt(roll_var).astype(np.float32)
-        return vol_20
+        return rolling_std(ret1, window=20, warmup=False)
 
     def _compute_microprice_offset(self, mid, N):
         """Microprice offset: (microprice / mid) - 1."""
