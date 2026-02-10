@@ -1,0 +1,78 @@
+{
+  "run-a-mlp-20d": {
+    "label": "MLP 20d (control)",
+    "train_days": 20,
+    "recurrent": false,
+    "val": {
+      "mean_return": -75.82499694824219,
+      "std_return": 25.669607162475586,
+      "sortino_ratio": -2.9538822174072266,
+      "n_episodes": 5,
+      "positive_episodes": 0
+    },
+    "test": {
+      "mean_return": -61.41741180419922,
+      "std_return": 58.288330078125,
+      "sortino_ratio": -1.157282829284668,
+      "n_episodes": 224,
+      "positive_episodes": 24
+    }
+  },
+  "run-b-lstm-20d": {
+    "label": "LSTM 20d (control)",
+    "train_days": 20,
+    "recurrent": true,
+    "val": {
+      "mean_return": -74.0250015258789,
+      "std_return": 18.379743576049805,
+      "sortino_ratio": -4.027531623840332,
+      "n_episodes": 5,
+      "positive_episodes": 0
+    },
+    "test": {
+      "mean_return": -54.91015625,
+      "std_return": 52.42731857299805,
+      "sortino_ratio": -1.1018508672714233,
+      "n_episodes": 224,
+      "positive_episodes": 18
+    }
+  },
+  "run-c-mlp-199d": {
+    "label": "MLP 199d (treatment)",
+    "train_days": 199,
+    "recurrent": false,
+    "val": {
+      "mean_return": -75.5250015258789,
+      "std_return": 63.67836380004883,
+      "sortino_ratio": -1.186038613319397,
+      "n_episodes": 5,
+      "positive_episodes": 0
+    },
+    "test": {
+      "mean_return": -44.80833435058594,
+      "std_return": 50.51401901245117,
+      "sortino_ratio": -1.017109751701355,
+      "n_episodes": 45,
+      "positive_episodes": 8
+    }
+  },
+  "run-d-lstm-199d": {
+    "label": "LSTM 199d (treatment)",
+    "train_days": 199,
+    "recurrent": true,
+    "val": {
+      "mean_return": -59.95000076293945,
+      "std_return": 40.23141098022461,
+      "sortino_ratio": -1.4901292324066162,
+      "n_episodes": 5,
+      "positive_episodes": 0
+    },
+    "test": {
+      "mean_return": -43.141666412353516,
+      "std_return": 36.66994094848633,
+      "sortino_ratio": -1.2415279150009155,
+      "n_episodes": 45,
+      "positive_episodes": 4
+    }
+  }
+}

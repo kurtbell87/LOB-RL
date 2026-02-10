@@ -1,0 +1,67 @@
+{
+  "common_args": {
+    "bar_size": 1000,
+    "execution_cost": true,
+    "policy_arch": "256,256",
+    "activation": "relu",
+    "ent_coef": 0.05,
+    "learning_rate": 0.001,
+    "shuffle_split": true,
+    "n_envs": 8,
+    "batch_size": 256,
+    "n_epochs": 5,
+    "gamma": 0.99,
+    "clip_range": 0.2,
+    "n_steps": 2048
+  },
+  "runs": {
+    "mve": {
+      "train_days": 199,
+      "total_timesteps": 500000,
+      "seed": 42,
+      "recurrent": false,
+      "checkpoint_freq": 100000
+    },
+    "run_a_mlp_20d": {
+      "train_days": 20,
+      "total_timesteps": 5000000,
+      "seed": 42,
+      "recurrent": false,
+      "checkpoint_freq": 1000000
+    },
+    "run_b_lstm_20d": {
+      "train_days": 20,
+      "total_timesteps": 5000000,
+      "seed": 42,
+      "recurrent": true,
+      "checkpoint_freq": 1000000
+    },
+    "run_c_mlp_199d": {
+      "train_days": 199,
+      "total_timesteps": 5000000,
+      "seed": 42,
+      "recurrent": false,
+      "checkpoint_freq": 1000000
+    },
+    "run_d_lstm_199d": {
+      "train_days": 199,
+      "total_timesteps": 5000000,
+      "seed": 42,
+      "recurrent": true,
+      "checkpoint_freq": 1000000
+    },
+    "run_e_lstm_199d_seed43": {
+      "train_days": 199,
+      "total_timesteps": 5000000,
+      "seed": 43,
+      "recurrent": true,
+      "checkpoint_freq": 1000000
+    }
+  },
+  "hardware": "Apple M2 Max (CPU, 32GB RAM)",
+  "pytorch_version": "2.10.0",
+  "sb3_version": "stable-baselines3",
+  "sb3_contrib_version": "2.7.1",
+  "cache_dir": "cache/mes/",
+  "n_cache_files": 249
+}

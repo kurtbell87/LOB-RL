@@ -5,6 +5,16 @@ Read this file FIRST when starting any new research task. It is the institutiona
 
 ---
 
+## exp-001-does-increasing-training-data-from-20-to — REFUTED
+**Date:** 2026-02-09
+**Hypothesis:** Increasing training data from 20 to 199 days (10x) reduces overfitting and produces meaningfully less negative OOS returns for the LSTM agent.
+**Key result:** LSTM 199d val -59.95 (threshold -16.7), MLP 199d val -75.53 (identical to 20d control -75.82). All OOS deeply negative. 199 days eliminates memorization (expl_var 0.30 vs 0.97) but does not improve OOS. Data quantity is not the primary bottleneck.
+**Lesson:** MLP 199d val is identical to MLP 20d val despite 5x lower explained_variance — overfitting is a symptom, not the cause of bad OOS. The 21-dim bar-level obs space likely lacks exploitable signal. Seed sensitivity is extreme (LSTM 199d: -59.95 s42 vs -97.0 s43 on 5 val episodes). Entropy collapsed below -0.60 on all 199d runs. LSTM clip_fraction 40-50% confirms lr=1e-3 is too aggressive for RecurrentPPO.
+**Next:** P3 observation signal audit (supervised classifier) is now highest priority. Also: 199d no-exec-cost at 10M steps to check if exp-002's +10.93 val persists.
+**Details:** results/exp-001-does-increasing-training-data-from-20-to/analysis.md
+
+---
+
 ## exp-002-execution-cost-ablation — REFUTED
 **Date:** 2026-02-09
 **Hypothesis:** Removing execution cost reveals positive OOS returns, proving the agent learns signal masked by the 1-tick round-trip cost.
