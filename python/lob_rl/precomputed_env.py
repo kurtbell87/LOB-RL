@@ -16,8 +16,10 @@ from lob_rl._obs_layout import (
 from lob_rl._reward import ACTION_MAP, compute_forced_flatten, compute_step_reward
 from lob_rl._statistics import rolling_std
 
-_FULL_OBS_SIZE = 54
-_POSITION_IDX = 53
+# Observation layout: 43 base + 10 temporal + 1 position = 54
+_NUM_TEMPORAL = 10
+_POSITION_IDX = _BASE_OBS_SIZE + _NUM_TEMPORAL
+_FULL_OBS_SIZE = _POSITION_IDX + 1
 
 
 def _lagged_diff(arr, lag):
