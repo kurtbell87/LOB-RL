@@ -10,8 +10,8 @@ import math
 
 import numpy as np
 
-from lob_rl.barrier import TICK_SIZE
-from lob_rl.barrier.bar_pipeline import TradeBar, build_bars_from_trades
+from lob_rl.barrier import TICK_SIZE, RTH_OPEN_NS, RTH_DURATION_NS, build_synthetic_trades
+from lob_rl.barrier.bar_pipeline import build_bars_from_trades
 from lob_rl.barrier.label_pipeline import compute_labels
 
 
@@ -66,45 +66,18 @@ def generate_random_walk(n_trades, p=0.5, start_price=4000.0, tick_size=0.25,
     rng = np.random.default_rng(seed)
 
     # Generate uptick/downtick decisions
-    moves = rng.random(n_trades - 1)
-    directions = np.where(moves < p, 1, -1)
+    directions = np.where(rng.random(n_trades - 1) < p, 1, -1)
 
-    # Build price series
+    # Build price series via cumsum (vectorized)
     prices = np.empty(n_trades, dtype=np.float64)
     prices[0] = start_price
-    for i in range(n_trades - 1):
-        prices[i + 1] = prices[i] + directions[i] * tick_size
+    prices[1:] = start_price + np.cumsum(directions) * tick_size
 
-    # Build side field: uptick -> 'B', downtick -> 'A', first trade -> 'B'
-    sides = np.empty(n_trades, dtype="U1")
-    sides[0] = "B"
-    for i in range(n_trades - 1):
-        if directions[i] > 0:
-            sides[i + 1] = "B"
-        else:
-            sides[i + 1] = "A"
-
-    # Build timestamps: evenly spaced within a single RTH session
-    # Use 2022-06-15 RTH: 13:30 UTC to 20:00 UTC (6.5 hours)
-    rth_open_ns = 1655296200_000_000_000
-    rth_duration_ns = 23400_000_000_000  # 6.5 hours in ns
-    ts = np.linspace(rth_open_ns, rth_open_ns + rth_duration_ns - 1,
+    # Build timestamps and structured trades array
+    ts = np.linspace(RTH_OPEN_NS, RTH_OPEN_NS + RTH_DURATION_NS - 1,
                      n_trades, dtype=np.int64)
 
-    # Build structured array
-    dt = np.dtype([
-        ("price", np.float64),
-        ("size", np.int32),
-        ("side", "U1"),
-        ("ts_event", np.int64),
-    ])
-    result = np.empty(n_trades, dtype=dt)
-    result["price"] = prices
-    result["size"] = 1
-    result["side"] = sides
-    result["ts_event"] = ts
-
-    return result
+    return build_synthetic_trades(prices, ts)
 
 
 def validate_drift_level(p, a=20, b=10, n_bars=10000, bar_size=500, t_max=40,
@@ -140,21 +113,9 @@ def validate_drift_level(p, a=20, b=10, n_bars=10000, bar_size=500, t_max=40,
     # Generate enough trades to produce at least n_bars bars
     # Need extra bars for forward-looking labels
     n_trades = (n_bars + t_max + 10) * bar_size
-    trades_raw = generate_random_walk(n_trades, p=p, seed=seed)
+    trades = generate_random_walk(n_trades, p=p, seed=seed)
 
-    # Convert to format expected by build_bars_from_trades
-    # build_bars_from_trades expects: price, size, timestamp
-    trade_dt = np.dtype([
-        ("price", np.float64),
-        ("size", np.int32),
-        ("timestamp", np.int64),
-    ])
-    trades = np.empty(len(trades_raw), dtype=trade_dt)
-    trades["price"] = trades_raw["price"]
-    trades["size"] = trades_raw["size"]
-    trades["timestamp"] = trades_raw["ts_event"]
-
-    # Build bars
+    # Build bars (trades array has a 'timestamp' field from build_synthetic_trades)
     bars = build_bars_from_trades(trades, n=bar_size)
 
     # Compute labels
