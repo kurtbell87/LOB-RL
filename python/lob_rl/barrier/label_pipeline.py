@@ -11,8 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-
-TICK_SIZE = 0.25  # /MES tick size
+from lob_rl.barrier import TICK_SIZE
 
 
 @dataclass
