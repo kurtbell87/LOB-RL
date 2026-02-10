@@ -158,11 +158,25 @@ def load_session_from_cache(npz_path):
     """Load a cached session .npz and reconstruct TradeBar/BarrierLabel objects.
 
     Returns dict with keys: bars, labels, features (compatible with MultiSessionBarrierEnv).
+
+    Raises ValueError if the cache has an n_features key that doesn't match
+    the current N_FEATURES constant.
     """
+    from lob_rl.barrier import N_FEATURES
     from lob_rl.barrier.bar_pipeline import TradeBar
     from lob_rl.barrier.label_pipeline import BarrierLabel
 
     data = np.load(npz_path, allow_pickle=False)
+
+    # Version check: if n_features is stored, it must match current N_FEATURES
+    if "n_features" in data:
+        stored_n_features = int(data["n_features"])
+        if stored_n_features != N_FEATURES:
+            raise ValueError(
+                f"Cache n_features mismatch: stored {stored_n_features}, "
+                f"expected {N_FEATURES}. Re-precompute with "
+                f"precompute_barrier_cache.py."
+            )
 
     n_bars = int(data["n_bars"])
     features = data["features"]
