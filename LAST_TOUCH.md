@@ -4,16 +4,33 @@
 
 ### Immediate next step
 
-**Barrier cache re-precomputed with C++ backend. Re-run T6 diagnostic, then GPU training.**
+**Implement the Asymmetric First-Passage Trading plan: `experiments/Asymmetric First-Passage Trading.md`**
 
-Five C++ TDD cycles completed (PRs #37-#41) + barrier cache rebuilt. 248 sessions, 461K bars, 454K usable rows, N_FEATURES=22 (220-dim), 186 MB cache. C++ precompute: 570s vs 8+ hours Python (~50x speedup).
+This is a principled 5-phase research plan that replaces the ad-hoc experiment cycle. It reframes the problem using:
+- **Brier scores** (not balanced accuracy) as the primary evaluation metric
+- **Two independent binary labels** Y_long, Y_short ∈ {0,1} (not three-class {long, short, flat})
+- **Information-theoretic bounds** — Var(P) ceiling, variance decomposition, stopping criteria
+- **Proper calibration** — calibration curves, Platt scaling
+- **Logistic regression + GBT baselines** (not RF + MLP) before any RL
 
-**Action items (in priority order):**
-1. **Re-run T6 supervised diagnostic** — compare 22-feature signal vs old 9-active-feature (RF 40.5%). Expect significant improvement with all book + microstructure features active.
-2. **T10-T12 GPU training** via `./experiment.sh` — train barrier PPO on the enriched 248-session cache.
-3. **Architecture comparison (P1, now unblocked):** Transformer / SSM / LSTM on barrier features via SB3 `features_extractor_class`.
+**Phase 0 (data pipeline) is mostly done.** The existing infrastructure covers:
+- Bar construction (`barrier/bar_pipeline.py`, C++ BarBuilder)
+- First-passage labeling (`barrier/label_pipeline.py`, C++ `compute_labels()`)
+- Feature extraction (`barrier/feature_pipeline.py`, 22 features)
+- Cache at `cache/barrier/` (248 sessions, 454K usable bars, 220-dim)
 
-**Key insight from T6:** τ_{+} (long profit) and τ_{-} (short profit) are **mutually exclusive** events. If price rises a=20 before falling b=10 (long profit), the short already stopped at +10. The correct classification target is the *direction* (long/short/flat), not the single-direction barrier outcome.
+**What's new / needs doing:**
+1. **Phase 0 gaps:** Add `timeout_flag` and `race_duration` to labels (the plan requires these; current labels only store label ∈ {-1,0,1}). Verify timeout rate < 5%. Verify R/δ ∈ ℕ (lattice requirement for T2).
+2. **Phase 1 (null calibration):** Compute ȳ_long and ȳ_short. Quick check: from exp-004 data, long=30.8%, short=31.2% — close to 1/3 prediction. Need: non-complementarity check (ȳ_long + ȳ_short ≈ 2/3?), temporal stability (rolling window plot), joint distribution (all 4 outcomes).
+3. **Phase 2 (signal detection):** This is the critical gate. Constant Brier baseline → logistic regression → GBT (XGBoost/LightGBM). Temporal cross-validation. Brier score improvement Δ with bootstrap CI. Rough profitability bound.
+4. **Phase 2b (parameter sweep):** Only if Phase 2 finds no signal. Sweep B ∈ {200,500,1000,2000} × R calibrations.
+
+**Label formulation (IMPORTANT):**
+- Y_long=1: price hits entry + 2R before entry - R (reward:risk = 2:1)
+- Y_short=1: price hits entry - 2R before entry + R
+- These are NOT disjoint — both can be 0 (both stopped), or under certain conditions both 1
+- Under martingale null with 2:1 asymmetry: E[Y] ≈ 1/3 (from gambler's ruin)
+- The plan explicitly models these as two independent binary predictions, NOT one three-class problem
 
 **Training script ready:** `scripts/train_barrier.py` with CLI args, Section 5.2 hyperparameters, MaskablePPO with net_arch=[256,256,dict(pi=[64],vf=[64])].
 
@@ -31,6 +48,16 @@ Five C++ TDD cycles completed (PRs #37-#41) + barrier cache rebuilt. 248 session
 Source: `data/symbology.json` from Databento download. Roll dates are ~1 week before CME 3rd-Friday expiry.
 
 ### What was just completed
+
+**exp-004 quick diagnostic (2026-02-11).** 22-feature vs 9-feature signal detection on 50K subsample. RF results:
+- Set A (all 22 features): 49.6% balanced accuracy (2 seeds)
+- Set B (original 9 features): 47.5% balanced accuracy (2 seeds)
+- Delta: +2.1pp (A > B). Both far above majority baseline (38.1%).
+- Set B jumped from T6's 40.5% → 47.5% because cols 0,1,2,11 (previously dead) are now active in C++ cache.
+- Full experiment aborted (Python process killed by SIGPIPE after parent experiment.sh was terminated). Quick results are directionally useful but not statistically rigorous.
+- Metrics at `results/exp-004-22-feature-supervised-diagnostic/metrics.json` (quick tier only).
+
+**Asymmetric First-Passage Trading plan written (2026-02-11).** Research plan at `experiments/Asymmetric First-Passage Trading.md`. 5 phases: data pipeline → null calibration → signal detection → feature engineering → sequence model. Grounded in probability theory (martingale null, Brier decomposition, information ceiling bounds).
 
 **Barrier cache re-precomputed (2026-02-10).** 248 sessions processed via C++ backend in 570s (~9.5 min) with 8 workers. 64 skipped (insufficient data, mostly weekends/holidays). 461,108 total bars, 454,164 usable rows. 186 MB cache at `cache/barrier/`. Zero errors. N_FEATURES=22, all 22 features active.
 
@@ -200,6 +227,8 @@ Key finding: **More training steps made things worse, not better.** MLP val went
 
 | File | Role |
 |---|---|
+| `experiments/Asymmetric First-Passage Trading.md` | **THE PLAN.** 5-phase research plan. Read this first. |
+| `results/exp-004-22-feature-supervised-diagnostic/metrics.json` | Quick exp-004 results (22-feature vs 9-feature RF on 50K subsample) |
 | `scripts/run_barrier_diagnostic.py` | T6 supervised diagnostic runner — loads barrier cache, runs overfit/MLP/RF tests |
 | `scripts/precompute_barrier_cache.py` | Barrier cache builder — uses C++ `lob_rl_core.barrier_precompute()` backend. ~10 min for 312 files with `--workers 8`. |
 | `cache/barrier/` | 248 barrier `.npz` files (220-dim features, N_FEATURES=22). **FRESH** — rebuilt via C++ backend. 461K bars, 454K usable, 186 MB. |
@@ -288,7 +317,8 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 | ~~Run experiments on RunPod~~ | ~~Done~~ | All 3 completed 5M steps. LSTM best (val -36.7), all negative OOS. See `research/experiment_report.md`. |
 | ~~Install research kit~~ | ~~Done~~ | claude-research-kit installed, configured, research files populated. |
 | ~~Investigate negative OOS~~ | ~~Done (P0s REFUTED)~~ | exp-001 (data scaling) REFUTED, exp-002 (exec cost) REFUTED. Both P0 hypotheses eliminated. |
-| **T10-T12 barrier GPU training** | **P0** | Signal confirmed. Train barrier PPO via `./experiment.sh`. |
+| **Asymmetric First-Passage Trading plan** | **P0** | 5-phase plan at `experiments/Asymmetric First-Passage Trading.md`. Phase 0 mostly done. Phase 1-2 are next. |
+| **T10-T12 barrier GPU training** | **P1** | Signal confirmed. Train barrier PPO via `./experiment.sh`. Deferred until Phase 2 signal detection passes. |
 | ~~Fix dead book features~~ | ~~Done~~ | PR #34. LOB Reconstructor + MBO wiring. All book features active. |
 | ~~Phase 1 microstructure features~~ | ~~Done~~ | PR #35. OFI, depth ratio, wmid displacement, spread std. N_FEATURES 13→17. |
 | ~~Phase 2 microstructure features~~ | ~~Done~~ | PR #36. VAMP, aggressor imbalance, trade arrival, cancel-to-trade, price impact. N_FEATURES 17→22. |

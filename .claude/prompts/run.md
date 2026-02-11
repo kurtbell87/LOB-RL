@@ -304,6 +304,8 @@ If an abort criterion is triggered:
 3. Stop execution
 4. The READ agent will handle the interpretation
 
+**IMPORTANT: Time-based abort thresholds.** If a spec's per-run time abort threshold is clearly unrealistic for the actual data size (e.g., "abort if RF takes >60s" but the dataset has 450K samples and 220 features), **ignore that specific abort criterion** and note the discrepancy in `metrics.json` notes. Killing and restarting due to unrealistic time estimates wastes more time than letting the run finish. Apply the total wall-clock budget loosely — complete the current phase and report partial results rather than hard-killing mid-run.
+
 ## What NOT To Do
 - Do NOT add metrics that aren't in the spec. If you discover something interesting, note it in `metrics.json` `notes` field, but it does not become a metric.
 - Do NOT skip seeds or runs defined in the protocol.
