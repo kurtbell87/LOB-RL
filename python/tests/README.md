@@ -2,7 +2,7 @@
 
 pytest-based tests. Run with: `cd build-release && PYTHONPATH=.:../python uv run pytest ../python/tests/`
 
-**1664 tests** (1308 core + 356 barrier), all passing (4 core + 8 barrier skipped: fixture-dependent).
+**2162 tests** (1308 core + 854 barrier/per-bar), all passing (59 skipped: fixture-dependent).
 
 ## Test files
 
@@ -42,6 +42,8 @@ pytest-based tests. Run with: `cd build-release && PYTHONPATH=.:../python uv run
 | `barrier/test_gamblers_ruin.py` | 81 tests: `gamblers_ruin_analytic()`, `generate_random_walk()`, `validate_drift_level()`, `run_validation()`, 5 drift levels |
 | `barrier/test_regime_switch.py` | 51 tests: `generate_regime_switch_trades()`, `validate_regime_switch()`, KS tests, normalization adaptation, regime boundary detection |
 | `barrier/conftest.py` | Shared helpers: `make_bar()`, `make_flat_bars()`, `make_session_bars()`, `TICK_SIZE`, RTH constants |
+| `test_per_bar_features.py` | 25 tests: `load_session_features()`, `temporal_split()` — per-bar feature loading, label alignment, session skipping, chronological sorting |
+| `test_per_bar_features_binding.py` | 12 tests: `barrier_precompute()` Python binding — `bar_features` key, shape, dtype, value range, alignment (all skipped: fixture-dependent) |
 
 ## Fixtures
 

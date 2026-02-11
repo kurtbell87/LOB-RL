@@ -194,6 +194,10 @@ PYBIND11_MODULE(lob_rl_core, m) {
         int feat_cols = N_FEATURES * lookback;
         result["features"] = to_numpy_2d(day.features, day.n_usable, feat_cols);
 
+        // Per-bar normalized features (float32, 2D)
+        result["bar_features"] = to_numpy_2d(day.bar_features, day.n_trimmed, N_FEATURES);
+        result["n_trimmed"] = day.n_trimmed;
+
         // Scalar metadata
         result["bar_size"] = bar_size;
         result["lookback"] = lookback;
