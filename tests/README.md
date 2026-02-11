@@ -2,12 +2,14 @@
 
 GoogleTest-based tests. Run with: `cd build-release && ./lob_tests`
 
-**449 tests** across 31 test suites. (15 skipped: need `.dbn.zst` fixture.)
+**591 tests** across 58 test suites. (15 skipped: need `.dbn.zst` fixture.)
 
 ## Test files
 
 | File | Tests |
 |---|---|
+| `test_barrier_bar_builder.cpp` | TradeBar and BarBookAccum construction from MBO data |
+| `test_barrier_features.cpp` | `compute_bar_features()`, `normalize_features()`, `assemble_lookback()` — 59 tests across 21 suites |
 | `test_book.cpp` | Book add/cancel/modify/trade operations |
 | `test_book_depth.cpp` | `top_bids(k)`/`top_asks(k)`, `best_{bid,ask}_qty()`, `total_{bid,ask}_depth(n)`, `weighted_mid()`, `vamp(n)` |
 | `test_data_integrity.cpp` | Validation, overflow, truncation handling |
