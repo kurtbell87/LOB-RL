@@ -19,12 +19,6 @@
 
 static constexpr double TICK = 0.25;
 
-// Build a single trade message at a given price/qty/timestamp.
-static Message make_trade(uint64_t id, double price, uint32_t qty,
-                          uint64_t ts, Message::Side side = Message::Side::Ask) {
-    return make_msg(id, side, Message::Action::Trade, price, qty, ts);
-}
-
 // Build a complete RTH message stream for bar-building tests.
 // Pre-market warmup + RTH trades forming exact bars.
 // Returns {messages, expected_bar_count}.
@@ -63,7 +57,7 @@ static StreamSpec make_bar_stream(int bar_size, int num_bars,
         double p = prices[i % n_prices];
         // Alternate sides for aggressor diversity
         Message::Side side = (i % 3 == 0) ? Message::Side::Bid : Message::Side::Ask;
-        msgs.push_back(make_trade(next_id++, p, 1, rth_ts + i * 1'000'000ULL, side));
+        msgs.push_back(make_trade_msg(next_id++, p, 1, rth_ts + i * 1'000'000ULL, side));
     }
 
     return {msgs, num_bars};
@@ -257,10 +251,10 @@ TEST(BarBuilder, BarOHLCVValuesCorrect) {
 
     // RTH: 4 trades at known prices
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
-    builder.process(make_trade(next_id++, 1000.25, 1, rth_ts));       // open
-    builder.process(make_trade(next_id++, 1001.00, 1, rth_ts + 1'000'000));  // high
-    builder.process(make_trade(next_id++,  999.50, 1, rth_ts + 2'000'000));  // low
-    builder.process(make_trade(next_id++, 1000.50, 1, rth_ts + 3'000'000));  // close
+    builder.process(make_trade_msg(next_id++, 1000.25, 1, rth_ts));       // open
+    builder.process(make_trade_msg(next_id++, 1001.00, 1, rth_ts + 1'000'000));  // high
+    builder.process(make_trade_msg(next_id++,  999.50, 1, rth_ts + 2'000'000));  // low
+    builder.process(make_trade_msg(next_id++, 1000.50, 1, rth_ts + 3'000'000));  // close
 
     ASSERT_EQ(builder.bars().size(), 1u);
     const TradeBar& bar = builder.bars()[0];
@@ -286,9 +280,9 @@ TEST(BarBuilder, BarVWAPHandComputed) {
     // 3 trades: 100.0 x 2, 100.50 x 3, 101.0 x 5
     // VWAP = (100*2 + 100.5*3 + 101*5) / (2+3+5) = (200 + 301.5 + 505) / 10 = 100.65
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
-    builder.process(make_trade(next_id++, 100.0, 2, rth_ts));
-    builder.process(make_trade(next_id++, 100.50, 3, rth_ts + 1'000'000));
-    builder.process(make_trade(next_id++, 101.0, 5, rth_ts + 2'000'000));
+    builder.process(make_trade_msg(next_id++, 100.0, 2, rth_ts));
+    builder.process(make_trade_msg(next_id++, 100.50, 3, rth_ts + 1'000'000));
+    builder.process(make_trade_msg(next_id++, 101.0, 5, rth_ts + 2'000'000));
 
     ASSERT_EQ(builder.bars().size(), 1u);
     EXPECT_NEAR(builder.bars()[0].vwap, 100.65, 1e-9);
@@ -307,9 +301,9 @@ TEST(BarBuilder, TradePricesAndSizesStoredInBar) {
                              1000.25, 100, pre_ts + NS_PER_MIN));
 
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
-    builder.process(make_trade(next_id++, 100.0, 2, rth_ts));
-    builder.process(make_trade(next_id++, 100.50, 3, rth_ts + 1'000'000));
-    builder.process(make_trade(next_id++, 101.0, 5, rth_ts + 2'000'000));
+    builder.process(make_trade_msg(next_id++, 100.0, 2, rth_ts));
+    builder.process(make_trade_msg(next_id++, 100.50, 3, rth_ts + 1'000'000));
+    builder.process(make_trade_msg(next_id++, 101.0, 5, rth_ts + 2'000'000));
 
     ASSERT_EQ(builder.bars().size(), 1u);
     const TradeBar& bar = builder.bars()[0];
@@ -339,9 +333,9 @@ TEST(BarBuilder, BarTimestampsMatchFirstAndLastTrade) {
     uint64_t t1 = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
     uint64_t t2 = t1 + 1'000'000;
     uint64_t t3 = t1 + 2'000'000;
-    builder.process(make_trade(next_id++, 100.0, 1, t1));
-    builder.process(make_trade(next_id++, 100.25, 1, t2));
-    builder.process(make_trade(next_id++, 100.50, 1, t3));
+    builder.process(make_trade_msg(next_id++, 100.0, 1, t1));
+    builder.process(make_trade_msg(next_id++, 100.25, 1, t2));
+    builder.process(make_trade_msg(next_id++, 100.50, 1, t3));
 
     ASSERT_EQ(builder.bars().size(), 1u);
     EXPECT_EQ(builder.bars()[0].t_start, t1);
@@ -361,10 +355,10 @@ TEST(BarBuilder, VolumeEqualsSumOfTradeSizes) {
                              1000.25, 100, pre_ts + NS_PER_MIN));
 
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
-    builder.process(make_trade(next_id++, 100.0, 3, rth_ts));
-    builder.process(make_trade(next_id++, 100.25, 7, rth_ts + 1'000'000));
-    builder.process(make_trade(next_id++, 100.50, 2, rth_ts + 2'000'000));
-    builder.process(make_trade(next_id++, 100.75, 8, rth_ts + 3'000'000));
+    builder.process(make_trade_msg(next_id++, 100.0, 3, rth_ts));
+    builder.process(make_trade_msg(next_id++, 100.25, 7, rth_ts + 1'000'000));
+    builder.process(make_trade_msg(next_id++, 100.50, 2, rth_ts + 2'000'000));
+    builder.process(make_trade_msg(next_id++, 100.75, 8, rth_ts + 3'000'000));
 
     ASSERT_EQ(builder.bars().size(), 1u);
     const TradeBar& bar = builder.bars()[0];
@@ -392,7 +386,7 @@ TEST(BarBuilder, PreMarketMessagesAreBookWarmupOnly) {
 
     // Send many pre-market trades (should NOT form bars)
     for (int i = 0; i < 20; ++i) {
-        builder.process(make_trade(next_id++, 1000.0 + i * TICK, 1,
+        builder.process(make_trade_msg(next_id++, 1000.0 + i * TICK, 1,
                                    pre_ts + i * 1'000'000));
     }
 
@@ -416,7 +410,7 @@ TEST(BarBuilder, PostMarketMessagesIgnored) {
     // Post-market trades
     uint64_t post_ts = DAY_BASE_NS + RTH_CLOSE_NS + NS_PER_MIN;
     for (int i = 0; i < 20; ++i) {
-        builder.process(make_trade(next_id++, 1000.0, 1,
+        builder.process(make_trade_msg(next_id++, 1000.0, 1,
                                    post_ts + i * 1'000'000));
     }
 
@@ -439,14 +433,14 @@ TEST(BarBuilder, MixedPreMarketAndRTHOnlyRTHFormsBars) {
                              1000.25, 100, pre_ts + NS_PER_MIN));
     // Pre-market trades
     for (int i = 0; i < 10; ++i) {
-        builder.process(make_trade(next_id++, 1000.0, 1,
+        builder.process(make_trade_msg(next_id++, 1000.0, 1,
                                    pre_ts + (i + 2) * NS_PER_MIN));
     }
 
     // RTH: exactly bar_size trades → 1 bar
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
     for (int i = 0; i < bar_size; ++i) {
-        builder.process(make_trade(next_id++, 1000.25, 1,
+        builder.process(make_trade_msg(next_id++, 1000.25, 1,
                                    rth_ts + i * 1'000'000));
     }
 
@@ -473,8 +467,8 @@ TEST(BarBuilder, PreMarketBookStateCarriesIntoRTH) {
 
     // RTH: 2 trades to form a bar
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
-    builder.process(make_trade(next_id++, 1000.25, 1, rth_ts));
-    builder.process(make_trade(next_id++, 1000.50, 1, rth_ts + 1'000'000));
+    builder.process(make_trade_msg(next_id++, 1000.25, 1, rth_ts));
+    builder.process(make_trade_msg(next_id++, 1000.50, 1, rth_ts + 1'000'000));
 
     ASSERT_EQ(builder.bars().size(), 1u);
     ASSERT_EQ(builder.accums().size(), 1u);
@@ -497,7 +491,7 @@ TEST(BarBuilder, RthOpenAndCloseNsReturnCorrectValues) {
 
     // Send an RTH message to establish the day
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
-    builder.process(make_trade(next_id++, 1000.0, 1, rth_ts));
+    builder.process(make_trade_msg(next_id++, 1000.0, 1, rth_ts));
 
     // rth_open_ns and rth_close_ns should be epoch-based (not time-of-day)
     uint64_t open_ns = builder.rth_open_ns();
@@ -553,8 +547,8 @@ TEST(BarBuilder, AccumBBOQtySnapshotAtBarClose) {
 
     // RTH: 2 trades → bar complete
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
-    builder.process(make_trade(next_id++, 1000.00, 1, rth_ts));
-    builder.process(make_trade(next_id++, 1000.25, 1, rth_ts + 1'000'000));
+    builder.process(make_trade_msg(next_id++, 1000.00, 1, rth_ts));
+    builder.process(make_trade_msg(next_id++, 1000.25, 1, rth_ts + 1'000'000));
 
     ASSERT_EQ(builder.accums().size(), 1u);
     const BarBookAccum& acc = builder.accums()[0];
@@ -582,8 +576,8 @@ TEST(BarBuilder, AccumDepthSnapshotAtBarClose) {
 
     // RTH: 2 trades → bar
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
-    builder.process(make_trade(next_id++, 100.25, 1, rth_ts));
-    builder.process(make_trade(next_id++, 100.50, 1, rth_ts + 1'000'000));
+    builder.process(make_trade_msg(next_id++, 100.25, 1, rth_ts));
+    builder.process(make_trade_msg(next_id++, 100.50, 1, rth_ts + 1'000'000));
 
     ASSERT_EQ(builder.accums().size(), 1u);
     const BarBookAccum& acc = builder.accums()[0];
@@ -631,7 +625,7 @@ TEST(BarBuilder, AccumCancelCountsPerSide) {
 
     // 4 trades to complete bar
     for (int i = 0; i < 4; ++i) {
-        builder.process(make_trade(next_id++, 1000.0, 1,
+        builder.process(make_trade_msg(next_id++, 1000.0, 1,
                                    rth_ts + (3 + i) * 1'000'000));
     }
 
@@ -661,7 +655,7 @@ TEST(BarBuilder, AccumOFIAddAtBBOIncreasesSigned) {
 
     // 3 trades to complete bar
     for (int i = 0; i < 3; ++i) {
-        builder.process(make_trade(next_id++, 1000.0, 1,
+        builder.process(make_trade_msg(next_id++, 1000.0, 1,
                                    rth_ts + (i + 1) * 1'000'000));
     }
 
@@ -695,7 +689,7 @@ TEST(BarBuilder, AccumOFIAddAwayFromBBODoesNotAffectOFI) {
 
     // 3 trades to complete bar
     for (int i = 0; i < 3; ++i) {
-        builder.process(make_trade(next_id++, 1000.0, 1,
+        builder.process(make_trade_msg(next_id++, 1000.0, 1,
                                    rth_ts + (i + 1) * 1'000'000));
     }
 
@@ -721,7 +715,7 @@ TEST(BarBuilder, AccumWmidFirstCapturedAfterFirstEvent) {
     // RTH: 3 trades to form a bar
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
     for (int i = 0; i < 3; ++i) {
-        builder.process(make_trade(next_id++, 1000.0, 1,
+        builder.process(make_trade_msg(next_id++, 1000.0, 1,
                                    rth_ts + i * 1'000'000));
     }
 
@@ -746,7 +740,7 @@ TEST(BarBuilder, AccumWmidEndCapturedAtBarClose) {
 
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
     for (int i = 0; i < 3; ++i) {
-        builder.process(make_trade(next_id++, 1000.0, 1,
+        builder.process(make_trade_msg(next_id++, 1000.0, 1,
                                    rth_ts + i * 1'000'000));
     }
 
@@ -777,7 +771,7 @@ TEST(BarBuilder, AccumSpreadSamplesCollected) {
                              1000.50, 50, rth_ts + 1'000'000));  // event → sample spread
 
     for (int i = 0; i < 5; ++i) {
-        builder.process(make_trade(next_id++, 1000.0, 1,
+        builder.process(make_trade_msg(next_id++, 1000.0, 1,
                                    rth_ts + (2 + i) * 1'000'000));
     }
 
@@ -808,7 +802,7 @@ TEST(BarBuilder, AccumVAMPAtBarMidpoint) {
 
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
     for (int i = 0; i < 4; ++i) {
-        builder.process(make_trade(next_id++, 100.25, 1,
+        builder.process(make_trade_msg(next_id++, 100.25, 1,
                                    rth_ts + i * 1'000'000));
     }
 
@@ -838,7 +832,7 @@ TEST(BarBuilder, AccumVAMPAtBarEnd) {
 
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
     for (int i = 0; i < 3; ++i) {
-        builder.process(make_trade(next_id++, 100.25, 1,
+        builder.process(make_trade_msg(next_id++, 100.25, 1,
                                    rth_ts + i * 1'000'000));
     }
 
@@ -914,7 +908,7 @@ TEST(BarBuilder, AccumNTradesCount) {
 
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
     for (int i = 0; i < 5; ++i) {
-        builder.process(make_trade(next_id++, 1000.0, 1,
+        builder.process(make_trade_msg(next_id++, 1000.0, 1,
                                    rth_ts + i * 1'000'000));
     }
 
@@ -947,7 +941,7 @@ TEST(BarBuilder, AccumNCancelsCount) {
                              999.50, 50, rth_ts + 1'000'000));
 
     for (int i = 0; i < 3; ++i) {
-        builder.process(make_trade(next_id++, 1000.0, 1,
+        builder.process(make_trade_msg(next_id++, 1000.0, 1,
                                    rth_ts + (2 + i) * 1'000'000));
     }
 
@@ -975,12 +969,12 @@ TEST(BarBuilder, AccumResetsBetwenBars) {
     // Bar 0: 1 cancel + 2 trades (cancel happens to bid)
     builder.process(make_msg(bid_oid, Message::Side::Bid, Message::Action::Cancel,
                              999.75, 50, rth_ts));
-    builder.process(make_trade(next_id++, 1000.0, 3, rth_ts + 1'000'000));
-    builder.process(make_trade(next_id++, 1000.25, 2, rth_ts + 2'000'000));
+    builder.process(make_trade_msg(next_id++, 1000.0, 3, rth_ts + 1'000'000));
+    builder.process(make_trade_msg(next_id++, 1000.25, 2, rth_ts + 2'000'000));
 
     // Bar 1: just 2 trades (no cancels)
-    builder.process(make_trade(next_id++, 1000.50, 1, rth_ts + 3'000'000));
-    builder.process(make_trade(next_id++, 1000.75, 1, rth_ts + 4'000'000));
+    builder.process(make_trade_msg(next_id++, 1000.50, 1, rth_ts + 3'000'000));
+    builder.process(make_trade_msg(next_id++, 1000.75, 1, rth_ts + 4'000'000));
 
     ASSERT_EQ(builder.accums().size(), 2u);
 
@@ -1191,7 +1185,7 @@ TEST(BarBuilder, BarSizeOneCreatesBarPerTrade) {
     int n_trades = 7;
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
     for (int i = 0; i < n_trades; ++i) {
-        builder.process(make_trade(next_id++, 1000.0 + i * TICK, 1,
+        builder.process(make_trade_msg(next_id++, 1000.0 + i * TICK, 1,
                                    rth_ts + i * 1'000'000));
     }
 
@@ -1245,7 +1239,7 @@ TEST(BarBuilder, NonTradeRTHEventsDoNotCountTowardBarSize) {
 
     // Now send exactly bar_size trades
     for (int i = 0; i < bar_size; ++i) {
-        builder.process(make_trade(next_id++, 1000.0, 1,
+        builder.process(make_trade_msg(next_id++, 1000.0, 1,
                                    rth_ts + (10 + i) * 1'000'000));
     }
 
@@ -1291,9 +1285,9 @@ TEST(BarBuilder, FlushedPartialBarHasCorrectOHLCV) {
 
     // Only 3 trades (bar_size=10, so this is partial)
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
-    builder.process(make_trade(next_id++, 100.50, 2, rth_ts));       // open
-    builder.process(make_trade(next_id++, 101.00, 3, rth_ts + 1'000'000));  // high
-    builder.process(make_trade(next_id++, 100.00, 1, rth_ts + 2'000'000));  // low, close
+    builder.process(make_trade_msg(next_id++, 100.50, 2, rth_ts));       // open
+    builder.process(make_trade_msg(next_id++, 101.00, 3, rth_ts + 1'000'000));  // high
+    builder.process(make_trade_msg(next_id++, 100.00, 1, rth_ts + 2'000'000));  // low, close
 
     EXPECT_EQ(builder.bars().size(), 0u);
     builder.flush();
@@ -1321,8 +1315,8 @@ TEST(BarBuilder, FlushCalledTwiceDoesNotDuplicateBars) {
                              1000.25, 100, pre_ts + NS_PER_MIN));
 
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
-    builder.process(make_trade(next_id++, 100.0, 1, rth_ts));
-    builder.process(make_trade(next_id++, 100.25, 1, rth_ts + 1'000'000));
+    builder.process(make_trade_msg(next_id++, 100.0, 1, rth_ts));
+    builder.process(make_trade_msg(next_id++, 100.25, 1, rth_ts + 1'000'000));
 
     bool first_flush = builder.flush();
     bool second_flush = builder.flush();

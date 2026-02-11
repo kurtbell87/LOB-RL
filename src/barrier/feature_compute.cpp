@@ -1,8 +1,12 @@
 #include "lob/barrier/feature_compute.h"
 #include <algorithm>
 #include <cmath>
-#include <numeric>
 #include <stdexcept>
+
+// Division guard to avoid divide-by-zero in ratio computations.
+static constexpr double EPSILON = 1e-10;
+// Default value for imbalance ratios when both sides have zero quantity.
+static constexpr double BALANCED_DEFAULT = 0.5;
 
 // ---------------------------------------------------------------------------
 // compute_bar_features
@@ -78,16 +82,16 @@ std::vector<double> compute_bar_features(
         // Col 0: Trade flow imbalance
         f[0] = compute_trade_flow_imbalance(bar);
 
-        // Col 1: BBO imbalance = bid_qty / (bid_qty + ask_qty), default 0.5
+        // Col 1: BBO imbalance = bid_qty / (bid_qty + ask_qty), default balanced
         {
             double total = static_cast<double>(acc.bid_qty) + static_cast<double>(acc.ask_qty);
-            f[1] = (total == 0.0) ? 0.5 : static_cast<double>(acc.bid_qty) / total;
+            f[1] = (total == 0.0) ? BALANCED_DEFAULT : static_cast<double>(acc.bid_qty) / total;
         }
 
-        // Col 2: Depth(5) imbalance = total_bid_5 / (total_bid_5 + total_ask_5), default 0.5
+        // Col 2: Depth(5) imbalance = total_bid_5 / (total_bid_5 + total_ask_5), default balanced
         {
             double total = static_cast<double>(acc.total_bid_5) + static_cast<double>(acc.total_ask_5);
-            f[2] = (total == 0.0) ? 0.5 : static_cast<double>(acc.total_bid_5) / total;
+            f[2] = (total == 0.0) ? BALANCED_DEFAULT : static_cast<double>(acc.total_bid_5) / total;
         }
 
         // Col 3: Bar range in ticks
@@ -125,34 +129,34 @@ std::vector<double> compute_bar_features(
             f[9] = std::clamp(t, 0.0, 1.0);
         }
 
-        // Col 10: Cancel asymmetry = (bid_cancels - ask_cancels) / (total_cancels + 1e-10)
+        // Col 10: Cancel asymmetry = (bid_cancels - ask_cancels) / (total_cancels + eps)
         {
             double total = static_cast<double>(acc.bid_cancels + acc.ask_cancels);
-            f[10] = (acc.bid_cancels - acc.ask_cancels) / (total + 1e-10);
+            f[10] = (acc.bid_cancels - acc.ask_cancels) / (total + EPSILON);
         }
 
-        // Cols 11, 16: Spread mean and std (computed together to avoid iterating twice)
+        // Cols 11, 16: Spread mean and std (single-pass: sum and sum-of-squares)
         {
             if (acc.spread_samples.empty()) {
                 f[11] = 1.0;  // default mean spread
-                f[16] = 0.0;  // < 2 samples → std = 0
+                f[16] = 0.0;  // no samples → std = 0
             } else {
                 double sum = 0.0;
-                for (double s : acc.spread_samples) sum += s;
+                double sum_sq = 0.0;
+                for (double s : acc.spread_samples) {
+                    sum += s;
+                    sum_sq += s * s;
+                }
                 double spread_n = static_cast<double>(acc.spread_samples.size());
-                double spread_mean = sum / spread_n;
-                f[11] = spread_mean;
+                f[11] = sum / spread_n;
 
                 if (acc.spread_samples.size() < 2) {
                     f[16] = 0.0;
                 } else {
-                    double var = 0.0;
-                    for (double s : acc.spread_samples) {
-                        double d = s - spread_mean;
-                        var += d * d;
-                    }
-                    var /= spread_n;  // population variance (ddof=0)
-                    f[16] = std::sqrt(var);
+                    // population variance: E[x^2] - E[x]^2
+                    double mean = sum / spread_n;
+                    double var = sum_sq / spread_n - mean * mean;
+                    f[16] = std::sqrt(std::max(var, 0.0));
                 }
             }
         }
@@ -160,26 +164,26 @@ std::vector<double> compute_bar_features(
         // Col 12: Session age = min(bar_index / SESSION_AGE_PERIOD, 1.0)
         f[12] = std::min(static_cast<double>(bar.bar_index) / SESSION_AGE_PERIOD, 1.0);
 
-        // Col 13: OFI = clamp(ofi_signed_volume / (total_add_volume + 1e-10), -1, 1)
+        // Col 13: OFI = clamp(ofi_signed_volume / (total_add_volume + eps), -1, 1)
         //         But if total_add_volume == 0, return 0.
         {
             if (acc.total_add_volume == 0.0 && acc.ofi_signed_volume == 0.0) {
                 f[13] = 0.0;
             } else {
-                double raw_ofi = acc.ofi_signed_volume / (acc.total_add_volume + 1e-10);
+                double raw_ofi = acc.ofi_signed_volume / (acc.total_add_volume + EPSILON);
                 f[13] = std::clamp(raw_ofi, -1.0, 1.0);
             }
         }
 
-        // Col 14: Depth ratio = (total_bid_3 + total_ask_3) / (total_bid_10 + total_ask_10 + 1e-10)
-        //         Default 0.5 when total_10 == 0
+        // Col 14: Depth ratio = (total_bid_3 + total_ask_3) / (total_bid_10 + total_ask_10 + eps)
+        //         Default balanced when total_10 == 0
         {
             double total_10 = static_cast<double>(acc.total_bid_10) + static_cast<double>(acc.total_ask_10);
             if (total_10 == 0.0) {
-                f[14] = 0.5;
+                f[14] = BALANCED_DEFAULT;
             } else {
                 double total_3 = static_cast<double>(acc.total_bid_3) + static_cast<double>(acc.total_ask_3);
-                f[14] = total_3 / (total_10 + 1e-10);
+                f[14] = total_3 / (total_10 + EPSILON);
             }
         }
 
@@ -201,13 +205,13 @@ std::vector<double> compute_bar_features(
             }
         }
 
-        // Col 18: Aggressor imbalance = (buy - sell) / (buy + sell + 1e-10), 0 if both zero
+        // Col 18: Aggressor imbalance = (buy - sell) / (buy + sell + eps), 0 if both zero
         {
             double total = acc.buy_aggressor_vol + acc.sell_aggressor_vol;
             if (total == 0.0) {
                 f[18] = 0.0;
             } else {
-                f[18] = (acc.buy_aggressor_vol - acc.sell_aggressor_vol) / (total + 1e-10);
+                f[18] = (acc.buy_aggressor_vol - acc.sell_aggressor_vol) / (total + EPSILON);
             }
         }
 
