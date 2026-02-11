@@ -24,12 +24,8 @@ void BarBuilder::process(const Message& msg) {
     if (phase == SessionFilter::Phase::RTH) {
         // Ensure pending bar exists for any RTH event
         if (!has_pending_) {
-            pending_bar_ = TradeBar{};
-            pending_accum_ = BarBookAccum{};
-            trade_count_ = 0;
+            reset_pending_state();
             has_pending_ = true;
-            wmid_first_set_ = false;
-            vamp_mid_sampled_ = false;
         }
 
         // Track non-trade events in current accumulator
@@ -152,7 +148,10 @@ void BarBuilder::emit_bar() {
     bars_.push_back(std::move(pending_bar_));
     accums_.push_back(std::move(pending_accum_));
 
-    // Reset pending state
+    reset_pending_state();
+}
+
+void BarBuilder::reset_pending_state() {
     pending_bar_ = TradeBar{};
     pending_accum_ = BarBookAccum{};
     trade_count_ = 0;

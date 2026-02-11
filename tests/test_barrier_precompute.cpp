@@ -17,34 +17,6 @@
 
 static constexpr double TICK = 0.25;
 
-// Build a single trade message at a given price/qty/timestamp.
-static Message make_trade_msg(uint64_t id, double price, uint32_t qty,
-                              uint64_t ts, Message::Side side = Message::Side::Ask) {
-    return make_msg(id, side, Message::Action::Trade, price, qty, ts);
-}
-
-// Append pre-market book-building messages centered on `mid`.
-// Creates 2 tight levels + 8 deeper levels (10 total per side).
-// Updates next_id in-place and returns pre-market timestamp base.
-static void append_book_warmup(std::vector<Message>& msgs, uint64_t& next_id,
-                                double mid) {
-    uint64_t pre_ts = DAY_BASE_NS + 10ULL * NS_PER_HOUR;
-    msgs.push_back(make_msg(next_id++, Message::Side::Bid, Message::Action::Add,
-                            mid - TICK, 100, pre_ts));
-    msgs.push_back(make_msg(next_id++, Message::Side::Ask, Message::Action::Add,
-                            mid + TICK, 100, pre_ts + NS_PER_MIN));
-    msgs.push_back(make_msg(next_id++, Message::Side::Bid, Message::Action::Add,
-                            mid - 2 * TICK, 200, pre_ts + 2 * NS_PER_MIN));
-    msgs.push_back(make_msg(next_id++, Message::Side::Ask, Message::Action::Add,
-                            mid + 2 * TICK, 200, pre_ts + 3 * NS_PER_MIN));
-    for (int i = 3; i <= 10; ++i) {
-        msgs.push_back(make_msg(next_id++, Message::Side::Bid, Message::Action::Add,
-                                mid - i * TICK, 100, pre_ts + (2 * i) * NS_PER_MIN));
-        msgs.push_back(make_msg(next_id++, Message::Side::Ask, Message::Action::Add,
-                                mid + i * TICK, 100, pre_ts + (2 * i + 1) * NS_PER_MIN));
-    }
-}
-
 // Build an MBO stream that produces a known number of complete bars.
 // Includes pre-market book warmup + RTH trades.
 // Returns the message vector.
