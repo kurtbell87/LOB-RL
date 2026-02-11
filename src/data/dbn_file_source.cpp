@@ -1,38 +1,16 @@
-#include "dbn_file_source.h"
+#define DBN_MESSAGE_MAP_SKIP_SHIM
 #include <databento/dbn_file_store.hpp>
 #include <databento/record.hpp>
+#include "dbn_file_source.h"
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
 #include <cstring>
 #include <vector>
 
-// ── Shared char-to-enum mappings ─────────────────────────────────────
-
-/// Map a Databento action character to Message::Action.
-/// Returns false for actions we skip (Reset, None, unknown).
-static bool map_action(char action_char, Message::Action& out) {
-    switch (action_char) {
-        case 'A': out = Message::Action::Add; return true;
-        case 'C': out = Message::Action::Cancel; return true;
-        case 'M': out = Message::Action::Modify; return true;
-        case 'T': [[fallthrough]];
-        case 'F': out = Message::Action::Trade; return true;
-        default:  return false;
-    }
-}
-
-/// Map a Databento side character to Message::Side.
-/// Defaults to Bid for unknown/None sides.
-static Message::Side map_side(char side_char) {
-    switch (side_char) {
-        case 'A': return Message::Side::Ask;
-        case 'B': [[fallthrough]];
-        default:  return Message::Side::Bid;
-    }
-}
-
-// Inline mapping from real databento::MboMsg to our Message type.
+// Mapping from real databento::MboMsg to our Message type.
+// Uses shared map_action()/map_side() from dbn_message_map.h,
+// but handles type differences (UnixNanos, FlagSet) in the real databento types.
 static bool convert_mbo(const databento::MboMsg& mbo, Message& msg,
                         uint32_t instrument_id) {
     if (instrument_id != 0 && mbo.hd.instrument_id != instrument_id) {

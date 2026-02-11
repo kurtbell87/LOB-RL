@@ -80,12 +80,13 @@ TEST(MapMboToMessage, ActionFillMapsToTrade) {
 // Action Mapping: Actions that should be skipped (return false)
 // ===========================================================================
 
-TEST(MapMboToMessage, ActionClearIsSkipped) {
-    // Spec: Action::Clear ('R') should be skipped
+TEST(MapMboToMessage, ActionClearMapsToCancel) {
+    // Clear ('R') maps to Cancel for book order removal
     databento::MboMsg mbo = make_mbo(12345, 1000, 6, 999750000000LL, 10, 'R', 'N');
     Message msg;
-    EXPECT_FALSE(map_mbo_to_message(mbo, msg, 12345))
-        << "Action 'R' (Clear) should be skipped";
+    ASSERT_TRUE(map_mbo_to_message(mbo, msg, 12345))
+        << "Action 'R' (Clear) should map to Cancel";
+    EXPECT_EQ(msg.action, Message::Action::Cancel);
 }
 
 TEST(MapMboToMessage, ActionNoneIsSkipped) {
@@ -241,10 +242,11 @@ TEST(MapMboToMessage, InstrumentIdZeroAcceptsDifferentIds) {
 // Combined Filtering: instrument_id + action skip
 // ===========================================================================
 
-TEST(MapMboToMessage, ClearActionSkippedEvenIfInstrumentMatches) {
+TEST(MapMboToMessage, ClearActionMapsToCancel) {
     databento::MboMsg mbo = make_mbo(12345, 1000, 1, 999750000000LL, 10, 'R', 'N', 0);
     Message msg;
-    EXPECT_FALSE(map_mbo_to_message(mbo, msg, 12345));
+    ASSERT_TRUE(map_mbo_to_message(mbo, msg, 12345));
+    EXPECT_EQ(msg.action, Message::Action::Cancel);
 }
 
 TEST(MapMboToMessage, ValidActionSkippedIfInstrumentDoesNotMatch) {
@@ -310,7 +312,7 @@ TEST(MapMboToMessage, MixedRecordsFilteredCorrectly) {
     auto mbo1 = make_mbo(INST, 1000, 1, 999750000000LL, 10, 'A', 'B');
     if (map_mbo_to_message(mbo1, msg, INST)) ++accepted; else ++rejected;
 
-    // Record 2: matching Clear — rejected (action 'R')
+    // Record 2: matching Clear — accepted (maps to Cancel)
     auto mbo2 = make_mbo(INST, 1001, 2, 999750000000LL, 10, 'R', 'N');
     if (map_mbo_to_message(mbo2, msg, INST)) ++accepted; else ++rejected;
 
@@ -330,6 +332,6 @@ TEST(MapMboToMessage, MixedRecordsFilteredCorrectly) {
     auto mbo6 = make_mbo(INST, 1005, 6, 999750000000LL, 3, 'T', 'N');
     if (map_mbo_to_message(mbo6, msg, INST)) ++accepted; else ++rejected;
 
-    EXPECT_EQ(accepted, 3) << "Expected 3 accepted records (Add, Fill→Trade, Trade)";
-    EXPECT_EQ(rejected, 3) << "Expected 3 rejected records (Clear, wrong inst, None)";
+    EXPECT_EQ(accepted, 4) << "Expected 4 accepted records (Add, Clear→Cancel, Fill→Trade, Trade)";
+    EXPECT_EQ(rejected, 2) << "Expected 2 rejected records (wrong inst, None)";
 }
