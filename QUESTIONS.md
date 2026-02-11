@@ -38,7 +38,7 @@ Determine whether a reinforcement learning agent can profitably trade MES (Micro
 | P1 | Are 4M-step checkpoints better than 5M (late-stage overfitting)? | Not started | — | — | If 4M > 5M OOS: implement early stopping. If equal: overfitting is gradual, not sudden. |
 | P1 | Does VecNormalize leak cross-day information? | Not started | — | — | If leak found: fix normalizer. If clean: rule out this confounder. |
 | P2 | Can reward shaping improve OOS returns? | Not started | P0, P0 | Resolve P0 questions first | If improved OOS: adopt new reward. If not: problem is deeper than reward design. |
-| P1 | Does model architecture (Transformer / SSM / LSTM) significantly affect OOS on the 132-dim barrier features? | Not started | — | P0 supervised diagnostic must confirm signal | If architecture X beats LSTM OOS by >5pp: adopt X. If all within noise: LSTM is fine, problem is elsewhere. Determines whether to invest in custom policy infrastructure. |
+| P1 | Does model architecture (Transformer / SSM / LSTM) significantly affect OOS on the 132-dim barrier features? | **Answered** | — | — | See §5 |
 
 ---
 
@@ -53,6 +53,7 @@ Determine whether a reinforcement learning agent can profitably trade MES (Micro
 | Is the agent learning signal masked by execution cost? | REFUTED | No — even without exec cost, OOS returns are slightly negative (val -4.43, test -5.03) on 20 training days. Exec cost accounts for ~35 points of OOS loss (val -39.55 → -4.43) but doesn't flip the sign. The gap to profitability is ~5 points gross, not ~50 net. Cross-eval shows no-cost policy is impractical under real costs (val -85.22). | exp-002-execution-cost-ablation in RESEARCH_LOG.md |
 | Does increasing training data from 20 to 199 days fix OOS generalization? | REFUTED | No — LSTM 199d val -59.95 (threshold -16.7), MLP 199d val -75.53 ≈ MLP 20d val -75.82. 199 days eliminates memorization (expl_var 0.30 vs 0.97) but OOS is unchanged. Data quantity is not the primary bottleneck. Seed sensitivity extreme (37-point val swing). | exp-001 in RESEARCH_LOG.md |
 | Is ȳ_long ≈ ȳ_short ≈ 1/3 under the asymmetric barrier null? | CONFIRMED | Yes — ȳ_long = 0.320, ȳ_short = 0.322, both within [0.28, 0.38]. sum_ȳ = 0.643 ≈ 2/3. P(1,1) = 0. Labels are independent and well-calibrated. Constant Brier score baseline = 0.218. | exp-005-null-calibration in RESEARCH_LOG.md |
+| Does model architecture (Transformer / SSM / LSTM) significantly affect OOS on the 132-dim barrier features? | REFUTED | No — LSTM and Transformer with full-session causal context both fail to beat constant Brier (all BSS negative). Transformer collapses to near-constant predictions (p̂_std=0.014). LSTM is *worse* than flat LR (BSS -0.0173 vs -0.0003). More expressiveness → worse performance. Architecture cannot amplify signal that isn't there. | exp-007-sequence-model-signal-detection in RESEARCH_LOG.md |
 
 ---
 
@@ -63,4 +64,4 @@ Determine whether a reinforcement learning agent can profitably trade MES (Micro
 - **H3: LSTM's advantage is regularization, not temporal learning.** LSTM retains more entropy and distributes learning across more parameters, acting as implicit regularization.
 - **H4: Late-stage training is harmful.** The 4M checkpoint may outperform the 5M checkpoint, suggesting early stopping would help.
 - **H5: ~~The trade-derived features lack predictive signal.~~ PARTIALLY REFUTED (T6 v2).** Bidirectional framing shows weak but real signal: MLP 39.3% / RF 40.5% vs 34.5% baseline. The v1 diagnostic (long-only) was misleading — proper framing reveals +5pp above chance. Signal is small and regularization gap is massive (90% train → 39% test). 4/13 features still dead. Updated: features have SOME signal, but activating book features and improving generalization are priorities.
-- **H6: SB3's built-in LSTM is insufficient for the 132-dim barrier feature set.** The 13-feature × 10-lookback observation has spatial structure across the lookback window (features at position k-1 are semantically different from k-5) that a flat LSTM processes sequentially but a Transformer or windowed attention could process in parallel. This is untested — gated on supervised diagnostic.
+- **H6: ~~SB3's built-in LSTM is insufficient for the 132-dim barrier feature set.~~ REFUTED (exp-007).** Direct comparison: LSTM (BSS -0.0038 to -0.0173) is *worse* than Transformer (-0.0004 to -0.0011), which matches logistic regression (-0.0003 to -0.0007). No architecture beats constant Brier. The limitation is signal, not architecture. Six model families tested; all fail.

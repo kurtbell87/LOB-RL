@@ -1,0 +1,36 @@
+{
+  "experiment": "exp-007-sequence-model-signal-detection",
+  "seed": 42,
+  "epochs": 50,
+  "batch_size": 4,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "patience": 10,
+  "d_model": 64,
+  "n_layers": 2,
+  "n_heads": 4,
+  "dropout": 0.1,
+  "n_bootstrap": 1000,
+  "device": "mps",
+  "models": {
+    "lstm": {
+      "class": "BarrierLSTM",
+      "n_features": 22,
+      "d_model": 64,
+      "n_layers": 2,
+      "dropout": 0.1
+    },
+    "transformer": {
+      "class": "BarrierTransformer",
+      "n_features": 22,
+      "d_model": 64,
+      "n_layers": 2,
+      "n_heads": 4,
+      "dropout": 0.1
+    }
+  },
+  "data": {
+    "cache_dir": "cache/barrier/",
+    "split": "temporal 60/20/20"
+  }
+}

@@ -46,7 +46,7 @@ class LinearBarEmbedding(BarEmbedding):
         self,
         n_features: int = 22,
         d_model: int = 64,
-        max_len: int = 2048,
+        max_len: int = 4096,
         dropout: float = 0.1,
     ):
         super().__init__()
