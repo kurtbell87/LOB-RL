@@ -137,6 +137,34 @@ inline std::vector<Message> make_stable_bbo_messages(
     return msgs;
 }
 
+// Build a single trade message (convenience wrapper around make_msg).
+inline Message make_trade_msg(uint64_t id, double price, uint32_t qty,
+                               uint64_t ts, Message::Side side = Message::Side::Ask) {
+    return make_msg(id, side, Message::Action::Trade, price, qty, ts);
+}
+
+// Append pre-market book-building messages centered on `mid`.
+// Creates 2 tight levels + 8 deeper levels (10 total per side).
+// Updates next_id in-place.
+inline void append_book_warmup(std::vector<Message>& msgs, uint64_t& next_id,
+                                double mid, double tick = 0.25) {
+    uint64_t pre_ts = DAY_BASE_NS + 10ULL * NS_PER_HOUR;
+    msgs.push_back(make_msg(next_id++, Message::Side::Bid, Message::Action::Add,
+                            mid - tick, 100, pre_ts));
+    msgs.push_back(make_msg(next_id++, Message::Side::Ask, Message::Action::Add,
+                            mid + tick, 100, pre_ts + NS_PER_MIN));
+    msgs.push_back(make_msg(next_id++, Message::Side::Bid, Message::Action::Add,
+                            mid - 2 * tick, 200, pre_ts + 2 * NS_PER_MIN));
+    msgs.push_back(make_msg(next_id++, Message::Side::Ask, Message::Action::Add,
+                            mid + 2 * tick, 200, pre_ts + 3 * NS_PER_MIN));
+    for (int i = 3; i <= 10; ++i) {
+        msgs.push_back(make_msg(next_id++, Message::Side::Bid, Message::Action::Add,
+                                mid - i * tick, 100, pre_ts + (2 * i) * NS_PER_MIN));
+        msgs.push_back(make_msg(next_id++, Message::Side::Ask, Message::Action::Add,
+                                mid + i * tick, 100, pre_ts + (2 * i + 1) * NS_PER_MIN));
+    }
+}
+
 // Databento flag constants (from the spec).
 // Used by test_dbn_message_map.cpp and test_fix_precompute_events.cpp.
 static constexpr uint8_t F_LAST     = 0x80;

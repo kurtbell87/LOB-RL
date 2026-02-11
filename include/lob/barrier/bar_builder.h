@@ -21,6 +21,7 @@ public:
 
 private:
     void emit_bar();
+    void reset_pending_state();
     void snapshot_accum(BarBookAccum& acc);
     void sample_spread(BarBookAccum& acc);
     void sample_wmid_first(BarBookAccum& acc);

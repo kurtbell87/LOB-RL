@@ -38,7 +38,7 @@ Key fixtures: `valid_10records.bin`, `mixed_actions.bin`, `precompute_rth.bin`, 
 
 ## Helpers
 
-`test_helpers.h` — shared `fixture_path()`, `make_msg()`, `make_stable_bbo_messages()`, `make_symmetric_book()`, `ScriptedSource` (replays explicit message lists), flag constants (`F_LAST`, `F_SNAPSHOT`, `F_PUB_SPEC`), time constants (`NS_PER_SEC`, `RTH_OPEN_NS`, `DAY_BASE_NS`).
+`test_helpers.h` — shared `fixture_path()`, `make_msg()`, `make_trade_msg()`, `append_book_warmup()`, `make_stable_bbo_messages()`, `make_symmetric_book()`, `ScriptedSource` (replays explicit message lists), flag constants (`F_LAST`, `F_SNAPSHOT`, `F_PUB_SPEC`), time constants (`NS_PER_SEC`, `RTH_OPEN_NS`, `DAY_BASE_NS`).
 
 ## Adding new tests
 
