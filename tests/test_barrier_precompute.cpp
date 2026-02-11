@@ -9,52 +9,9 @@
 #include "lob/message.h"
 #include "lob/session.h"
 #include "lob/source.h"
-#include "test_helpers.h"
-
-// ===========================================================================
-// Helpers: Build synthetic MBO streams for barrier_precompute() tests
-// ===========================================================================
+#include "test_barrier_helpers.h"
 
 static constexpr double TICK = 0.25;
-
-// Build an MBO stream that produces a known number of complete bars.
-// Includes pre-market book warmup + RTH trades.
-// Returns the message vector.
-static std::vector<Message> make_precompute_stream(int bar_size, int num_bars,
-                                                    int partial_trades = 0) {
-    std::vector<Message> msgs;
-    uint64_t next_id = 1;
-    double mid = 4000.0;
-
-    append_book_warmup(msgs, next_id, mid);
-
-    // RTH: trades to fill bars
-    uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
-    int total_trades = num_bars * bar_size + partial_trades;
-
-    // Use a price sequence with small variation around mid
-    double prices[] = {4000.25, 4000.50, 4000.00, 4000.75, 4000.25};
-    int n_prices = 5;
-
-    for (int i = 0; i < total_trades; ++i) {
-        double p = prices[i % n_prices];
-        Message::Side side = (i % 3 == 0) ? Message::Side::Bid : Message::Side::Ask;
-        msgs.push_back(make_trade_msg(next_id++, p, 1, rth_ts + i * 1'000'000ULL, side));
-    }
-
-    return msgs;
-}
-
-// Convenience: create a stream and run barrier_precompute in one call.
-static BarrierPrecomputedDay run_precompute(int bar_size, int num_bars,
-                                             int lookback = 3,
-                                             int a = 20, int b = 10, int t_max = 40,
-                                             int partial_trades = 0) {
-    auto msgs = make_precompute_stream(bar_size, num_bars, partial_trades);
-    ScriptedSource source(msgs);
-    SessionConfig cfg = SessionConfig::default_rth();
-    return barrier_precompute(source, cfg, bar_size, lookback, a, b, t_max);
-}
 
 // ===========================================================================
 // Section 1: BarrierPrecomputedDay struct defaults (~2)
@@ -151,7 +108,7 @@ TEST(BarrierPrecompute, InsufficientBarsReturnsZeroUsable) {
     int lookback = 10;
     int num_bars = 5;  // Less than lookback + 1 = 11
 
-    auto msgs = make_precompute_stream(bar_size, num_bars);
+    auto msgs = make_barrier_stream(bar_size, num_bars);
     ScriptedSource source(msgs);
     SessionConfig cfg = SessionConfig::default_rth();
 
@@ -173,7 +130,7 @@ TEST(BarrierPrecompute, BarOHLCVArraysPopulated) {
     int bar_size = 5;
     int num_bars = 25;  // > lookback + REALIZED_VOL_WARMUP + 1
 
-    BarrierPrecomputedDay day = run_precompute(bar_size, num_bars);
+    BarrierPrecomputedDay day = run_barrier_precompute(bar_size, num_bars);
 
     EXPECT_EQ(day.n_bars, num_bars);
     ASSERT_EQ(static_cast<int>(day.bar_open.size()), num_bars);
@@ -213,7 +170,7 @@ TEST(BarrierPrecompute, BarOHLCVArraysPopulated) {
 TEST(BarrierPrecompute, TimestampsPopulated) {
     int num_bars = 25;
 
-    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, num_bars);
 
     ASSERT_EQ(static_cast<int>(day.bar_t_start.size()), num_bars);
     ASSERT_EQ(static_cast<int>(day.bar_t_end.size()), num_bars);
@@ -236,7 +193,7 @@ TEST(BarrierPrecompute, TradePricesAndOffsetsCorrect) {
     int bar_size = 5;
     int num_bars = 25;
 
-    BarrierPrecomputedDay day = run_precompute(bar_size, num_bars);
+    BarrierPrecomputedDay day = run_barrier_precompute(bar_size, num_bars);
 
     // trade_prices and trade_sizes must have the same length
     EXPECT_EQ(day.trade_prices.size(), day.trade_sizes.size());
@@ -284,7 +241,7 @@ TEST(BarrierPrecompute, BarSizeStoredInResult) {
     int lookback = 3;
     int num_bars = 25;
 
-    auto msgs = make_precompute_stream(bar_size, num_bars);
+    auto msgs = make_barrier_stream(bar_size, num_bars);
     ScriptedSource source(msgs);
     SessionConfig cfg = SessionConfig::default_rth();
 
@@ -301,7 +258,7 @@ TEST(BarrierPrecompute, BarSizeStoredInResult) {
 TEST(BarrierPrecompute, LabelsPopulatedCorrectLength) {
     int num_bars = 25;
 
-    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, num_bars);
 
     // Labels arrays must all have length n_bars
     ASSERT_EQ(static_cast<int>(day.label_values.size()), num_bars);
@@ -312,7 +269,7 @@ TEST(BarrierPrecompute, LabelsPopulatedCorrectLength) {
 TEST(BarrierPrecompute, LabelValuesAreValid) {
     int num_bars = 25;
 
-    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, num_bars);
 
     for (int i = 0; i < num_bars; ++i) {
         int val = day.label_values[i];
@@ -335,7 +292,7 @@ TEST(BarrierPrecompute, FeaturesShapeCorrect) {
     int lookback = 3;
     int num_bars = 30;  // > REALIZED_VOL_WARMUP + lookback
 
-    BarrierPrecomputedDay day = run_precompute(5, num_bars, lookback);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, num_bars, lookback);
 
     EXPECT_GT(day.n_usable, 0)
         << "With " << num_bars << " bars and lookback=" << lookback
@@ -350,7 +307,7 @@ TEST(BarrierPrecompute, FeaturesShapeCorrect) {
 }
 
 TEST(BarrierPrecompute, FeaturesAllFinite) {
-    BarrierPrecomputedDay day = run_precompute(5, 30);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, 30);
 
     ASSERT_GT(day.n_usable, 0);
 
@@ -359,7 +316,7 @@ TEST(BarrierPrecompute, FeaturesAllFinite) {
 }
 
 TEST(BarrierPrecompute, NFeaturesFieldMatchesConstant) {
-    BarrierPrecomputedDay day = run_precompute(5, 30);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, 30);
 
     EXPECT_EQ(day.n_features, N_FEATURES)
         << "n_features in result must equal the N_FEATURES constant (" << N_FEATURES << ")";
@@ -373,7 +330,7 @@ TEST(BarrierPrecompute, DefaultParametersMatch) {
 
     // Build enough bars for defaults: need > REALIZED_VOL_WARMUP + lookback + 1 = 30
     // We'd need 500*35 = 17500 trades with bar_size=500, so use bar_size=5 for test
-    auto msgs = make_precompute_stream(5, 35);
+    auto msgs = make_barrier_stream(5, 35);
     ScriptedSource source(msgs);
     SessionConfig cfg = SessionConfig::default_rth();
 
@@ -393,14 +350,14 @@ TEST(BarrierPrecompute, KnownStreamProducesExpectedBarCount) {
     int bar_size = 5;
     int num_bars = 10;
 
-    BarrierPrecomputedDay day = run_precompute(bar_size, num_bars);
+    BarrierPrecomputedDay day = run_barrier_precompute(bar_size, num_bars);
 
     EXPECT_EQ(day.n_bars, num_bars)
         << "Should produce exactly " << num_bars << " bars from " << num_bars * bar_size << " trades";
 }
 
 TEST(BarrierPrecompute, BarClosePricesFormValidSeries) {
-    BarrierPrecomputedDay day = run_precompute(5, 25);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, 25);
 
     // All close prices should be finite and positive (no NaN in the price series)
     for (int i = 0; i < day.n_bars; ++i) {
@@ -423,7 +380,7 @@ TEST(BarrierPrecompute, FeatureDimensionsMatchExpected) {
     int lookback = 3;
     int num_bars = 30;
 
-    BarrierPrecomputedDay day = run_precompute(5, num_bars, lookback);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, num_bars, lookback);
 
     // n_usable should be:
     //   (num_bars - REALIZED_VOL_WARMUP) - lookback + 1
@@ -452,7 +409,7 @@ TEST(BarrierPrecompute, NUsableIsZeroWhenBarsEqualLookbackPlusOne) {
     // After warmup: 29 - 19 = 10 rows. After lookback assembly: 10 - 10 + 1 = 1.
     int num_bars = REALIZED_VOL_WARMUP + lookback; // 29
 
-    BarrierPrecomputedDay day = run_precompute(5, num_bars, lookback);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, num_bars, lookback);
 
     EXPECT_EQ(day.n_bars, num_bars);
     // After warmup trim: 29 - 19 = 10 rows. lookback = 10. 10 - 10 + 1 = 1.
@@ -466,7 +423,7 @@ TEST(BarrierPrecompute, PartialBarsFromFlushAreIncluded) {
     int num_full_bars = 25;
     int partial_trades = 3;
 
-    BarrierPrecomputedDay day = run_precompute(bar_size, num_full_bars,
+    BarrierPrecomputedDay day = run_barrier_precompute(bar_size, num_full_bars,
                                                /*lookback=*/3, /*a=*/20, /*b=*/10, /*t_max=*/40,
                                                partial_trades);
 
@@ -495,7 +452,7 @@ TEST(BarrierPrecompute, CustomLabelParametersAffectLabels) {
     int lookback = 3;
     int num_bars = 30;
 
-    auto msgs = make_precompute_stream(bar_size, num_bars);
+    auto msgs = make_barrier_stream(bar_size, num_bars);
 
     // Run with default label params (a=20, b=10, t_max=40)
     ScriptedSource source1(msgs);
@@ -524,7 +481,7 @@ TEST(BarrierPrecompute, CustomLookbackAffectsFeatureDimensions) {
     int bar_size = 5;
     int num_bars = 35;
 
-    auto msgs = make_precompute_stream(bar_size, num_bars);
+    auto msgs = make_barrier_stream(bar_size, num_bars);
 
     // lookback = 3
     ScriptedSource source1(msgs);
@@ -611,7 +568,7 @@ static std::vector<Message> make_upward_stream(int bar_size, int num_bars) {
 TEST(BarrierPrecomputeShortLabels, ShortLabelArraysPopulatedWithCorrectSize) {
     // After barrier_precompute(), short_label_values.size() == n_bars
     int num_bars = 25;
-    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, num_bars);
 
     EXPECT_EQ(day.n_bars, num_bars);
     EXPECT_EQ(static_cast<int>(day.short_label_values.size()), num_bars)
@@ -621,7 +578,7 @@ TEST(BarrierPrecomputeShortLabels, ShortLabelArraysPopulatedWithCorrectSize) {
 TEST(BarrierPrecomputeShortLabels, ShortLabelTauAndResolutionBarPopulated) {
     // short_label_tau and short_label_resolution_bar must have size n_bars
     int num_bars = 25;
-    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, num_bars);
 
     EXPECT_EQ(static_cast<int>(day.short_label_tau.size()), num_bars)
         << "short_label_tau must have size n_bars";
@@ -632,7 +589,7 @@ TEST(BarrierPrecomputeShortLabels, ShortLabelTauAndResolutionBarPopulated) {
 TEST(BarrierPrecomputeShortLabels, ShortLabelValuesInValidSet) {
     // All short_label_values must be in {-1, 0, +1}
     int num_bars = 25;
-    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, num_bars);
 
     for (int i = 0; i < num_bars; ++i) {
         int val = day.short_label_values[i];
@@ -644,7 +601,7 @@ TEST(BarrierPrecomputeShortLabels, ShortLabelValuesInValidSet) {
 TEST(BarrierPrecomputeShortLabels, ShortLabelTauAtLeastOne) {
     // All short_label_tau must be >= 1 (no zero-tau labels)
     int num_bars = 25;
-    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, num_bars);
 
     for (int i = 0; i < num_bars; ++i) {
         EXPECT_GE(day.short_label_tau[i], 1)
@@ -655,7 +612,7 @@ TEST(BarrierPrecomputeShortLabels, ShortLabelTauAtLeastOne) {
 TEST(BarrierPrecomputeShortLabels, ShortLabelResolutionBarAtOrAfterBarIndex) {
     // short_label_resolution_bar[i] >= i for all bars
     int num_bars = 25;
-    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, num_bars);
 
     for (int i = 0; i < num_bars; ++i) {
         EXPECT_GE(day.short_label_resolution_bar[i], i)
@@ -749,7 +706,7 @@ TEST(BarrierPrecomputeShortLabels, SymmetricBarriersProduceIdenticalLabels) {
     int num_bars = 25;
     int a = 15, b = 15, t_max = 40;  // symmetric: a == b
 
-    auto msgs = make_precompute_stream(bar_size, num_bars);
+    auto msgs = make_barrier_stream(bar_size, num_bars);
     ScriptedSource source(msgs);
     SessionConfig cfg = SessionConfig::default_rth();
     BarrierPrecomputedDay day = barrier_precompute(source, cfg, bar_size, /*lookback=*/3, a, b, t_max);
@@ -774,7 +731,7 @@ TEST(BarrierPrecomputeShortLabels, AsymmetricBarriersProduceDifferentLabels) {
     // With default a=20, b=10 (asymmetric), at least some short labels
     // should differ from long labels.
     int num_bars = 25;
-    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+    BarrierPrecomputedDay day = run_barrier_precompute(5, num_bars);
 
     ASSERT_EQ(static_cast<int>(day.label_values.size()), day.n_bars);
     ASSERT_EQ(static_cast<int>(day.short_label_values.size()), day.n_bars);

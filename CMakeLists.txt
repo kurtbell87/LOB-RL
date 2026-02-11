@@ -84,6 +84,7 @@ add_executable(lob_tests
     tests/test_barrier_features.cpp
     tests/test_barrier_labels.cpp
     tests/test_barrier_precompute.cpp
+    tests/test_per_bar_features.cpp
 )
 
 target_link_libraries(lob_tests PRIVATE lob_core GTest::gtest_main)
