@@ -1,5 +1,6 @@
 #pragma once
 
+#include "dbn_message_map.h"
 #include "lob/source.h"
 #include <string>
 #include <cstdint>
