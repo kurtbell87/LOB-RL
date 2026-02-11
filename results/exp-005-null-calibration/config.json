@@ -1,0 +1,17 @@
+{
+  "experiment": "exp-005-null-calibration",
+  "cache_dir": "cache/barrier/",
+  "lookback": 10,
+  "bar_size": 500,
+  "a": 20,
+  "b": 10,
+  "t_max": 40,
+  "n_features": 22,
+  "compute": "local",
+  "functions_used": [
+    "lob_rl.barrier.first_passage_analysis.load_binary_labels",
+    "lob_rl.barrier.first_passage_analysis.null_calibration_report"
+  ],
+  "python": "uv run python",
+  "pythonpath": "build-release:python"
+}
