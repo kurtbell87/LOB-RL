@@ -26,6 +26,10 @@ public:
     std::vector<PriceLevel> top_asks(int k = 10) const;
     uint32_t best_bid_qty() const;
     uint32_t best_ask_qty() const;
+    uint32_t total_bid_depth(int n) const;
+    uint32_t total_ask_depth(int n) const;
+    double weighted_mid() const;
+    double vamp(int n) const;
 
 private:
     void apply_add(const Message& msg, std::map<double, uint32_t>& levels);
