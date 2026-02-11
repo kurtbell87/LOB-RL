@@ -6,19 +6,26 @@
 #include "lob/reward.h"
 #include "lob/precompute.h"
 #include "lob/feature_builder.h"
+#include "lob/barrier/barrier_precompute.h"
 #include "synthetic_source.h"
 #include "dbn_file_source.h"
 
 namespace py = pybind11;
 
-// Copy a std::vector<double> into a 1-D numpy array of shape (N,).
-static py::array_t<double> to_numpy_1d(const std::vector<double>& vec, int N) {
-    py::array_t<double> arr(N);
+// Copy a std::vector<T> into a 1-D numpy array of shape (N,) with output dtype Out.
+template<typename Out, typename T>
+static py::array_t<Out> vec_to_numpy(const std::vector<T>& vec, int N) {
+    py::array_t<Out> arr(N);
     if (N > 0) {
-        auto buf = arr.mutable_unchecked<1>();
-        for (int i = 0; i < N; ++i) buf(i) = vec[i];
+        auto buf = arr.template mutable_unchecked<1>();
+        for (int i = 0; i < N; ++i) buf(i) = static_cast<Out>(vec[i]);
     }
     return arr;
+}
+
+// Convenience: same-type overload for double vectors.
+static py::array_t<double> to_numpy_1d(const std::vector<double>& vec, int N) {
+    return vec_to_numpy<double>(vec, N);
 }
 
 // Copy a flat std::vector<float> into a 2-D numpy array of shape (rows, cols).
@@ -139,4 +146,61 @@ PYBIND11_MODULE(lob_rl_core, m) {
 
         return py::make_tuple(obs, mid, spread, N);
     }, py::arg("path"), py::arg("session_config"), py::arg("instrument_id") = 0u);
+
+    // barrier_precompute(path, instrument_id, ...) -> dict or None
+    m.def("barrier_precompute", [](const std::string& path,
+                                    uint32_t instrument_id,
+                                    int bar_size, int lookback,
+                                    int a, int b, int t_max) -> py::object {
+        BarrierPrecomputedDay day = barrier_precompute(
+            path, instrument_id, bar_size, lookback, a, b, t_max);
+
+        // Return None if insufficient data
+        if (day.n_usable == 0 && day.n_bars < lookback + 1) {
+            return py::none();
+        }
+
+        py::dict result;
+        int n = day.n_bars;
+
+        // Bar OHLCV arrays (float64)
+        result["bar_open"] = to_numpy_1d(day.bar_open, n);
+        result["bar_high"] = to_numpy_1d(day.bar_high, n);
+        result["bar_low"] = to_numpy_1d(day.bar_low, n);
+        result["bar_close"] = to_numpy_1d(day.bar_close, n);
+        result["bar_vwap"] = to_numpy_1d(day.bar_vwap, n);
+
+        result["bar_volume"] = vec_to_numpy<int32_t>(day.bar_volume, n);
+        result["bar_t_start"] = vec_to_numpy<int64_t>(day.bar_t_start, n);
+        result["bar_t_end"] = vec_to_numpy<int64_t>(day.bar_t_end, n);
+
+        int nt = static_cast<int>(day.trade_prices.size());
+        result["trade_prices"] = to_numpy_1d(day.trade_prices, nt);
+        result["trade_sizes"] = vec_to_numpy<int32_t>(day.trade_sizes, nt);
+
+        int no = static_cast<int>(day.bar_trade_offsets.size());
+        result["bar_trade_offsets"] = vec_to_numpy<int64_t>(day.bar_trade_offsets, no);
+
+        result["label_values"] = vec_to_numpy<int8_t>(day.label_values, n);
+        result["label_tau"] = vec_to_numpy<int32_t>(day.label_tau, n);
+        result["label_resolution_bar"] = vec_to_numpy<int32_t>(day.label_resolution_bar, n);
+
+        // Features (float32, 2D)
+        int feat_cols = N_FEATURES * lookback;
+        result["features"] = to_numpy_2d(day.features, day.n_usable, feat_cols);
+
+        // Scalar metadata
+        result["bar_size"] = bar_size;
+        result["lookback"] = lookback;
+        result["a"] = a;
+        result["b"] = b;
+        result["t_max"] = t_max;
+        result["n_bars"] = day.n_bars;
+        result["n_usable"] = day.n_usable;
+        result["n_features"] = day.n_features;
+
+        return result;
+    }, py::arg("path"), py::arg("instrument_id"),
+       py::arg("bar_size") = 500, py::arg("lookback") = 10,
+       py::arg("a") = 20, py::arg("b") = 10, py::arg("t_max") = 40);
 }
