@@ -36,6 +36,11 @@ struct BarrierPrecomputedDay {
     // Features (n_usable rows, each N_FEATURES * lookback elements, row-major)
     std::vector<float> features;
 
+    // Per-bar normalized features (n_trimmed rows, each N_FEATURES floats, row-major)
+    // After warmup trimming and z-score normalization, BEFORE lookback assembly.
+    std::vector<float> bar_features;
+    int n_trimmed = 0;
+
     // Metadata
     int n_features = 0;
 };

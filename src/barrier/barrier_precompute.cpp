@@ -143,6 +143,13 @@ static BarrierPrecomputedDay barrier_precompute_impl(
     // Step 3: Normalize
     auto normed = normalize_features(raw_trimmed, n_trimmed, N_FEATURES, 2000);
 
+    // Step 3b: Save per-bar normalized features (before lookback assembly)
+    day.n_trimmed = n_trimmed;
+    day.bar_features.resize(n_trimmed * N_FEATURES);
+    std::transform(normed.begin(), normed.begin() + n_trimmed * N_FEATURES,
+                   day.bar_features.begin(),
+                   [](double v) { return static_cast<float>(v); });
+
     // Step 4: Assemble lookback
     auto feat = assemble_lookback(normed, n_trimmed, N_FEATURES, lookback);
 

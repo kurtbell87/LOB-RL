@@ -367,6 +367,76 @@ def load_binary_labels(cache_dir: str, lookback: int = 10) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Per-Bar Feature Loading (for sequence models)
+# ---------------------------------------------------------------------------
+
+REALIZED_VOL_WARMUP = 19
+
+
+def load_session_features(cache_dir: str) -> list[dict]:
+    """Load per-bar features and labels for each session.
+
+    Returns a list of session dicts, each containing:
+        - features: ndarray(n_trimmed, 22) float32 — per-bar normalized features
+        - Y_long: ndarray(n_trimmed,) bool — long barrier hit
+        - Y_short: ndarray(n_trimmed,) bool — short barrier hit
+        - date: str — YYYYMMDD from filename
+
+    Sessions are sorted chronologically by date.
+    Only includes sessions that have the 'bar_features' key and n_trimmed > 0.
+    """
+    npz_files = sorted(glob.glob(os.path.join(cache_dir, "*.npz")))
+    if not npz_files:
+        raise ValueError(f"No .npz files found in {cache_dir}")
+
+    sessions = []
+
+    for path in npz_files:
+        data = np.load(path, allow_pickle=True)
+
+        # Skip sessions without bar_features
+        if "bar_features" not in data:
+            continue
+
+        n_trimmed = int(data["n_trimmed"])
+        if n_trimmed <= 0:
+            continue
+
+        bar_features = data["bar_features"]  # (n_trimmed, N_FEATURES)
+
+        # Labels are for all n_bars; trim first WARMUP to align with bar_features
+        n_bars = int(data["n_bars"])
+        label_values = data["label_values"]
+        short_label_values = data["short_label_values"]
+
+        # Trim labels to match bar_features: skip first REALIZED_VOL_WARMUP
+        trimmed_labels = label_values[REALIZED_VOL_WARMUP:][:n_trimmed]
+        trimmed_short = short_label_values[REALIZED_VOL_WARMUP:][:n_trimmed]
+
+        Y_long = (trimmed_labels == 1).astype(np.bool_)
+        Y_short = (trimmed_short == -1).astype(np.bool_)
+
+        # Extract date from filename (barrier-YYYYMMDD.npz)
+        basename = os.path.basename(path)
+        date_str = basename.replace(".npz", "").split("-")[-1]
+
+        sessions.append({
+            "features": bar_features.astype(np.float32),
+            "Y_long": Y_long,
+            "Y_short": Y_short,
+            "date": date_str,
+        })
+
+    if not sessions:
+        raise ValueError(f"No valid sessions found in {cache_dir}")
+
+    # Sort chronologically by date
+    sessions.sort(key=lambda s: s["date"])
+
+    return sessions
+
+
+# ---------------------------------------------------------------------------
 # Lattice Verification
 # ---------------------------------------------------------------------------
 
