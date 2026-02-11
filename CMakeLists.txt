@@ -51,6 +51,7 @@ add_library(lob_core STATIC
     src/env/precompute.cpp
     src/barrier/bar_builder.cpp
     src/barrier/feature_compute.cpp
+    src/barrier/barrier_label.cpp
 )
 
 target_include_directories(lob_core PUBLIC
@@ -80,6 +81,7 @@ add_executable(lob_tests
     tests/test_dbn_file_source.cpp
     tests/test_barrier_bar_builder.cpp
     tests/test_barrier_features.cpp
+    tests/test_barrier_labels.cpp
 )
 
 target_link_libraries(lob_tests PRIVATE lob_core GTest::gtest_main)

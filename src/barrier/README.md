@@ -7,6 +7,7 @@ Feature extraction pipeline for the barrier-based trading environment.
 | File | Role |
 |---|---|
 | `bar_builder.cpp` | `BarBuilder` — aggregates MBO messages into `TradeBar` + `BarBookAccum` sequences |
+| `barrier_label.cpp` | `compute_labels()` — triple-barrier labeling with intrabar tiebreaking |
 | `feature_compute.cpp` | `compute_bar_features()`, `normalize_features()`, `assemble_lookback()` — raw features → z-scored → lookback windows |
 
 ## Key interfaces (in `include/lob/barrier/`)
@@ -31,6 +32,22 @@ struct BarBookAccum {
     double buy_aggressor_vol, sell_aggressor_vol;
     int n_trades, n_cancels;
 };
+```
+
+### `barrier_label.h`
+
+```cpp
+struct BarrierLabel {
+    int bar_index = 0;
+    int label = 0;       // +1 (upper hit), -1 (lower hit), 0 (timeout)
+    int tau = 0;          // bars from entry to resolution
+    int resolution_bar = 0; // bar_index + tau
+};
+
+// Triple-barrier labels for each bar. Intrabar tiebreaking via trade scan.
+vector<BarrierLabel> compute_labels(
+    const vector<TradeBar>& bars,
+    int a = 20, int b = 10, int t_max = 40, double tick_size = 0.25);
 ```
 
 ### `feature_compute.h`
@@ -88,5 +105,5 @@ vector<float> assemble_lookback(
 
 ## Cross-file dependencies
 
-- **Depends on:** `include/lob/barrier/trade_bar.h`
+- **Depends on:** `include/lob/barrier/trade_bar.h`, `include/lob/barrier/barrier_label.h`, `include/lob/barrier/feature_compute.h`, `include/lob/barrier/bar_builder.h`
 - **Used by:** Python bindings (`src/bindings/bindings.cpp`), barrier precompute pipeline
