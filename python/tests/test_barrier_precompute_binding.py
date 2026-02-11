@@ -382,3 +382,110 @@ class TestBarrierPrecomputeNpzCompat:
                 loaded[key], result[key],
                 err_msg=f"Mismatch after npz roundtrip for key '{key}'"
             )
+
+
+# ===========================================================================
+# Test 8: Short-direction label keys exist in returned dict
+# ===========================================================================
+
+
+@pytest.mark.skipif(not _FIXTURE_AVAILABLE, reason="No .dbn.zst fixture available")
+class TestBarrierPrecomputeShortLabelKeys:
+    """The returned dict should contain short-direction label arrays."""
+
+    SHORT_LABEL_KEYS = {
+        "short_label_values",
+        "short_label_tau",
+        "short_label_resolution_bar",
+    }
+
+    def test_short_label_keys_present(self):
+        """short_label_values, short_label_tau, short_label_resolution_bar must be present."""
+        result = lob_rl_core.barrier_precompute("fixture.dbn.zst", 0)
+        assert result is not None
+        for key in self.SHORT_LABEL_KEYS:
+            assert key in result, f"Missing short label key: {key}"
+
+
+# ===========================================================================
+# Test 9: Short label dtypes
+# ===========================================================================
+
+
+@pytest.mark.skipif(not _FIXTURE_AVAILABLE, reason="No .dbn.zst fixture available")
+class TestBarrierPrecomputeShortLabelDtypes:
+    """Short label arrays must have correct dtypes (same conventions as long labels)."""
+
+    def test_short_label_values_dtype_int8(self):
+        """short_label_values should be np.int8."""
+        result = lob_rl_core.barrier_precompute("fixture.dbn.zst", 0)
+        assert result["short_label_values"].dtype == np.int8
+
+    def test_short_label_tau_dtype_int32(self):
+        """short_label_tau should be np.int32."""
+        result = lob_rl_core.barrier_precompute("fixture.dbn.zst", 0)
+        assert result["short_label_tau"].dtype == np.int32
+
+    def test_short_label_resolution_bar_dtype_int32(self):
+        """short_label_resolution_bar should be np.int32."""
+        result = lob_rl_core.barrier_precompute("fixture.dbn.zst", 0)
+        assert result["short_label_resolution_bar"].dtype == np.int32
+
+
+# ===========================================================================
+# Test 10: Short label shapes
+# ===========================================================================
+
+
+@pytest.mark.skipif(not _FIXTURE_AVAILABLE, reason="No .dbn.zst fixture available")
+class TestBarrierPrecomputeShortLabelShapes:
+    """Short label arrays must have shape (n_bars,)."""
+
+    def test_short_label_arrays_shape_matches_n_bars(self):
+        """All short label arrays should have shape (n_bars,)."""
+        result = lob_rl_core.barrier_precompute("fixture.dbn.zst", 0)
+        n = int(result["n_bars"])
+        for key in ("short_label_values", "short_label_tau", "short_label_resolution_bar"):
+            assert result[key].shape == (n,), (
+                f"{key} shape {result[key].shape} != ({n},)"
+            )
+
+
+# ===========================================================================
+# Test 11: Binary derivation of Y_long and Y_short
+# ===========================================================================
+
+
+@pytest.mark.skipif(not _FIXTURE_AVAILABLE, reason="No .dbn.zst fixture available")
+class TestBarrierPrecomputeBinaryLabels:
+    """Binary labels Y_long and Y_short can be derived from the raw label arrays."""
+
+    def test_y_long_derivation(self):
+        """Y_long = (label_values == +1) should produce a boolean array."""
+        result = lob_rl_core.barrier_precompute("fixture.dbn.zst", 0)
+        y_long = result["label_values"] == 1
+        assert y_long.dtype == np.bool_
+        assert y_long.shape == result["label_values"].shape
+
+    def test_y_short_derivation(self):
+        """Y_short = (short_label_values == -1) should produce a boolean array."""
+        result = lob_rl_core.barrier_precompute("fixture.dbn.zst", 0)
+        y_short = result["short_label_values"] == -1
+        assert y_short.dtype == np.bool_
+        assert y_short.shape == result["short_label_values"].shape
+
+    def test_non_complementarity(self):
+        """Y_long.mean() + Y_short.mean() should NOT equal 1.0.
+
+        Y_long and Y_short are independent binary labels, not complementary.
+        Under the martingale null with 2:1 reward:risk, each ≈ 1/3,
+        so their sum ≈ 2/3, NOT 1.0.
+        """
+        result = lob_rl_core.barrier_precompute("fixture.dbn.zst", 0)
+        y_long = (result["label_values"] == 1).astype(float)
+        y_short = (result["short_label_values"] == -1).astype(float)
+        total = y_long.mean() + y_short.mean()
+        assert total != 1.0, (
+            f"Y_long.mean() + Y_short.mean() = {total}, but they should "
+            f"NOT be complementary (expected ≈ 2/3 under martingale null)"
+        )

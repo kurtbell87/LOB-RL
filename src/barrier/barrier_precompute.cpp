@@ -3,6 +3,58 @@
 #include "lob/barrier/barrier_label.h"
 #include "lob/barrier/feature_compute.h"
 #include "dbn_file_source.h"
+#include <algorithm>
+#include <cmath>
+
+// Extract raw BarrierLabel data into flat vectors and apply timeout bias.
+// upper_ticks/lower_ticks define the barrier geometry for bias_timeout_labels.
+static void flatten_and_bias_labels(
+    const std::vector<BarrierLabel>& raw_labels,
+    const std::vector<TradeBar>& bars,
+    int n_bars,
+    int upper_ticks, int lower_ticks, int t_max,
+    std::vector<int>& out_values,
+    std::vector<int>& out_tau,
+    std::vector<int>& out_resolution_bar)
+{
+    out_values.resize(n_bars);
+    out_tau.resize(n_bars);
+    out_resolution_bar.resize(n_bars);
+    for (int i = 0; i < n_bars; ++i) {
+        out_values[i] = raw_labels[i].label;
+        out_tau[i] = raw_labels[i].tau;
+        out_resolution_bar[i] = raw_labels[i].resolution_bar;
+    }
+
+    // Bias timeout labels toward whichever barrier price came closer to hitting.
+    double tick_size = 0.25;
+    for (int k = 0; k < n_bars; ++k) {
+        if (raw_labels[k].label != 0) continue;
+
+        double entry = bars[k].close;
+        double upper_barrier = entry + upper_ticks * tick_size;
+        double lower_barrier = entry - lower_ticks * tick_size;
+
+        int j_end = std::min(k + t_max, n_bars - 1);
+        if (j_end <= k) continue;
+
+        double max_high = bars[k + 1].high;
+        double min_low = bars[k + 1].low;
+        for (int j = k + 2; j <= j_end; ++j) {
+            max_high = std::max(max_high, bars[j].high);
+            min_low = std::min(min_low, bars[j].low);
+        }
+
+        double upper_dist = upper_barrier - max_high;
+        double lower_dist = min_low - lower_barrier;
+
+        if (upper_dist < lower_dist) {
+            out_values[k] = +1;
+        } else if (lower_dist < upper_dist) {
+            out_values[k] = -1;
+        }
+    }
+}
 
 // Shared implementation for both overloads.
 static BarrierPrecomputedDay barrier_precompute_impl(
@@ -58,16 +110,16 @@ static BarrierPrecomputedDay barrier_precompute_impl(
         day.bar_trade_offsets[i + 1] = static_cast<int64_t>(day.trade_prices.size());
     }
 
-    // Compute labels
+    // Compute long-direction labels (upper=a profit, lower=b stop)
     auto labels = compute_labels(bars, a, b, t_max);
-    day.label_values.resize(n_bars);
-    day.label_tau.resize(n_bars);
-    day.label_resolution_bar.resize(n_bars);
-    for (int i = 0; i < n_bars; ++i) {
-        day.label_values[i] = labels[i].label;
-        day.label_tau[i] = labels[i].tau;
-        day.label_resolution_bar[i] = labels[i].resolution_bar;
-    }
+    flatten_and_bias_labels(labels, bars, n_bars, a, b, t_max,
+                            day.label_values, day.label_tau, day.label_resolution_bar);
+
+    // Compute short-direction labels (swap a and b: upper=b stop, lower=a profit)
+    auto short_labels = compute_labels(bars, b, a, t_max);
+    flatten_and_bias_labels(short_labels, bars, n_bars, b, a, t_max,
+                            day.short_label_values, day.short_label_tau,
+                            day.short_label_resolution_bar);
 
     // Compute features
     // Step 1: raw features (n_bars x N_FEATURES)

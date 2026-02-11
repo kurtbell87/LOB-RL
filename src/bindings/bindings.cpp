@@ -185,6 +185,11 @@ PYBIND11_MODULE(lob_rl_core, m) {
         result["label_tau"] = vec_to_numpy<int32_t>(day.label_tau, n);
         result["label_resolution_bar"] = vec_to_numpy<int32_t>(day.label_resolution_bar, n);
 
+        // Short-direction labels
+        result["short_label_values"] = vec_to_numpy<int8_t>(day.short_label_values, n);
+        result["short_label_tau"] = vec_to_numpy<int32_t>(day.short_label_tau, n);
+        result["short_label_resolution_bar"] = vec_to_numpy<int32_t>(day.short_label_resolution_bar, n);
+
         // Features (float32, 2D)
         int feat_cols = N_FEATURES * lookback;
         result["features"] = to_numpy_2d(day.features, day.n_usable, feat_cols);

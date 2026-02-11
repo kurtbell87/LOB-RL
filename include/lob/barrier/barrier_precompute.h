@@ -23,10 +23,15 @@ struct BarrierPrecomputedDay {
     std::vector<int> trade_sizes;
     std::vector<int64_t> bar_trade_offsets;  // size n_bars + 1
 
-    // Labels (all size n_bars)
+    // Labels (all size n_bars) — long direction
     std::vector<int> label_values;   // +1, -1, 0
     std::vector<int> label_tau;
     std::vector<int> label_resolution_bar;
+
+    // Short-direction labels (all size n_bars)
+    std::vector<int> short_label_values;   // +1, -1, 0
+    std::vector<int> short_label_tau;
+    std::vector<int> short_label_resolution_bar;
 
     // Features (n_usable rows, each N_FEATURES * lookback elements, row-major)
     std::vector<float> features;

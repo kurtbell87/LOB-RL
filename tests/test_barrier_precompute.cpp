@@ -23,16 +23,11 @@ static Message make_trade_msg(uint64_t id, double price, uint32_t qty,
     return make_msg(id, side, Message::Action::Trade, price, qty, ts);
 }
 
-// Build an MBO stream that produces a known number of complete bars.
-// Includes pre-market book warmup + RTH trades.
-// Returns the message vector.
-static std::vector<Message> make_precompute_stream(int bar_size, int num_bars,
-                                                    int partial_trades = 0) {
-    std::vector<Message> msgs;
-    uint64_t next_id = 1;
-    double mid = 4000.0;
-
-    // Pre-market: build book with 2 bid levels + 2 ask levels
+// Append pre-market book-building messages centered on `mid`.
+// Creates 2 tight levels + 8 deeper levels (10 total per side).
+// Updates next_id in-place and returns pre-market timestamp base.
+static void append_book_warmup(std::vector<Message>& msgs, uint64_t& next_id,
+                                double mid) {
     uint64_t pre_ts = DAY_BASE_NS + 10ULL * NS_PER_HOUR;
     msgs.push_back(make_msg(next_id++, Message::Side::Bid, Message::Action::Add,
                             mid - TICK, 100, pre_ts));
@@ -42,13 +37,24 @@ static std::vector<Message> make_precompute_stream(int bar_size, int num_bars,
                             mid - 2 * TICK, 200, pre_ts + 2 * NS_PER_MIN));
     msgs.push_back(make_msg(next_id++, Message::Side::Ask, Message::Action::Add,
                             mid + 2 * TICK, 200, pre_ts + 3 * NS_PER_MIN));
-    // Add deeper levels for multi-level depth features
     for (int i = 3; i <= 10; ++i) {
         msgs.push_back(make_msg(next_id++, Message::Side::Bid, Message::Action::Add,
                                 mid - i * TICK, 100, pre_ts + (2 * i) * NS_PER_MIN));
         msgs.push_back(make_msg(next_id++, Message::Side::Ask, Message::Action::Add,
                                 mid + i * TICK, 100, pre_ts + (2 * i + 1) * NS_PER_MIN));
     }
+}
+
+// Build an MBO stream that produces a known number of complete bars.
+// Includes pre-market book warmup + RTH trades.
+// Returns the message vector.
+static std::vector<Message> make_precompute_stream(int bar_size, int num_bars,
+                                                    int partial_trades = 0) {
+    std::vector<Message> msgs;
+    uint64_t next_id = 1;
+    double mid = 4000.0;
+
+    append_book_warmup(msgs, next_id, mid);
 
     // RTH: trades to fill bars
     uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
@@ -574,4 +580,267 @@ TEST(BarrierPrecompute, CustomLookbackAffectsFeatureDimensions) {
     // Larger lookback → fewer usable rows
     EXPECT_GE(day1.n_usable, day2.n_usable)
         << "lookback=3 should produce >= usable rows than lookback=5";
+}
+
+// ===========================================================================
+// Section 9: Short-direction (dual-direction) labels (~10 tests)
+// ===========================================================================
+
+// Helper: Build a synthetic stream where price clearly moves DOWN.
+// The close prices form a descending staircase so the short-direction
+// barrier (lower = -20 ticks profit) is hit before the stop (upper = +10 ticks).
+static std::vector<Message> make_downward_stream(int bar_size, int num_bars) {
+    std::vector<Message> msgs;
+    uint64_t next_id = 1;
+    double start_price = 4010.0;  // Start high, descend
+
+    append_book_warmup(msgs, next_id, start_price);
+
+    // RTH: trades that descend by 1 tick per bar
+    uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
+    for (int bar = 0; bar < num_bars; ++bar) {
+        double bar_price = start_price - bar * TICK;
+        for (int t = 0; t < bar_size; ++t) {
+            msgs.push_back(make_trade_msg(
+                next_id++, bar_price, 1,
+                rth_ts + (bar * bar_size + t) * 1'000'000ULL,
+                Message::Side::Ask));
+        }
+    }
+
+    return msgs;
+}
+
+// Helper: Build a synthetic stream where price clearly moves UP.
+// Close prices form an ascending staircase so the long-direction
+// barrier (upper = +20 ticks profit) is hit before the stop (lower = -10 ticks).
+static std::vector<Message> make_upward_stream(int bar_size, int num_bars) {
+    std::vector<Message> msgs;
+    uint64_t next_id = 1;
+    double start_price = 4000.0;
+
+    append_book_warmup(msgs, next_id, start_price);
+
+    // RTH: trades that ascend by 1 tick per bar
+    uint64_t rth_ts = DAY_BASE_NS + RTH_OPEN_NS + NS_PER_MIN;
+    for (int bar = 0; bar < num_bars; ++bar) {
+        double bar_price = start_price + bar * TICK;
+        for (int t = 0; t < bar_size; ++t) {
+            msgs.push_back(make_trade_msg(
+                next_id++, bar_price, 1,
+                rth_ts + (bar * bar_size + t) * 1'000'000ULL,
+                Message::Side::Bid));
+        }
+    }
+
+    return msgs;
+}
+
+TEST(BarrierPrecomputeShortLabels, ShortLabelArraysPopulatedWithCorrectSize) {
+    // After barrier_precompute(), short_label_values.size() == n_bars
+    int num_bars = 25;
+    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+
+    EXPECT_EQ(day.n_bars, num_bars);
+    EXPECT_EQ(static_cast<int>(day.short_label_values.size()), num_bars)
+        << "short_label_values must have size n_bars";
+}
+
+TEST(BarrierPrecomputeShortLabels, ShortLabelTauAndResolutionBarPopulated) {
+    // short_label_tau and short_label_resolution_bar must have size n_bars
+    int num_bars = 25;
+    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+
+    EXPECT_EQ(static_cast<int>(day.short_label_tau.size()), num_bars)
+        << "short_label_tau must have size n_bars";
+    EXPECT_EQ(static_cast<int>(day.short_label_resolution_bar.size()), num_bars)
+        << "short_label_resolution_bar must have size n_bars";
+}
+
+TEST(BarrierPrecomputeShortLabels, ShortLabelValuesInValidSet) {
+    // All short_label_values must be in {-1, 0, +1}
+    int num_bars = 25;
+    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+
+    for (int i = 0; i < num_bars; ++i) {
+        int val = day.short_label_values[i];
+        EXPECT_TRUE(val == +1 || val == -1 || val == 0)
+            << "short_label_values[" << i << "] = " << val << " must be +1, -1, or 0";
+    }
+}
+
+TEST(BarrierPrecomputeShortLabels, ShortLabelTauAtLeastOne) {
+    // All short_label_tau must be >= 1 (no zero-tau labels)
+    int num_bars = 25;
+    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+
+    for (int i = 0; i < num_bars; ++i) {
+        EXPECT_GE(day.short_label_tau[i], 1)
+            << "short_label_tau[" << i << "] must be >= 1";
+    }
+}
+
+TEST(BarrierPrecomputeShortLabels, ShortLabelResolutionBarAtOrAfterBarIndex) {
+    // short_label_resolution_bar[i] >= i for all bars
+    int num_bars = 25;
+    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+
+    for (int i = 0; i < num_bars; ++i) {
+        EXPECT_GE(day.short_label_resolution_bar[i], i)
+            << "short_label_resolution_bar[" << i << "] must be >= bar_index " << i;
+    }
+}
+
+TEST(BarrierPrecomputeShortLabels, DownwardPathShortLabelIsProfit) {
+    // A price path that clearly descends should produce:
+    //   short label = -1 (lower barrier hit = profit for short)
+    //   long label = -1 (lower barrier hit = stop for long)
+    // Use enough bars for the price to fall 20 ticks (the short profit barrier distance).
+    int bar_size = 5;
+    int num_bars = 60;  // 60 bars, price drops ~60 * 0.25 = 15 ticks total per bar step
+    int a = 20, b = 10, t_max = 40;
+
+    auto msgs = make_downward_stream(bar_size, num_bars);
+    ScriptedSource source(msgs);
+    SessionConfig cfg = SessionConfig::default_rth();
+    BarrierPrecomputedDay day = barrier_precompute(source, cfg, bar_size, /*lookback=*/3, a, b, t_max);
+
+    ASSERT_GT(day.n_bars, 0);
+
+    // Check the first bar's labels.
+    // Price starts at 4010.0, long entry: upper = 4010 + 20*0.25 = 4015 (profit),
+    //                                     lower = 4010 - 10*0.25 = 4007.5 (stop).
+    // Price descends, so long hits lower stop first → long label = -1.
+    // Short race (a=b_orig=10, b=a_orig=20): upper = 4010 + 10*0.25 = 4012.5 (stop),
+    //                                         lower = 4010 - 20*0.25 = 4005 (profit).
+    // Price descends, so short hits lower profit first → short label = -1 (profit for short).
+    // The first bar should have label == -1 for both races (both lower hit),
+    // but for semantics: Y_long = (label == +1) = false, Y_short = (short_label == -1) = true.
+
+    // Find a bar early enough that has a clear downward resolution
+    bool found_short_profit = false;
+    for (int i = 0; i < std::min(day.n_bars, 10); ++i) {
+        if (day.short_label_values[i] == -1) {
+            found_short_profit = true;
+            // Long should NOT be +1 (profit) since price goes down
+            EXPECT_NE(day.label_values[i], +1)
+                << "On a downward path, long label should not be +1 (upper hit)";
+            break;
+        }
+    }
+    EXPECT_TRUE(found_short_profit)
+        << "On a clearly descending price path, at least one early bar should have "
+           "short_label_values == -1 (short profit hit)";
+}
+
+TEST(BarrierPrecomputeShortLabels, UpwardPathShortLabelIsStop) {
+    // A price path that clearly ascends should produce:
+    //   long label = +1 (upper barrier hit = profit for long)
+    //   short label = +1 (upper barrier hit = stop for short)
+    int bar_size = 5;
+    int num_bars = 60;
+    int a = 20, b = 10, t_max = 40;
+
+    auto msgs = make_upward_stream(bar_size, num_bars);
+    ScriptedSource source(msgs);
+    SessionConfig cfg = SessionConfig::default_rth();
+    BarrierPrecomputedDay day = barrier_precompute(source, cfg, bar_size, /*lookback=*/3, a, b, t_max);
+
+    ASSERT_GT(day.n_bars, 0);
+
+    // On upward path:
+    // Long race: upper (profit) hit → label = +1
+    // Short race (swap a,b): upper = entry + b*tick = entry + 10*0.25 (stop for short),
+    //                         lower = entry - a*tick = entry - 20*0.25 (profit for short)
+    // Price goes up → short race hits upper (stop) → short label = +1
+
+    bool found_long_profit = false;
+    for (int i = 0; i < std::min(day.n_bars, 10); ++i) {
+        if (day.label_values[i] == +1) {
+            found_long_profit = true;
+            // Short should be +1 (upper hit = stop for short)
+            EXPECT_EQ(day.short_label_values[i], +1)
+                << "On upward path, if long label is +1, short label should be +1 (stop hit)";
+            break;
+        }
+    }
+    EXPECT_TRUE(found_long_profit)
+        << "On a clearly ascending price path, at least one early bar should have "
+           "label_values == +1 (long profit hit)";
+}
+
+TEST(BarrierPrecomputeShortLabels, SymmetricBarriersProduceIdenticalLabels) {
+    // When a == b, the long and short races have identical barrier geometry.
+    // compute_labels(bars, a, b) and compute_labels(bars, b, a) are the same call.
+    // Therefore label_values and short_label_values should be identical.
+    int bar_size = 5;
+    int num_bars = 25;
+    int a = 15, b = 15, t_max = 40;  // symmetric: a == b
+
+    auto msgs = make_precompute_stream(bar_size, num_bars);
+    ScriptedSource source(msgs);
+    SessionConfig cfg = SessionConfig::default_rth();
+    BarrierPrecomputedDay day = barrier_precompute(source, cfg, bar_size, /*lookback=*/3, a, b, t_max);
+
+    ASSERT_EQ(static_cast<int>(day.label_values.size()), day.n_bars);
+    ASSERT_EQ(static_cast<int>(day.short_label_values.size()), day.n_bars);
+
+    for (int i = 0; i < day.n_bars; ++i) {
+        EXPECT_EQ(day.label_values[i], day.short_label_values[i])
+            << "When a==b, label_values[" << i << "] and short_label_values[" << i
+            << "] should be identical";
+        EXPECT_EQ(day.label_tau[i], day.short_label_tau[i])
+            << "When a==b, label_tau[" << i << "] and short_label_tau[" << i
+            << "] should be identical";
+        EXPECT_EQ(day.label_resolution_bar[i], day.short_label_resolution_bar[i])
+            << "When a==b, label_resolution_bar[" << i << "] and short_label_resolution_bar[" << i
+            << "] should be identical";
+    }
+}
+
+TEST(BarrierPrecomputeShortLabels, AsymmetricBarriersProduceDifferentLabels) {
+    // With default a=20, b=10 (asymmetric), at least some short labels
+    // should differ from long labels.
+    int num_bars = 25;
+    BarrierPrecomputedDay day = run_precompute(5, num_bars);
+
+    ASSERT_EQ(static_cast<int>(day.label_values.size()), day.n_bars);
+    ASSERT_EQ(static_cast<int>(day.short_label_values.size()), day.n_bars);
+
+    // Count how many differ
+    int differ_count = 0;
+    for (int i = 0; i < day.n_bars; ++i) {
+        if (day.label_values[i] != day.short_label_values[i]) {
+            ++differ_count;
+        }
+    }
+    // With asymmetric barriers the two races see different geometry,
+    // so at least one label should differ (unless all timeout, which is unlikely
+    // with 25 bars and t_max=40).
+    EXPECT_GT(differ_count, 0)
+        << "With asymmetric barriers (a=20, b=10), short and long labels "
+           "should NOT be identical arrays";
+}
+
+TEST(BarrierPrecomputeShortLabels, EmptyStreamProducesEmptyShortLabels) {
+    // day.short_label_values should be empty when n_bars == 0
+    ScriptedSource source({});
+    SessionConfig cfg = SessionConfig::default_rth();
+    BarrierPrecomputedDay day = barrier_precompute(source, cfg);
+
+    EXPECT_EQ(day.n_bars, 0);
+    EXPECT_TRUE(day.short_label_values.empty())
+        << "short_label_values should be empty when n_bars == 0";
+    EXPECT_TRUE(day.short_label_tau.empty())
+        << "short_label_tau should be empty when n_bars == 0";
+    EXPECT_TRUE(day.short_label_resolution_bar.empty())
+        << "short_label_resolution_bar should be empty when n_bars == 0";
+}
+
+TEST(BarrierPrecomputeShortLabels, DefaultConstructionHasEmptyShortLabels) {
+    // BarrierPrecomputedDay default construction should have empty short label vectors
+    BarrierPrecomputedDay day{};
+    EXPECT_TRUE(day.short_label_values.empty());
+    EXPECT_TRUE(day.short_label_tau.empty());
+    EXPECT_TRUE(day.short_label_resolution_bar.empty());
 }
