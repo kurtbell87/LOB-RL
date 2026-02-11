@@ -7,8 +7,8 @@ Message sources that feed the Book engine. All implement `IMessageSource` (see `
 | File | Role |
 |---|---|
 | `synthetic_source.h/cpp` | `SyntheticSource` — deterministic ~100 message generator for testing. Timestamps are not realistic (start at ~1ms epoch). Cannot be used with session-aware constructors. |
-| `dbn_file_source.h/cpp` | `DbnFileSource(path, instrument_id)` — reads native `.mbo.dbn.zst` files via databento-cpp. Streams messages without loading entire file into memory. |
-| `dbn_message_map.h/cpp` | `map_mbo_to_message(MboMsg)` — converts Databento MBO records to internal `Message` format. Maps Databento actions (Add/Cancel/Modify/Trade/Fill) to engine actions. |
+| `dbn_file_source.h/cpp` | `DbnFileSource(path, instrument_id)` — reads native `.mbo.dbn.zst` and legacy `.bin` files via databento-cpp. Uses shared `map_action()`/`map_side()` from `dbn_message_map`. |
+| `dbn_message_map.h/cpp` | `map_mbo_to_message(MboMsg)` — converts Databento MBO records to internal `Message` format. Also exports `map_action(char, Action&)` and `map_side(char)` for shared char-to-enum mapping. Maps Databento actions (Add/Cancel/Modify/Trade/Fill/Clear→Cancel) to engine actions. |
 
 ## Dependencies
 
