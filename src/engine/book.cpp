@@ -170,24 +170,25 @@ uint32_t Book::best_ask_qty() const {
     return asks_.begin()->second;
 }
 
-uint32_t Book::total_bid_depth(int n) const {
-    if (n <= 0) return 0;
+// Sum quantities from the first n levels of an iterator range.
+template <typename Iter>
+static uint32_t sum_first_n(Iter begin, Iter end, int n) {
     uint32_t total = 0;
     int count = 0;
-    for (auto it = bids_.rbegin(); it != bids_.rend() && count < n; ++it, ++count) {
+    for (auto it = begin; it != end && count < n; ++it, ++count) {
         total += it->second;
     }
     return total;
 }
 
+uint32_t Book::total_bid_depth(int n) const {
+    if (n <= 0) return 0;
+    return sum_first_n(bids_.rbegin(), bids_.rend(), n);
+}
+
 uint32_t Book::total_ask_depth(int n) const {
     if (n <= 0) return 0;
-    uint32_t total = 0;
-    int count = 0;
-    for (auto it = asks_.begin(); it != asks_.end() && count < n; ++it, ++count) {
-        total += it->second;
-    }
-    return total;
+    return sum_first_n(asks_.begin(), asks_.end(), n);
 }
 
 double Book::weighted_mid() const {
