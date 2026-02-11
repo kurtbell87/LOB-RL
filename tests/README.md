@@ -2,7 +2,7 @@
 
 GoogleTest-based tests. Run with: `cd build-release && ./lob_tests`
 
-**612 tests** across 66 test suites. (15 skipped: need `.dbn.zst` fixture.)
+**646 tests** across 69 test suites. (15 skipped: need `.dbn.zst` fixture.)
 
 ## Test files
 
@@ -11,6 +11,7 @@ GoogleTest-based tests. Run with: `cd build-release && ./lob_tests`
 | `test_barrier_bar_builder.cpp` | TradeBar and BarBookAccum construction from MBO data |
 | `test_barrier_features.cpp` | `compute_bar_features()`, `normalize_features()`, `assemble_lookback()` — 59 tests across 21 suites |
 | `test_barrier_labels.cpp` | `compute_labels()` — triple-barrier labeling with intrabar tiebreaking — 36 tests across 8 suites |
+| `test_barrier_precompute.cpp` | `barrier_precompute()` — end-to-end pipeline integration + short labels — 34 tests across 3 suites |
 | `test_book.cpp` | Book add/cancel/modify/trade operations |
 | `test_book_depth.cpp` | `top_bids(k)`/`top_asks(k)`, `best_{bid,ask}_qty()`, `total_{bid,ask}_depth(n)`, `weighted_mid()`, `vamp(n)` |
 | `test_data_integrity.cpp` | Validation, overflow, truncation handling |
@@ -37,7 +38,7 @@ Key fixtures: `valid_10records.bin`, `mixed_actions.bin`, `precompute_rth.bin`, 
 
 ## Helpers
 
-`test_helpers.h` — shared `fixture_path()`, `make_msg()`, `make_stable_bbo_messages()`, `make_symmetric_book()`, flag constants (`F_LAST`, `F_SNAPSHOT`, `F_PUB_SPEC`).
+`test_helpers.h` — shared `fixture_path()`, `make_msg()`, `make_stable_bbo_messages()`, `make_symmetric_book()`, `ScriptedSource` (replays explicit message lists), flag constants (`F_LAST`, `F_SNAPSHOT`, `F_PUB_SPEC`), time constants (`NS_PER_SEC`, `RTH_OPEN_NS`, `DAY_BASE_NS`).
 
 ## Adding new tests
 
