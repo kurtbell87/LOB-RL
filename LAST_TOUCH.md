@@ -4,26 +4,21 @@
 
 ### Immediate next step
 
-**Implement the Asymmetric First-Passage Trading plan: `experiments/Asymmetric First-Passage Trading.md`**
+**Phase 2b parameter sweep or pivot direction.**
 
-This is a principled 5-phase research plan that replaces the ad-hoc experiment cycle. It reframes the problem using:
-- **Brier scores** (not balanced accuracy) as the primary evaluation metric
-- **Two independent binary labels** Y_long, Y_short ∈ {0,1} (not three-class {long, short, flat})
-- **Information-theoretic bounds** — Var(P) ceiling, variance decomposition, stopping criteria
-- **Proper calibration** — calibration curves, Platt scaling
-- **Logistic regression + GBT baselines** (not RF + MLP) before any RL
+exp-005 CONFIRMED null calibration (ȳ ≈ 1/3). exp-006 REFUTED signal detection — LR and GBT both fail to beat the constant Brier score on Y_long or Y_short (all 4 BSS negative, best -0.0003). The 220-dim barrier features contain weak discriminative signal (+5pp accuracy from T6) but zero calibrated probabilistic signal.
 
-**Phase 0 (data pipeline) is mostly done.** The existing infrastructure covers:
-- Bar construction (`barrier/bar_pipeline.py`, C++ BarBuilder)
-- First-passage labeling (`barrier/label_pipeline.py`, C++ `compute_labels()`)
-- Feature extraction (`barrier/feature_pipeline.py`, 22 features)
-- Cache at `cache/barrier/` (248 sessions, 454K usable bars, 220-dim)
+**Options (per the analysis at `results/exp-006-signal-detection/analysis.md`):**
 
-**What's new / needs doing:**
-1. **Phase 0 gaps:** Add `timeout_flag` and `race_duration` to labels (the plan requires these; current labels only store label ∈ {-1,0,1}). Verify timeout rate < 5%. Verify R/δ ∈ ℕ (lattice requirement for T2).
-2. **Phase 1 (null calibration):** Compute ȳ_long and ȳ_short. Quick check: from exp-004 data, long=30.8%, short=31.2% — close to 1/3 prediction. Need: non-complementarity check (ȳ_long + ȳ_short ≈ 2/3?), temporal stability (rolling window plot), joint distribution (all 4 outcomes).
-3. **Phase 2 (signal detection):** This is the critical gate. Constant Brier baseline → logistic regression → GBT (XGBoost/LightGBM). Temporal cross-validation. Brier score improvement Δ with bootstrap CI. Rough profitability bound.
-4. **Phase 2b (parameter sweep):** Only if Phase 2 finds no signal. Sweep B ∈ {200,500,1000,2000} × R calibrations.
+1. **Phase 2b parameter sweep:** Sweep B ∈ {200, 500, 1000, 2000} × R calibrations. Current results are at B=500 only. Signal may exist at different bar sizes or different reward:risk ratios. This is the plan's prescribed next step when Phase 2 finds no signal.
+
+2. **Conditional signal detection (regime filtering):** Signal may exist in specific market regimes (high volatility, trend days) but average to zero across the full sample. Stratify by realized_vol quintile or session time.
+
+3. **Longer lookback / temporal aggregation:** Current features use h=10 lookback bars. If predictive information is at a longer timescale (h=50 or session-level), current features miss it.
+
+4. **Accept the null and pivot:** If bar-level features contain < 0.1% of outcome variance, no architecture will help. Productive paths: different features (cross-instrument, finer-grained order flow), different targets (longer-horizon barriers, different R:R), or different approach (execution optimization vs direction prediction).
+
+**Research plan:** `experiments/Asymmetric First-Passage Trading.md`
 
 **Label formulation (IMPORTANT):**
 - Y_long=1: price hits entry + 2R before entry - R (reward:risk = 2:1)
@@ -48,6 +43,10 @@ This is a principled 5-phase research plan that replaces the ad-hoc experiment c
 Source: `data/symbology.json` from Databento download. Roll dates are ~1 week before CME 3rd-Friday expiry.
 
 ### What was just completed
+
+**exp-006 signal detection REFUTED (2026-02-11).** LR and GBT both fail to beat constant Brier on Y_long/Y_short. All 4 (model, label) pairs have negative BSS. Best: logistic/short BSS = -0.0003. GBT is *worse* than LR (overfits). Key finding: T6's +5pp accuracy does not translate to calibrated probabilities — models are well-calibrated near ȳ≈0.32 but miscalibrated at tails. Information content < 0.1% of outcome variance. PR #46.
+
+**exp-005 null calibration CONFIRMED (2026-02-11).** ȳ_long = 0.320, ȳ_short = 0.322, both ≈ 1/3 (gambler's ruin prediction). ȳ_long + ȳ_short = 0.642 ≈ 2/3 (non-complementarity confirmed). Temporal stability: 20-session rolling mean within [0.27, 0.38]. Joint distribution: {both_stop: 52.1%, long_only: 16.7%, short_only: 17.5%, both_win: 13.7%}. PR #45.
 
 **exp-004 quick diagnostic (2026-02-11).** 22-feature vs 9-feature signal detection on 50K subsample. RF results:
 - Set A (all 22 features): 49.6% balanced accuracy (2 seeds)
