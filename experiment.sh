@@ -289,6 +289,38 @@ complete_handoff() {
   echo -e "${GREEN}Handoff archived:${NC} $dest"
 }
 
+_phase_summary() {
+  # Extract the final agent message from the stream-json log and print a
+  # compact summary.  This keeps the orchestrator's context window lean —
+  # the full transcript stays on disk at /tmp/exp-{phase}.log.
+  local phase="$1"
+  local exit_code="$2"
+  local log="/tmp/exp-${phase}.log"
+
+  local summary
+  summary=$(tail -20 "$log" 2>/dev/null | python3 -c "
+import json, sys
+texts = []
+for line in sys.stdin:
+    try:
+        d = json.loads(line.strip())
+        if d.get('type') == 'assistant':
+            for c in d.get('message', {}).get('content', []):
+                if c.get('type') == 'text':
+                    texts.append(c['text'])
+    except Exception:
+        pass
+if texts:
+    print(texts[-1][:500])
+" 2>/dev/null)
+
+  if [[ -n "$summary" ]]; then
+    echo -e "${YELLOW}[${phase}]${NC} $summary"
+  fi
+  echo -e "${YELLOW}[${phase}]${NC} Phase complete (exit: $exit_code). Log: $log"
+  return "$exit_code"
+}
+
 # ──────────────────────────────────────────────────────────────
 # Phase Runners
 # ──────────────────────────────────────────────────────────────
@@ -305,6 +337,7 @@ run_survey() {
 
   export EXP_PHASE="survey"
 
+  local exit_code=0
   claude \
     --output-format stream-json \
     --append-system-prompt "$(cat "$PROMPT_DIR/survey.md")
@@ -322,7 +355,9 @@ run_survey() {
 Start by reading RESEARCH_LOG.md and QUESTIONS.md, then survey the codebase and prior experiments." \
     --allowed-tools "Read,Bash,Glob,Grep,Write" \
     -p "Survey the current state of knowledge on: $question" \
-    2>&1 | tee /tmp/exp-survey.log
+    > /tmp/exp-survey.log 2>&1 || exit_code=$?
+
+  _phase_summary "survey" "$exit_code"
 }
 
 run_frame() {
@@ -347,6 +382,7 @@ run_frame() {
 
   export EXP_PHASE="frame"
 
+  local exit_code=0
   claude \
     --output-format stream-json \
     --append-system-prompt "$(cat "$PROMPT_DIR/frame.md")
@@ -366,7 +402,9 @@ run_frame() {
 Read the RESEARCH_LOG.md and any survey output first, then design the experiment." \
     --allowed-tools "Read,Write,Edit,Bash,Glob,Grep" \
     -p "Design the experiment and write the spec to $spec_file" \
-    2>&1 | tee /tmp/exp-frame.log
+    > /tmp/exp-frame.log 2>&1 || exit_code=$?
+
+  _phase_summary "frame" "$exit_code"
 }
 
 run_run() {
@@ -410,6 +448,7 @@ run_run() {
   export RUNPOD_VOLUME_ID DOCKERHUB_USER RUNPOD_GPU_TYPE
   export AWS_S3_BUCKET AWS_ECR_REPO AWS_INSTANCE_TYPE AWS_REGION
 
+  local exit_code=0
   claude \
     --output-format stream-json \
     --append-system-prompt "$(cat "$PROMPT_DIR/run.md")
@@ -440,7 +479,9 @@ run_run() {
 Read the experiment spec first. Implement and execute the experiment. Write ALL metrics to $results_path/metrics.json." \
     --allowed-tools "Read,Write,Edit,Bash,Glob,Grep" \
     -p "Read the experiment spec, implement, and execute. Write all metrics to $results_path/metrics.json" \
-    2>&1 | tee /tmp/exp-run.log
+    > /tmp/exp-run.log 2>&1 || exit_code=$?
+
+  _phase_summary "run" "$exit_code"
 }
 
 run_read() {
@@ -478,6 +519,7 @@ run_read() {
     echo -e "   ${YELLOW}locked:${NC} $results_path/metrics.json"
   fi
 
+  local exit_code=0
   claude \
     --output-format stream-json \
     --append-system-prompt "$(cat "$PROMPT_DIR/read.md")
@@ -493,7 +535,9 @@ run_read() {
 Read the spec and metrics, then write your analysis to $results_path/analysis.md. Address EVERY metric in the spec." \
     --allowed-tools "Read,Write,Edit,Bash,Glob,Grep" \
     -p "Analyze the experiment results. Write analysis to $results_path/analysis.md" \
-    2>&1 | tee /tmp/exp-read.log
+    > /tmp/exp-read.log 2>&1 || exit_code=$?
+
+  _phase_summary "read" "$exit_code"
 }
 
 run_log() {
@@ -647,6 +691,7 @@ run_synthesize() {
 
   export EXP_PHASE="synthesize"
 
+  local exit_code=0
   claude \
     --output-format stream-json \
     --append-system-prompt "$(cat "$PROMPT_DIR/synthesize.md")
@@ -663,7 +708,9 @@ run_synthesize() {
 Read all analysis files and produce a synthesis report to SYNTHESIS.md." \
     --allowed-tools "Read,Write,Glob,Grep" \
     -p "Synthesize all experiment results into SYNTHESIS.md. Trigger: $trigger" \
-    2>&1 | tee /tmp/exp-synthesize.log
+    > /tmp/exp-synthesize.log 2>&1 || exit_code=$?
+
+  _phase_summary "synthesize" "$exit_code"
 }
 
 # ──────────────────────────────────────────────────────────────

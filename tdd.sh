@@ -89,6 +89,38 @@ ensure_hooks_executable() {
   fi
 }
 
+_phase_summary() {
+  # Extract the final agent message from the stream-json log and print a
+  # compact summary.  This keeps the orchestrator's context window lean —
+  # the full transcript stays on disk at /tmp/tdd-{phase}.log.
+  local phase="$1"
+  local exit_code="$2"
+  local log="/tmp/tdd-${phase}.log"
+
+  local summary
+  summary=$(tail -20 "$log" 2>/dev/null | python3 -c "
+import json, sys
+texts = []
+for line in sys.stdin:
+    try:
+        d = json.loads(line.strip())
+        if d.get('type') == 'assistant':
+            for c in d.get('message', {}).get('content', []):
+                if c.get('type') == 'text':
+                    texts.append(c['text'])
+    except Exception:
+        pass
+if texts:
+    print(texts[-1][:500])
+" 2>/dev/null)
+
+  if [[ -n "$summary" ]]; then
+    echo -e "${YELLOW}[${phase}]${NC} $summary"
+  fi
+  echo -e "${YELLOW}[${phase}]${NC} Phase complete (exit: $exit_code). Log: $log"
+  return "$exit_code"
+}
+
 # --- Phase Runners ---
 
 run_red() {
@@ -110,6 +142,7 @@ run_red() {
 
   export TDD_PHASE="red"
 
+  local exit_code=0
   claude \
     --output-format stream-json \
     --append-system-prompt "$(cat "$PROMPT_DIR/tdd-red.md")
@@ -125,7 +158,9 @@ run_red() {
 Read the spec file first, then write your tests." \
     --allowed-tools "Read,Write,Edit,Bash" \
     -p "Read the spec file first, then write your tests." \
-    2>&1 | tee /tmp/tdd-red.log
+    > /tmp/tdd-red.log 2>&1 || exit_code=$?
+
+  _phase_summary "red" "$exit_code"
 }
 
 run_green() {
@@ -156,6 +191,7 @@ run_green() {
   # Run agent (unlock on exit regardless of success/failure)
   trap unlock_tests EXIT
 
+  local exit_code=0
   claude \
     --output-format stream-json \
     --append-system-prompt "$(cat "$PROMPT_DIR/tdd-green.md")
@@ -171,7 +207,9 @@ run_green() {
 Start by reading the test files to understand what's expected, then implement iteratively." \
     --allowed-tools "Read,Write,Edit,Bash" \
     -p "Read the test files to understand what's expected, then implement iteratively." \
-    2>&1 | tee /tmp/tdd-green.log
+    > /tmp/tdd-green.log 2>&1 || exit_code=$?
+
+  _phase_summary "green" "$exit_code"
 }
 
 run_refactor() {
@@ -188,6 +226,7 @@ run_refactor() {
 
   export TDD_PHASE="refactor"
 
+  local exit_code=0
   claude \
     --output-format stream-json \
     --append-system-prompt "$(cat "$PROMPT_DIR/tdd-refactor.md")
@@ -202,7 +241,9 @@ run_refactor() {
 Start by running the full test suite to confirm your green baseline, then refactor." \
     --allowed-tools "Read,Write,Edit,Bash" \
     -p "Run the full test suite to confirm your green baseline, then refactor." \
-    2>&1 | tee /tmp/tdd-refactor.log
+    > /tmp/tdd-refactor.log 2>&1 || exit_code=$?
+
+  _phase_summary "refactor" "$exit_code"
 }
 
 run_ship() {
