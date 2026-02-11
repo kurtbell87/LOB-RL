@@ -2,14 +2,14 @@
 
 GoogleTest-based tests. Run with: `cd build-release && ./lob_tests`
 
-**418 tests** across 30 test suites. (15 skipped: need `.dbn.zst` fixture.)
+**449 tests** across 31 test suites. (15 skipped: need `.dbn.zst` fixture.)
 
 ## Test files
 
 | File | Tests |
 |---|---|
 | `test_book.cpp` | Book add/cancel/modify/trade operations |
-| `test_book_depth.cpp` | `top_bids(k)`/`top_asks(k)` depth queries |
+| `test_book_depth.cpp` | `top_bids(k)`/`top_asks(k)`, `best_{bid,ask}_qty()`, `total_{bid,ask}_depth(n)`, `weighted_mid()`, `vamp(n)` |
 | `test_data_integrity.cpp` | Validation, overflow, truncation handling |
 | `test_dbn_file_source.cpp` | DbnFileSource reading native `.dbn.zst` files |
 | `test_dbn_message_map.cpp` | Databento MBO → internal Message mapping |
@@ -34,7 +34,7 @@ Key fixtures: `valid_10records.bin`, `mixed_actions.bin`, `precompute_rth.bin`, 
 
 ## Helpers
 
-`test_helpers.h` — shared `fixture_path()`, `make_stable_bbo_messages()`, `make_session_config()`, flag constants (`F_LAST`, `F_SNAPSHOT`, `F_MBP`).
+`test_helpers.h` — shared `fixture_path()`, `make_msg()`, `make_stable_bbo_messages()`, `make_symmetric_book()`, flag constants (`F_LAST`, `F_SNAPSHOT`, `F_PUB_SPEC`).
 
 ## Adding new tests
 

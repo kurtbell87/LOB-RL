@@ -169,3 +169,56 @@ uint32_t Book::best_ask_qty() const {
     if (asks_.empty()) return 0;
     return asks_.begin()->second;
 }
+
+uint32_t Book::total_bid_depth(int n) const {
+    if (n <= 0) return 0;
+    uint32_t total = 0;
+    int count = 0;
+    for (auto it = bids_.rbegin(); it != bids_.rend() && count < n; ++it, ++count) {
+        total += it->second;
+    }
+    return total;
+}
+
+uint32_t Book::total_ask_depth(int n) const {
+    if (n <= 0) return 0;
+    uint32_t total = 0;
+    int count = 0;
+    for (auto it = asks_.begin(); it != asks_.end() && count < n; ++it, ++count) {
+        total += it->second;
+    }
+    return total;
+}
+
+double Book::weighted_mid() const {
+    if (bids_.empty() || asks_.empty()) return std::numeric_limits<double>::quiet_NaN();
+    double bq = static_cast<double>(bids_.rbegin()->second);
+    double aq = static_cast<double>(asks_.begin()->second);
+    if (bq + aq == 0.0) return std::numeric_limits<double>::quiet_NaN();
+    double bp = bids_.rbegin()->first;
+    double ap = asks_.begin()->first;
+    return (bq * ap + aq * bp) / (bq + aq);
+}
+
+double Book::vamp(int n) const {
+    if (n <= 0 || bids_.empty() || asks_.empty())
+        return std::numeric_limits<double>::quiet_NaN();
+
+    double sum_pq = 0.0;
+    double sum_q = 0.0;
+
+    int count = 0;
+    for (auto it = bids_.rbegin(); it != bids_.rend() && count < n; ++it, ++count) {
+        sum_pq += it->first * it->second;
+        sum_q += it->second;
+    }
+
+    count = 0;
+    for (auto it = asks_.begin(); it != asks_.end() && count < n; ++it, ++count) {
+        sum_pq += it->first * it->second;
+        sum_q += it->second;
+    }
+
+    if (sum_q == 0.0) return std::numeric_limits<double>::quiet_NaN();
+    return sum_pq / sum_q;
+}
