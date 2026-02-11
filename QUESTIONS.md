@@ -52,6 +52,7 @@ Determine whether a reinforcement learning agent can profitably trade MES (Micro
 | Does frame-stacking help OOS? | REFUTED | No — worst val performance (-82.3), fastest entropy collapse. Memorizes rather than generalizes. | pre-007-gpu-framestack in RESEARCH_LOG.md |
 | Is the agent learning signal masked by execution cost? | REFUTED | No — even without exec cost, OOS returns are slightly negative (val -4.43, test -5.03) on 20 training days. Exec cost accounts for ~35 points of OOS loss (val -39.55 → -4.43) but doesn't flip the sign. The gap to profitability is ~5 points gross, not ~50 net. Cross-eval shows no-cost policy is impractical under real costs (val -85.22). | exp-002-execution-cost-ablation in RESEARCH_LOG.md |
 | Does increasing training data from 20 to 199 days fix OOS generalization? | REFUTED | No — LSTM 199d val -59.95 (threshold -16.7), MLP 199d val -75.53 ≈ MLP 20d val -75.82. 199 days eliminates memorization (expl_var 0.30 vs 0.97) but OOS is unchanged. Data quantity is not the primary bottleneck. Seed sensitivity extreme (37-point val swing). | exp-001 in RESEARCH_LOG.md |
+| Is ȳ_long ≈ ȳ_short ≈ 1/3 under the asymmetric barrier null? | CONFIRMED | Yes — ȳ_long = 0.320, ȳ_short = 0.322, both within [0.28, 0.38]. sum_ȳ = 0.643 ≈ 2/3. P(1,1) = 0. Labels are independent and well-calibrated. Constant Brier score baseline = 0.218. | exp-005-null-calibration in RESEARCH_LOG.md |
 
 ---
 
