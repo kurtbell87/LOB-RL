@@ -24,6 +24,11 @@ from pathlib import Path
 import numpy as np
 
 
+def parse_date_str(filepath):
+    """Extract YYYYMMDD date string from a .dbn.zst filename."""
+    return filepath.name.split("-")[-1].split(".")[0]
+
+
 def get_instrument_id(date_str, roll_calendar):
     """Look up front-month instrument_id for a YYYY-MM-DD date."""
     for roll in roll_calendar["rolls"]:
@@ -37,7 +42,8 @@ def process_session(filepath, instrument_id, bar_size, lookback, a, b, t_max):
 
     Returns dict with numpy arrays, or None if session has insufficient data.
     """
-    from lob_rl.barrier.bar_pipeline import build_session_bars
+    from lob_rl.barrier import N_FEATURES
+    from lob_rl.barrier.bar_pipeline import build_session_bars, extract_all_mbo
     from lob_rl.barrier.feature_pipeline import build_feature_matrix
     from lob_rl.barrier.label_pipeline import (
         compute_labels,
@@ -50,8 +56,14 @@ def process_session(filepath, instrument_id, bar_size, lookback, a, b, t_max):
     if len(bars) < lookback + 1:
         return None
 
+    # Extract MBO data for book-derived features
+    try:
+        mbo_df = extract_all_mbo(str(filepath), instrument_id=instrument_id)
+    except Exception:
+        mbo_df = None
+
     labels = compute_labels(bars, a=a, b=b, t_max=t_max)
-    features = build_feature_matrix(bars, h=lookback)
+    features = build_feature_matrix(bars, h=lookback, mbo_data=mbo_df)
 
     if features.shape[0] == 0:
         return None
@@ -126,6 +138,7 @@ def process_session(filepath, instrument_id, bar_size, lookback, a, b, t_max):
         "p_minus": np.array(dist["p_minus"], dtype=np.float64),
         "p_zero": np.array(dist["p_zero"], dtype=np.float64),
         "tiebreak_freq": np.array(tiebreak_freq, dtype=np.float64),
+        "n_features": np.array(N_FEATURES, dtype=np.int32),
     }
 
     return result
@@ -135,7 +148,7 @@ def process_file(args_tuple):
     """Worker function for ProcessPoolExecutor."""
     filepath, instrument_id, bar_size, lookback, a, b, t_max, output_path = args_tuple
 
-    date_str = filepath.name.split("-")[-1].split(".")[0]  # e.g. "20220103"
+    date_str = parse_date_str(filepath)
 
     try:
         t0 = time.time()
@@ -277,7 +290,7 @@ def main():
     # Build work items
     work_items = []
     for filepath in files:
-        date_str = filepath.name.split("-")[-1].split(".")[0]  # "20220103"
+        date_str = parse_date_str(filepath)
         iso_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
         instrument_id = get_instrument_id(iso_date, roll_calendar)
 
