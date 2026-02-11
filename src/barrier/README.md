@@ -114,14 +114,18 @@ struct BarrierPrecomputedDay {
     vector<uint64_t> bar_t_start, bar_t_end;
     vector<double> trade_prices; vector<int> trade_sizes;
     vector<int64_t> bar_trade_offsets;  // size n_bars + 1
+    // Long-direction labels
     vector<int> label_values, label_tau, label_resolution_bar;
+    // Short-direction labels (barrier geometry swapped: a↔b)
+    vector<int> short_label_values, short_label_tau, short_label_resolution_bar;
     vector<float> features;  // (n_usable, N_FEATURES * lookback) row-major
     int n_features;
 };
 
-// From IMessageSource (for tests)
+// From IMessageSource + SessionConfig (for tests)
 BarrierPrecomputedDay barrier_precompute(
-    IMessageSource& source, int bar_size = 500, int lookback = 10,
+    IMessageSource& source, const SessionConfig& cfg,
+    int bar_size = 500, int lookback = 10,
     int a = 20, int b = 10, int t_max = 40);
 
 // From .dbn.zst file path (for production / pybind11)

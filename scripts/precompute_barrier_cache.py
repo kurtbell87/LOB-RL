@@ -49,13 +49,19 @@ def process_session(filepath, instrument_id, bar_size, lookback, a, b, t_max):
     if result is None:
         return None
 
-    # Add summary stats computed from labels
+    # Add summary stats computed from long labels
     label_values = result["label_values"]
     n = len(label_values)
     result["p_plus"] = np.array(np.sum(label_values == 1) / n, dtype=np.float64)
     result["p_minus"] = np.array(np.sum(label_values == -1) / n, dtype=np.float64)
     result["p_zero"] = np.array(np.sum(label_values == 0) / n, dtype=np.float64)
     result["tiebreak_freq"] = np.array(0.0, dtype=np.float64)
+
+    # Add summary stats computed from short labels
+    short_label_values = result["short_label_values"]
+    result["short_p_plus"] = np.array(np.sum(short_label_values == 1) / n, dtype=np.float64)
+    result["short_p_minus"] = np.array(np.sum(short_label_values == -1) / n, dtype=np.float64)
+    result["short_p_zero"] = np.array(np.sum(short_label_values == 0) / n, dtype=np.float64)
 
     return result
 
@@ -107,6 +113,14 @@ def load_session_from_cache(npz_path):
                 f"precompute_barrier_cache.py."
             )
 
+    # Check for short labels (required for modern caches with n_features)
+    has_n_features = "n_features" in data
+    if has_n_features and "short_label_values" not in data:
+        raise ValueError(
+            "Cache missing short labels. Re-precompute with "
+            "precompute_barrier_cache.py to add dual-direction labels."
+        )
+
     n_bars = int(data["n_bars"])
     features = data["features"]
     offsets = data["bar_trade_offsets"]
@@ -153,7 +167,27 @@ def load_session_from_cache(npz_path):
         )
         labels.append(lbl)
 
-    return {"bars": bars, "labels": labels, "features": features}
+    result = {"bars": bars, "labels": labels, "features": features}
+
+    # Reconstruct short-direction BarrierLabel objects (if present)
+    if "short_label_values" in data:
+        short_label_values = data["short_label_values"]
+        short_label_tau = data["short_label_tau"]
+        short_label_resolution_bar = data["short_label_resolution_bar"]
+        short_labels = []
+        for i in range(n_bars):
+            lbl = BarrierLabel(
+                bar_index=i,
+                label=int(short_label_values[i]),
+                tau=int(short_label_tau[i]),
+                resolution_type="precomputed",
+                entry_price=float(data["bar_close"][i]),
+                resolution_bar=int(short_label_resolution_bar[i]),
+            )
+            short_labels.append(lbl)
+        result["short_labels"] = short_labels
+
+    return result
 
 
 def main():
