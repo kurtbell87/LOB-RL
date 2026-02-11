@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Precompute barrier pipeline data from .dbn.zst files.
 
-Processes all .dbn.zst files through:
-  extract_trades → build_bars → compute_labels → build_feature_matrix
-and saves per-session .npz files for fast training startup.
+Uses C++ backend (lob_rl_core.barrier_precompute) for single-pass
+MBO stream processing: bar construction + feature computation +
+normalization + lookback assembly + label computation.
 
 Usage:
   cd build-release
-  PYTHONPATH=.:../python uv run --with pandas --with databento \
-    python ../scripts/precompute_barrier_cache.py \
+  PYTHONPATH=.:../python uv run python ../scripts/precompute_barrier_cache.py \
     --data-dir ../data/mes/ --output-dir ../cache/barrier/ \
     --roll-calendar ../data/mes/roll_calendar.json \
     --bar-size 500 --lookback 10 --workers 8
@@ -38,108 +37,25 @@ def get_instrument_id(date_str, roll_calendar):
 
 
 def process_session(filepath, instrument_id, bar_size, lookback, a, b, t_max):
-    """Process a single .dbn.zst file into bars, labels, features.
+    """Process a single .dbn.zst file into bars, labels, features via C++.
 
     Returns dict with numpy arrays, or None if session has insufficient data.
     """
-    from lob_rl.barrier import N_FEATURES
-    from lob_rl.barrier.bar_pipeline import build_session_bars, extract_all_mbo
-    from lob_rl.barrier.feature_pipeline import build_feature_matrix
-    from lob_rl.barrier.label_pipeline import (
-        compute_labels,
-        compute_label_distribution,
-        compute_tiebreak_frequency,
-    )
+    import lob_rl_core
 
-    bars = build_session_bars(str(filepath), n=bar_size, instrument_id=instrument_id)
-
-    if len(bars) < lookback + 1:
+    result = lob_rl_core.barrier_precompute(
+        str(filepath), instrument_id,
+        bar_size=bar_size, lookback=lookback, a=a, b=b, t_max=t_max)
+    if result is None:
         return None
 
-    # Extract MBO data for book-derived features
-    try:
-        mbo_df = extract_all_mbo(str(filepath), instrument_id=instrument_id)
-    except Exception:
-        mbo_df = None
-
-    labels = compute_labels(bars, a=a, b=b, t_max=t_max)
-    features = build_feature_matrix(bars, h=lookback, mbo_data=mbo_df)
-
-    if features.shape[0] == 0:
-        return None
-
-    # Extract bar arrays for reconstruction at load time
-    n_bars = len(bars)
-    bar_open = np.array([b.open for b in bars], dtype=np.float64)
-    bar_high = np.array([b.high for b in bars], dtype=np.float64)
-    bar_low = np.array([b.low for b in bars], dtype=np.float64)
-    bar_close = np.array([b.close for b in bars], dtype=np.float64)
-    bar_volume = np.array([b.volume for b in bars], dtype=np.int32)
-    bar_vwap = np.array([b.vwap for b in bars], dtype=np.float64)
-    bar_t_start = np.array([b.t_start for b in bars], dtype=np.int64)
-    bar_t_end = np.array([b.t_end for b in bars], dtype=np.int64)
-
-    # Store trade prices/sizes per bar for potential tiebreaking
-    # Pack as flat arrays with an index array for offsets
-    all_trade_prices = []
-    all_trade_sizes = []
-    bar_trade_offsets = np.zeros(n_bars + 1, dtype=np.int64)
-    offset = 0
-    for i, bar in enumerate(bars):
-        tp = bar.trade_prices if bar.trade_prices is not None else np.array([], dtype=np.float64)
-        ts = bar.trade_sizes if bar.trade_sizes is not None else np.array([], dtype=np.int32)
-        all_trade_prices.append(tp)
-        all_trade_sizes.append(ts)
-        offset += len(tp)
-        bar_trade_offsets[i + 1] = offset
-
-    trade_prices_flat = np.concatenate(all_trade_prices) if all_trade_prices else np.array([], dtype=np.float64)
-    trade_sizes_flat = np.concatenate(all_trade_sizes) if all_trade_sizes else np.array([], dtype=np.int32)
-
-    # Label arrays
-    label_values = np.array([lb.label for lb in labels], dtype=np.int8)
-    label_tau = np.array([lb.tau for lb in labels], dtype=np.int32)
-    label_resolution_bar = np.array([lb.resolution_bar for lb in labels], dtype=np.int32)
-
-    # Compute summary stats
-    dist = compute_label_distribution(labels)
-    tiebreak_freq = compute_tiebreak_frequency(labels)
-
-    result = {
-        # Features (main training data)
-        "features": features.astype(np.float32),
-        # Bar OHLCV (needed by BarrierEnv at runtime)
-        "bar_open": bar_open,
-        "bar_high": bar_high,
-        "bar_low": bar_low,
-        "bar_close": bar_close,
-        "bar_volume": bar_volume,
-        "bar_vwap": bar_vwap,
-        "bar_t_start": bar_t_start,
-        "bar_t_end": bar_t_end,
-        # Trade sequences (for tiebreaking / analysis)
-        "trade_prices": trade_prices_flat,
-        "trade_sizes": trade_sizes_flat,
-        "bar_trade_offsets": bar_trade_offsets,
-        # Labels
-        "label_values": label_values,
-        "label_tau": label_tau,
-        "label_resolution_bar": label_resolution_bar,
-        # Metadata
-        "bar_size": np.array(bar_size, dtype=np.int32),
-        "lookback": np.array(lookback, dtype=np.int32),
-        "a": np.array(a, dtype=np.int32),
-        "b": np.array(b, dtype=np.int32),
-        "t_max": np.array(t_max, dtype=np.int32),
-        "n_bars": np.array(n_bars, dtype=np.int32),
-        "n_usable": np.array(features.shape[0], dtype=np.int32),
-        # Summary stats
-        "p_plus": np.array(dist["p_plus"], dtype=np.float64),
-        "p_minus": np.array(dist["p_minus"], dtype=np.float64),
-        "p_zero": np.array(dist["p_zero"], dtype=np.float64),
-        "tiebreak_freq": np.array(tiebreak_freq, dtype=np.float64),
-        "n_features": np.array(N_FEATURES, dtype=np.int32),
-    }
+    # Add summary stats computed from labels
+    label_values = result["label_values"]
+    n = len(label_values)
+    result["p_plus"] = np.array(np.sum(label_values == 1) / n, dtype=np.float64)
+    result["p_minus"] = np.array(np.sum(label_values == -1) / n, dtype=np.float64)
+    result["p_zero"] = np.array(np.sum(label_values == 0) / n, dtype=np.float64)
+    result["tiebreak_freq"] = np.array(0.0, dtype=np.float64)
 
     return result
 
