@@ -8,6 +8,7 @@ Feature extraction pipeline for the barrier-based trading environment.
 |---|---|
 | `bar_builder.cpp` | `BarBuilder` — aggregates MBO messages into `TradeBar` + `BarBookAccum` sequences |
 | `barrier_label.cpp` | `compute_labels()` — triple-barrier labeling with intrabar tiebreaking |
+| `barrier_precompute.cpp` | `barrier_precompute()` — end-to-end pipeline: DbnFileSource → BarBuilder → features → labels → `BarrierPrecomputedDay` |
 | `feature_compute.cpp` | `compute_bar_features()`, `normalize_features()`, `assemble_lookback()` — raw features → z-scored → lookback windows |
 
 ## Key interfaces (in `include/lob/barrier/`)
@@ -103,7 +104,34 @@ vector<float> assemble_lookback(
 | 20 | Cancel-to-trade ratio | log(1 + n_cancels / max(n_trades, 1)) |
 | 21 | Price impact/trade | (close - open) / (max(n_trades, 1) * TICK_SIZE) |
 
+### `barrier_precompute.h`
+
+```cpp
+struct BarrierPrecomputedDay {
+    int n_bars, n_usable, bar_size, lookback;
+    vector<double> bar_open, bar_high, bar_low, bar_close, bar_vwap;
+    vector<int> bar_volume;
+    vector<uint64_t> bar_t_start, bar_t_end;
+    vector<double> trade_prices; vector<int> trade_sizes;
+    vector<int64_t> bar_trade_offsets;  // size n_bars + 1
+    vector<int> label_values, label_tau, label_resolution_bar;
+    vector<float> features;  // (n_usable, N_FEATURES * lookback) row-major
+    int n_features;
+};
+
+// From IMessageSource (for tests)
+BarrierPrecomputedDay barrier_precompute(
+    IMessageSource& source, int bar_size = 500, int lookback = 10,
+    int a = 20, int b = 10, int t_max = 40);
+
+// From .dbn.zst file path (for production / pybind11)
+BarrierPrecomputedDay barrier_precompute(
+    const string& path, uint32_t instrument_id,
+    int bar_size = 500, int lookback = 10,
+    int a = 20, int b = 10, int t_max = 40);
+```
+
 ## Cross-file dependencies
 
-- **Depends on:** `include/lob/barrier/trade_bar.h`, `include/lob/barrier/barrier_label.h`, `include/lob/barrier/feature_compute.h`, `include/lob/barrier/bar_builder.h`
-- **Used by:** Python bindings (`src/bindings/bindings.cpp`), barrier precompute pipeline
+- **Depends on:** `include/lob/barrier/trade_bar.h`, `include/lob/barrier/barrier_label.h`, `include/lob/barrier/feature_compute.h`, `include/lob/barrier/bar_builder.h`, `include/lob/barrier/barrier_precompute.h`, `src/data/dbn_file_source.h`
+- **Used by:** Python bindings (`src/bindings/bindings.cpp`), `scripts/precompute_barrier_cache.py`

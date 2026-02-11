@@ -4,17 +4,19 @@
 
 ### Immediate next step
 
-**22 features complete. Re-precompute barrier cache, then re-run T6 diagnostic.**
+**C++ precompute pipeline complete. Rebuild, re-precompute barrier cache, then re-run T6 diagnostic.**
 
-Three TDD cycles completed (PRs #34, #35, #36): LOB reconstructor, Phase 1 (cols 13-16), Phase 2 (cols 17-21). `N_FEATURES` is now 22. All book features are live. Observation dim = 222 (22*10 + 2).
+Five C++ TDD cycles completed (PRs #37-#41): Book extensions, BarBuilder, Feature compute, Labels, Pipeline integration + pybind11 binding. `lob_rl_core.barrier_precompute()` replaces Python `process_session()` — single-pass MBO stream processing for ~50-100x speedup.
 
-**The barrier cache is STALE.** The existing 247 `.npz` files have 130-dim features (N_FEATURES=13, and 4 of those were dead). Must re-precompute to get 220-dim features (N_FEATURES=22, all active).
+**The barrier cache is STALE.** The existing 247 `.npz` files have 130-dim features (N_FEATURES=13, and 4 of those were dead). Must delete and re-precompute with C++ backend to get 220-dim features (N_FEATURES=22, all active).
 
 **Action items (in priority order):**
-1. **Re-precompute barrier cache** — `precompute_barrier_cache.py` with MBO data pass-through. This activates all 22 features including the 4 previously-dead book features + 9 new microstructure features.
-2. **Re-run T6 supervised diagnostic** — compare 22-feature signal vs old 9-active-feature (RF 40.5%). Expect significant improvement.
-3. **T10-T12 GPU training** via `./experiment.sh` — train barrier PPO on the enriched 247-session cache.
-4. **Architecture comparison (P1, now unblocked):** Transformer / SSM / LSTM on barrier features via SB3 `features_extractor_class`.
+1. **Rebuild C++** — `cd build-release && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j$(nproc)`
+2. **Delete stale cache** — `rm cache/barrier/*.npz`
+3. **Re-precompute with C++ backend** — `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/precompute_barrier_cache.py --data-dir ../data/mes/ --output-dir ../cache/barrier/ --roll-calendar ../data/mes/roll_calendar.json --bar-size 500 --lookback 10 --workers 8` (should take ~5-10 min vs 8+ hours with Python)
+4. **Re-run T6 supervised diagnostic** — compare 22-feature signal vs old 9-active-feature (RF 40.5%). Expect significant improvement.
+5. **T10-T12 GPU training** via `./experiment.sh` — train barrier PPO on the enriched 247-session cache.
+6. **Architecture comparison (P1, now unblocked):** Transformer / SSM / LSTM on barrier features via SB3 `features_extractor_class`.
 
 **Key insight from T6:** τ_{+} (long profit) and τ_{-} (short profit) are **mutually exclusive** events. If price rises a=20 before falling b=10 (long profit), the short already stopped at +10. The correct classification target is the *direction* (long/short/flat), not the single-direction barrier outcome.
 
@@ -34,6 +36,16 @@ Three TDD cycles completed (PRs #34, #35, #36): LOB reconstructor, Phase 1 (cols
 Source: `data/symbology.json` from Databento download. Roll dates are ~1 week before CME 3rd-Friday expiry.
 
 ### What was just completed
+
+**C++ Barrier Precompute Pipeline — 5 TDD Cycles (2026-02-10).** Moved the entire barrier precompute pipeline from Python to C++ for ~50-100x speedup:
+
+- **Cycle 1 (PR #37):** Book Extensions. Added `total_bid_depth(n)`, `total_ask_depth(n)`, `weighted_mid()`, `vamp(n)` to existing `Book` class.
+- **Cycle 2 (PR #38):** BarBuilder. Single-pass MBO stream → `TradeBar` + `BarBookAccum` vectors. `DbnFileSource` 'R' action mapped to Cancel. 51 tests.
+- **Cycle 3 (PR #39):** Feature Computation. `compute_bar_features()` (22 features), `normalize_features()` (z-score, [-5,5] clip), `assemble_lookback()` (sliding window). O(n) realized vol. 76 tests.
+- **Cycle 4 (PR #40):** Label Computation. `compute_labels()` — triple-barrier with intrabar tiebreaking via trade sequence scan. 36 tests.
+- **Cycle 5 (PR #41):** Pipeline Integration + pybind11. `barrier_precompute()` wires all components end-to-end. `lob_rl_core.barrier_precompute()` Python binding returns dict compatible with `np.savez_compressed()`. `precompute_barrier_cache.py` updated to use C++ backend. 23 C++ + 35 Python tests.
+
+Total: 217 new C++ tests (635 total), 8 new Python binding tests (2070 total).
 
 **Microstructure Features — 3 TDD Cycles (2026-02-10).** Expanded barrier feature set from 13 to 22 features:
 
@@ -192,8 +204,8 @@ Key finding: **More training steps made things worse, not better.** MLP val went
 | File | Role |
 |---|---|
 | `scripts/run_barrier_diagnostic.py` | T6 supervised diagnostic runner — loads barrier cache, runs overfit/MLP/RF tests |
-| `scripts/precompute_barrier_cache.py` | Barrier cache builder — `.dbn.zst` → bars → labels → features → `.npz`. **MBO data wired through. Needs re-precompute for 22 features.** |
-| `cache/barrier/` | 247 barrier `.npz` files (130-dim features, N_FEATURES=13). **STALE — must re-precompute for N_FEATURES=22 (220-dim).** |
+| `scripts/precompute_barrier_cache.py` | Barrier cache builder — uses C++ `lob_rl_core.barrier_precompute()` backend. **Needs rebuild + re-precompute for 22 features.** |
+| `cache/barrier/` | 247 barrier `.npz` files (130-dim features, N_FEATURES=13). **STALE — must delete and re-precompute with C++ backend for N_FEATURES=22 (220-dim).** |
 | `python/lob_rl/barrier/lob_reconstructor.py` | `OrderBook` class — LOB reconstruction from MBO messages. `vamp(n)` method. |
 | `cache/t6_diagnostic_results.json` | Full T6 diagnostic results in JSON format |
 | `python/lob_rl/barrier/supervised_diagnostic.py` | MLP classifier + RF baseline functions for barrier label prediction |
@@ -225,7 +237,7 @@ Key finding: **More training steps made things worse, not better.** MLP val went
 
 ## Don't waste time on
 
-- **Build verification** — `build-release/` is current, 418 C++ + 2062 Python = 2480 tests pass.
+- **Build verification** — `build-release/` is current, 635 C++ + 2070 Python = 2705 tests pass.
 - **Dependency checks** — SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp all installed.
 - **Reading PRD.md** — everything relevant is in this file.
 - **Codebase exploration** — read directory `README.md` files instead.
@@ -256,9 +268,9 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 
 ## Test coverage
 
-- **418 C++ tests** — `cd build-release && ./lob_tests` (15 skipped: need `.dbn.zst` fixture)
-- **2062 Python tests** (1308 core + 754 barrier) — `PYTHONPATH=build-release:python uv run --with pytest --with pandas --with scipy --with scikit-learn --with torch --with sb3-contrib pytest python/tests/` (4 core + 12 barrier skipped: fixture-dependent)
-- **2480 total**, all passing.
+- **635 C++ tests** — `cd build-release && ./lob_tests` (15 skipped: need `.dbn.zst` fixture)
+- **2070 Python tests** (1308 core + 762 barrier) — `PYTHONPATH=build-release:python uv run --with pytest --with pandas --with scipy --with scikit-learn --with torch --with sb3-contrib pytest python/tests/` (4 core + 39 barrier skipped: fixture-dependent)
+- **2705 total**, all passing.
 
 ## Remaining work
 
@@ -283,7 +295,7 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 | ~~Fix dead book features~~ | ~~Done~~ | PR #34. LOB Reconstructor + MBO wiring. All book features active. |
 | ~~Phase 1 microstructure features~~ | ~~Done~~ | PR #35. OFI, depth ratio, wmid displacement, spread std. N_FEATURES 13→17. |
 | ~~Phase 2 microstructure features~~ | ~~Done~~ | PR #36. VAMP, aggressor imbalance, trade arrival, cancel-to-trade, price impact. N_FEATURES 17→22. |
-| **Re-precompute barrier cache** | **P0** | Must re-precompute 247 sessions with N_FEATURES=22 and MBO data before any training. |
+| **Re-precompute barrier cache** | **P0** | C++ backend ready. Delete stale cache, rebuild, re-precompute (~5-10 min). |
 | **Architecture comparison** | **P1 (now unblocked)** | Transformer / SSM / LSTM on barrier features via SB3 `features_extractor_class`. RF > MLP suggests architecture matters. |
 | **199d no-exec-cost 10M+ steps** | **P1** | Only positive OOS ever (exp-002 Run C val +10.93, undertrained). Needs GPU. |
 | Checkpoint early stopping | P1 | eval 4M vs 5M checkpoints. |

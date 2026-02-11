@@ -6,7 +6,7 @@ pybind11 module exposing C++ engine to Python as `lob_rl_core`.
 
 | File | Role |
 |---|---|
-| `bindings.cpp` | Exposes: `LOBEnv` (5 constructor overloads), `SessionConfig`, `precompute()`. Module name: `lob_rl_core`. |
+| `bindings.cpp` | Exposes: `LOBEnv` (5 constructor overloads), `SessionConfig`, `precompute()`, `barrier_precompute()`. Module name: `lob_rl_core`. |
 
 ## Python API (exposed by pybind11)
 
@@ -50,10 +50,23 @@ obs, mid, spread, num_steps = lob_rl_core.precompute(path, config)
 # num_steps: int
 ```
 
+### barrier_precompute
+
+```python
+result = lob_rl_core.barrier_precompute(
+    path, instrument_id,
+    bar_size=500, lookback=10, a=20, b=10, t_max=40)
+# Returns dict with keys: features, bar_open, bar_high, bar_low, bar_close,
+#   bar_volume, bar_vwap, bar_t_start, bar_t_end, trade_prices, trade_sizes,
+#   bar_trade_offsets, label_values, label_tau, label_resolution_bar,
+#   bar_size, lookback, a, b, t_max, n_bars, n_usable, n_features
+# Returns None if insufficient data (n_bars < lookback + 1)
+```
+
 ## Dependencies
 
 - **Depends on:** `lob_core` (static lib), pybind11
-- **Depended on by:** All Python code (`python/lob_rl/`)
+- **Depended on by:** All Python code (`python/lob_rl/`), `scripts/precompute_barrier_cache.py`
 
 ## Modification hints
 

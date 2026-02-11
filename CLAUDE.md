@@ -1,6 +1,6 @@
 ## Current State (updated 2026-02-10)
 
-- **Build:** `build-release/` is current. 418 C++ tests pass (`./lob_tests`). 2062 Python tests pass (1308 core + 754 barrier). **2480 total.** (15 C++ + 12 Python skipped — need `.dbn.zst` fixture.)
+- **Build:** `build-release/` is current. 635 C++ tests pass (`./lob_tests`). 2070 Python tests pass (1308 core + 762 barrier). **2705 total.** (15 C++ + 39 Python skipped — need `.dbn.zst` fixture.)
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent) all installed.
 - **Shuffle split DONE:** `--shuffle-split` and `--seed 42` on `train.py`. Reproducible random train/val/test splits. Episodes are independent days. PR #14 merged.
@@ -44,14 +44,15 @@
 - **Phase 1 Microstructure Features DONE (PR #35):** 4 new features (cols 13-16: OFI, depth ratio, weighted mid displacement, spread std). `N_FEATURES` bumped 13→17. 55 tests.
 - **Phase 2 Microstructure Features DONE (PR #36):** 5 new features (cols 17-21: VAMP displacement, aggressor imbalance, trade arrival rate, cancel-to-trade ratio, price impact per trade). `N_FEATURES` bumped 17→22. `OrderBook.vamp()` method. Refactored: `_BOOK_COL_MAP`, `stride_tricks` in `assemble_lookback`, extracted MBO helpers to `conftest.py`. 78 tests.
 - **Feature count:** 22 total features. Observation dim = 22*10 + 2 = 222 (with h=10).
-- **Barrier cache STALE:** `cache/barrier/` has 247 `.npz` files with 130-dim features (N_FEATURES=13). **Must re-precompute** with N_FEATURES=22 before training.
-- **Next task:** Re-precompute barrier cache with MBO data (activates all 22 features), then re-run T6 diagnostic to measure signal improvement. Then T10-T12 GPU training.
+- **C++ Barrier Precompute Pipeline DONE (PRs #37-#41):** 5 TDD cycles completed. Book extensions → BarBuilder → Feature compute → Labels → Pipeline integration + pybind11. `lob_rl_core.barrier_precompute()` binding replaces Python `process_session()` for ~50-100x speedup. `precompute_barrier_cache.py` updated to use C++ backend.
+- **Barrier cache STALE:** `cache/barrier/` has 247 `.npz` files with 130-dim features (N_FEATURES=13). **Must delete and re-precompute** with C++ backend (N_FEATURES=22, ~5-10 min vs 8+ hours).
+- **Next task:** Delete stale cache (`rm cache/barrier/*.npz`), rebuild (`cd build-release && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j$(nproc)`), re-precompute with C++ backend, then re-run T6 diagnostic. Then T10-T12 GPU training.
 - **Research kit installed:** `experiment.sh`, prompts, templates, QUESTIONS.md, DOMAIN_PRIORS.md, RESEARCH_LOG.md all configured.
 - **Architecture exploration UNBLOCKED:** T6 confirms signal exists. Architecture comparison (Transformer/SSM/LSTM on barrier features via `features_extractor_class`) is now a valid experiment. See DOMAIN_PRIORS.md.
 - **Experiments completed:** 10 total (2 confirmed, 8 refuted). See `RESEARCH_LOG.md`.
-- **PRs this session:** #34 (LOB reconstructor), #35 (Phase 1 features), #36 (Phase 2 features).
+- **PRs this session:** #37 (Book extensions), #38 (BarBuilder), #39 (Feature compute), #40 (Labels), #41 (Pipeline + pybind11).
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
-- **Precompute hint:** If cache needs rebuilding: `precompute_cache.py --roll-calendar ... --workers 8` (script supports `--workers N` via `ProcessPoolExecutor`).
+- **Precompute hint:** Re-precompute with C++ backend: `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/precompute_barrier_cache.py --data-dir ../data/mes/ --output-dir ../cache/barrier/ --roll-calendar ../data/mes/roll_calendar.json --bar-size 500 --lookback 10 --workers 8`
 - **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42`
 
 ## Don't
