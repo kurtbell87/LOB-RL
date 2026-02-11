@@ -19,6 +19,8 @@ Offline barrier-label construction pipeline for LOB-RL. Reads raw MBO data, buil
 | `multi_session_env.py` | Multi-session wrapper: `MultiSessionBarrierEnv` — cycles through pre-built sessions, round-robin or shuffled. `from_bar_lists()` factory. |
 | `barrier_vec_env.py` | Vectorized env helpers: `make_barrier_env_fn()`, `make_barrier_vec_env()` — creates SB3-compatible DummyVecEnv/SubprocVecEnv. |
 | `training_diagnostics.py` | Training callback: `BarrierDiagnosticCallback` — monitors entropy, value loss, flat action rate, episode reward, trade win rate, NaN detection, red flags. Also `linear_schedule()`. |
+| `first_passage_analysis.py` | Brier scores, temporal splits, bootstrap tests, calibration curves, model fitting, null calibration, signal detection, label loading. |
+| `sequence_models.py` | Sequence-aware models (LSTM, Transformer) for barrier prediction: `BarEmbedding`, `LinearBarEmbedding`, `BarrierLSTM`, `BarrierTransformer`, `collate_sessions()`, `train_sequence_model()`, `predict_sessions()`, `evaluate_sequence_model()`. |
 | `_sb3_compat.py` | SB3 compatibility shim: patches `MaskableActorCriticPolicy` and `MlpExtractor` for legacy `net_arch` format. Auto-applied on import. |
 
 ## API Signatures
@@ -107,6 +109,72 @@ Feature column layout (22 columns):
 | 19 | Trade arrival rate | >= 0 (0.0 default) |
 | 20 | Cancel-to-trade ratio | >= 0 (0.0 default) |
 | 21 | Price impact per trade | signed (0.0 default) |
+
+### `first_passage_analysis.py`
+
+```python
+brier_score(y_true, y_pred) -> float
+constant_brier(y_true) -> float        # Brier score of constant predictor ybar
+brier_skill_score(y_true, y_pred) -> float  # BSS = 1 - Brier(model) / Brier(constant)
+temporal_split(n_sessions, train_frac=0.6, val_frac=0.2) -> tuple[ndarray, ndarray, ndarray]
+temporal_cv_folds(n_sessions, n_folds=5) -> list[tuple[ndarray, ndarray]]
+calibration_curve(y_true, y_pred, n_bins=10) -> tuple[ndarray, ndarray]
+paired_bootstrap_brier(y_true, pred_model, pred_baseline, n_boot=10000,
+                        block_size=50, seed=42) -> dict
+    # {delta, ci_lower, ci_upper, p_value}
+null_calibration_report(Y_long, Y_short, tau_long, tau_short,
+                         timeout_long, timeout_short, session_boundaries) -> dict
+fit_logistic(X_train, y_train, max_iter=1000) -> LogisticRegression
+fit_gbt(X_train, y_train, seed=42) -> model  # LightGBM or sklearn fallback
+load_binary_labels(cache_dir, lookback=10) -> dict
+    # {X, Y_long, Y_short, timeout_long, timeout_short, tau_long, tau_short,
+    #  session_boundaries, dates}
+REALIZED_VOL_WARMUP = 19
+load_session_features(cache_dir) -> list[dict]
+    # Each: {features: (n,22) float32, Y_long: (n,) bool, Y_short: (n,) bool, date: str}
+verify_lattice(tick_size=0.25, a=20, b=10) -> dict  # {lattice_ok, R_ticks}
+signal_detection_report(X, Y_long, Y_short, session_boundaries, seed=42) -> dict
+```
+
+### `sequence_models.py`
+
+```python
+class BarEmbedding(nn.Module):
+    d_model: int  # set by subclass
+
+class LinearBarEmbedding(BarEmbedding):
+    __init__(n_features=22, d_model=64, max_len=2048, dropout=0.1)
+    forward(x: Tensor[B, T, n_features]) -> Tensor[B, T, d_model]
+
+class _DualHeadModel(nn.Module):
+    # Internal base: shared head_long/head_short Linear(d, 1) + _apply_heads()
+
+class BarrierLSTM(_DualHeadModel):
+    __init__(n_features=22, d_model=64, n_layers=2, dropout=0.1,
+             embedding: BarEmbedding | None = None)
+    forward(x: Tensor[B, T, 22]) -> tuple[Tensor[B, T], Tensor[B, T]]
+
+class BarrierTransformer(_DualHeadModel):
+    __init__(n_features=22, d_model=64, n_layers=2, n_heads=4, dropout=0.1,
+             embedding: BarEmbedding | None = None)
+    forward(x: Tensor[B, T, 22]) -> tuple[Tensor[B, T], Tensor[B, T]]
+
+collate_sessions(sessions: list[dict]) -> tuple[Tensor, Tensor, Tensor, Tensor]
+    # (features[B,T,22], Y_long[B,T], Y_short[B,T], mask[B,T])
+
+train_sequence_model(model, train_sessions, val_sessions, epochs=50,
+                      batch_size=4, lr=1e-3, weight_decay=1e-4, patience=10,
+                      seed=42, device="cpu") -> dict
+    # {train_loss_history, val_brier_history, best_epoch, best_val_brier, stopped_early}
+
+predict_sessions(model, sessions, batch_size=8, device="cpu") -> tuple[ndarray, ndarray]
+    # (p_long[N_total], p_short[N_total]) float64, padding removed
+
+evaluate_sequence_model(model, sessions, batch_size=8, device="cpu",
+                         n_bootstrap=1000, seed=42) -> dict
+    # Keys per label: brier_constant_{l}, brier_model_{l}, bss_{l},
+    #   bootstrap_{l}, p_hat_mean_{l}, p_hat_std_{l}
+```
 
 ### `gamblers_ruin.py`
 
@@ -268,6 +336,8 @@ class BarrierDiagnosticCallback(BaseCallback):
 - `multi_session_env.py` depends on: `barrier_env.py`, `feature_pipeline.py`, `label_pipeline.py`, `reward_accounting.py`, `gymnasium`
 - `barrier_vec_env.py` depends on: `multi_session_env.py`, `_sb3_compat.py`, `stable_baselines3`
 - `training_diagnostics.py` depends on: `stable_baselines3`, `numpy`
+- `first_passage_analysis.py` depends on: `numpy`, `sklearn` (lazy), `glob`, `os`
+- `sequence_models.py` depends on: `first_passage_analysis.py` (`brier_score`, `brier_skill_score`, `constant_brier`, `paired_bootstrap_brier`), `torch`, `numpy`
 - `_sb3_compat.py` depends on: `sb3_contrib`, `stable_baselines3`, `torch`
 
 ## Modification Hints
@@ -275,3 +345,5 @@ class BarrierDiagnosticCallback(BaseCallback):
 - To add a new feature column: update `compute_bar_features()` in `feature_pipeline.py`, increment `N_FEATURES` in `__init__.py` (currently 22), add to `_BOOK_COL_MAP` and `_BOOK_DEFAULTS` if book-derived, and update the column layout table above.
 - To add a new validation module: create `python/lob_rl/barrier/<name>.py`, use `build_synthetic_trades()` from `__init__.py` for trade generation, add tests in `python/tests/barrier/test_<name>.py`.
 - To add a new label resolution type: update `_label_single_bar()` and `_tiebreak()` in `label_pipeline.py`, handle the new type in the short-direction flip logic in `compute_labels()`.
+- To add a new sequence model architecture: subclass `_DualHeadModel`, accept `embedding: BarEmbedding | None` in constructor, implement `forward(x: [B, T, 22]) -> (logit_long: [B, T], logit_short: [B, T])`. Call `self._init_heads(d)` in `__init__` and `self._apply_heads(h)` in `forward`.
+- To add a new embedding strategy: subclass `BarEmbedding`, set `self.d_model`, implement `forward(x: [B, T, n_features]) -> [B, T, d_model]`. Pass to any model constructor.
