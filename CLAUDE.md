@@ -45,14 +45,14 @@
 - **Phase 2 Microstructure Features DONE (PR #36):** 5 new features (cols 17-21: VAMP displacement, aggressor imbalance, trade arrival rate, cancel-to-trade ratio, price impact per trade). `N_FEATURES` bumped 17→22. `OrderBook.vamp()` method. Refactored: `_BOOK_COL_MAP`, `stride_tricks` in `assemble_lookback`, extracted MBO helpers to `conftest.py`. 78 tests.
 - **Feature count:** 22 total features. Observation dim = 22*10 + 2 = 222 (with h=10).
 - **C++ Barrier Precompute Pipeline DONE (PRs #37-#41):** 5 TDD cycles completed. Book extensions → BarBuilder → Feature compute → Labels → Pipeline integration + pybind11. `lob_rl_core.barrier_precompute()` binding replaces Python `process_session()` for ~50-100x speedup. `precompute_barrier_cache.py` updated to use C++ backend.
-- **Barrier cache STALE:** `cache/barrier/` has 247 `.npz` files with 130-dim features (N_FEATURES=13). **Must delete and re-precompute** with C++ backend (N_FEATURES=22, ~5-10 min vs 8+ hours).
-- **Next task:** Delete stale cache (`rm cache/barrier/*.npz`), rebuild (`cd build-release && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j$(nproc)`), re-precompute with C++ backend, then re-run T6 diagnostic. Then T10-T12 GPU training.
+- **Barrier cache FRESH:** `cache/barrier/` has 248 `.npz` files with 220-dim features (N_FEATURES=22). Re-precomputed via C++ backend in 570s (vs 8+ hours Python). 461K total bars, 454K usable. 186 MB cache.
+- **Next task:** Re-run T6 supervised diagnostic with 22 features (compare vs old 9-active-feature RF 40.5%). Then T10-T12 GPU training.
 - **Research kit installed:** `experiment.sh`, prompts, templates, QUESTIONS.md, DOMAIN_PRIORS.md, RESEARCH_LOG.md all configured.
 - **Architecture exploration UNBLOCKED:** T6 confirms signal exists. Architecture comparison (Transformer/SSM/LSTM on barrier features via `features_extractor_class`) is now a valid experiment. See DOMAIN_PRIORS.md.
 - **Experiments completed:** 10 total (2 confirmed, 8 refuted). See `RESEARCH_LOG.md`.
 - **PRs this session:** #37 (Book extensions), #38 (BarBuilder), #39 (Feature compute), #40 (Labels), #41 (Pipeline + pybind11).
 - **Reference:** Databento DBN spec cloned to `references/dbn/`.
-- **Precompute hint:** Re-precompute with C++ backend: `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/precompute_barrier_cache.py --data-dir ../data/mes/ --output-dir ../cache/barrier/ --roll-calendar ../data/mes/roll_calendar.json --bar-size 500 --lookback 10 --workers 8`
+- **Precompute hint:** If cache needs rebuilding: `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/precompute_barrier_cache.py --data-dir ../data/mes/ --output-dir ../cache/barrier/ --roll-calendar ../data/mes/roll_calendar.json --bar-size 500 --lookback 10 --workers 8` (~10 min with C++ backend)
 - **Key entry point:** `cd build-release && PYTHONPATH=.:../python uv run python ../scripts/train.py --cache-dir ../cache/mes/ --bar-size 1000 --execution-cost --policy-arch 256,256 --activation relu --ent-coef 0.05 --learning-rate 0.001 --shuffle-split --seed 42`
 
 ## Don't
