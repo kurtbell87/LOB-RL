@@ -1,0 +1,53 @@
+{
+  "experiment": "exp-004-22-feature-supervised-diagnostic",
+  "tier": "quick",
+  "timestamp": "2026-02-11T10:05:20",
+  "set_a": {
+    "mean_balanced_acc": 0.4961688703057033,
+    "per_seed": {
+      "42": 0.49331836350171504,
+      "43": 0.4990193771096915
+    },
+    "train_accs": {
+      "42": 1.0,
+      "43": 1.0
+    }
+  },
+  "set_b": {
+    "mean_balanced_acc": 0.47502280772817873,
+    "per_seed": {
+      "42": 0.47476318620359415,
+      "43": 0.47528242925276337
+    },
+    "train_accs": {
+      "42": 1.0,
+      "43": 1.0
+    }
+  },
+  "delta_a_minus_b_pp": 2.114606257752455,
+  "majority_baseline": 0.3806312257246281,
+  "t6_baseline": 0.405,
+  "label_distribution": {
+    "long_pct": 30.75563012480073,
+    "short_pct": 31.181247302736455,
+    "flat_pct": 38.06312257246281
+  },
+  "n_samples_total": 454164,
+  "n_samples_used": 50000,
+  "feature_dim": 220,
+  "verdicts": {
+    "a_beats_b_by_2pp": true,
+    "a_above_majority": true,
+    "b_reproduces_t6": false
+  },
+  "resource_usage": {
+    "gpu_hours": 0,
+    "wall_clock_seconds": 277.1421871185303,
+    "total_training_runs": 4,
+    "seeds": [
+      42,
+      43
+    ]
+  },
+  "notes": "Quick-tier diagnostic. Short-direction labels computed in Python (tech debt: C++ cache only stores long-direction labels). Subsampled to 50K for RF speed. "
+}

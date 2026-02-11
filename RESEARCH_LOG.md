@@ -5,6 +5,28 @@ Read this file FIRST when starting any new research task. It is the institutiona
 
 ---
 
+## exp-004-22-feature-supervised-diagnostic — INCONCLUSIVE
+**Date:** 2026-02-11
+**Hypothesis:** 22-feature barrier obs (with all book + microstructure features active in C++ cache) improves RF balanced accuracy by >2pp over the original 9-feature set.
+
+**Quick results (2 seeds, 50K subsample, shuffle split, RF only):**
+
+| Feature set | Mean bal_acc | Train acc |
+|------------|-------------|-----------|
+| A (all 22) | 49.6% | 100% |
+| B (original 9) | 47.5% | 100% |
+| Majority baseline | 38.1% | — |
+
+Delta: +2.1pp (A > B). Both sets dramatically exceed T6 baseline (40.5%) because 4 previously-dead features (cols 0,1,2,11) are now active in the C++ cache.
+
+**Status:** Aborted. Full 60-run experiment (5 seeds × 2 models × 2 splits × 3 feature sets + permutation importance) crashed twice — Python process killed by SIGPIPE when parent experiment.sh was terminated. Quick-tier metrics saved.
+
+**Lesson:** The C++ cache producing active features where Python had dead zeros explains the jump from 40.5% → 47.5% for the "same" 9 features. The new features add a marginal +2pp. More importantly, the three-class framing {long, short, flat} may be suboptimal — the Asymmetric First-Passage Trading plan uses two independent binary predictions (Y_long, Y_short) with Brier score evaluation instead.
+
+**Details:** results/exp-004-22-feature-supervised-diagnostic/metrics.json
+
+---
+
 ## t6-supervised-diagnostic — CONFIRMED (weak signal)
 **Date:** 2026-02-10
 **Hypothesis:** The 130-dim barrier feature set contains learnable signal about barrier-hit direction that exceeds majority-class baseline.
