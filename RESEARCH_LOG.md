@@ -5,6 +5,16 @@ Read this file FIRST when starting any new research task. It is the institutiona
 
 ---
 
+## exp-005-null-calibration — CONFIRMED
+**Date:** 2026-02-11
+**Hypothesis:** Under the martingale null with 2:1 asymmetric barriers, ȳ_long ≈ ȳ_short ≈ 1/3.
+**Key result:** ȳ_long = 0.320, ȳ_short = 0.322 (both within [0.28, 0.38]). sum_ȳ = 0.643 ≈ 2/3. P(1,1) = 0. Labels are independent, well-calibrated, and consistent across 248 sessions.
+**Lesson:** The Gambler's Ruin null is a valid first approximation for MES barrier labels. Constant-prediction Brier score baseline is 0.218. Phase 2 signal detection can proceed with empirical ȳ ≈ 0.32.
+**Next:** Phase 2 — logistic regression + GBT on 22 features to predict Y_long / Y_short with Brier score evaluation.
+**Details:** results/exp-005-null-calibration/analysis.md
+
+---
+
 ## exp-004-22-feature-supervised-diagnostic — INCONCLUSIVE
 **Date:** 2026-02-11
 **Hypothesis:** 22-feature barrier obs (with all book + microstructure features active in C++ cache) improves RF balanced accuracy by >2pp over the original 9-feature set.
