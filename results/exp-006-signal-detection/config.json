@@ -1,0 +1,45 @@
+{
+  "experiment": "exp-006-signal-detection",
+  "cache_dir": "cache/barrier/",
+  "lookback": 10,
+  "seed": 42,
+  "split": {
+    "method": "temporal_split",
+    "train_frac": 0.6,
+    "val_frac": 0.2,
+    "test_frac": 0.2
+  },
+  "models": {
+    "logistic": {
+      "solver": "lbfgs",
+      "C": 1.0,
+      "max_iter": 1000,
+      "penalty": "l2"
+    },
+    "gbt": {
+      "backend": "lightgbm",
+      "max_depth": 6,
+      "n_estimators": 200,
+      "learning_rate": 0.05,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "min_child_samples": 50,
+      "random_state": 42
+    }
+  },
+  "bootstrap": {
+    "n_boot": 1000,
+    "block_size": 50,
+    "seed": 42
+  },
+  "cv": {
+    "method": "expanding_window",
+    "n_folds": 5
+  },
+  "labels": ["Y_long", "Y_short"],
+  "compute": "local",
+  "software": {
+    "sklearn": "1.8.0",
+    "lightgbm": "4.6.0"
+  }
+}

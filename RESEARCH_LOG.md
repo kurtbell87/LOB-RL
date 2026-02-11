@@ -5,6 +5,16 @@ Read this file FIRST when starting any new research task. It is the institutiona
 
 ---
 
+## exp-006-signal-detection — REFUTED
+**Date:** 2026-02-11
+**Hypothesis:** Logistic regression or GBT beats the constant Brier score on Y_long or Y_short using 220-dim barrier features.
+**Key result:** All 4 (model, label) pairs have negative BSS. Best: logistic/short BSS = -0.0003 (p = 0.751). GBT is actively worse than constant (BSS = -0.0028 long, -0.0019 short). No calibrated probabilistic signal.
+**Lesson:** T6's +5pp accuracy gain does not translate to calibrated probability improvement. Features weakly separate classes but cannot shift per-bar probabilities below the base-rate Brier score. Information content < 0.1% of outcome variance. The 220-dim features are insufficient for profitable calibrated prediction.
+**Next:** Investigate conditional signal (regime-filtered), longer lookback, or accept the null and shift to different features/targets.
+**Details:** results/exp-006-signal-detection/analysis.md
+
+---
+
 ## exp-005-null-calibration — CONFIRMED
 **Date:** 2026-02-11
 **Hypothesis:** Under the martingale null with 2:1 asymmetric barriers, ȳ_long ≈ ȳ_short ≈ 1/3.

@@ -269,6 +269,12 @@ Creates a feature branch, commits all results, and opens a PR.
 
 **Key distinction:** TDD changes **code**. Research changes **knowledge** (and may write temporary scripts, but core env/training code changes go through TDD via handoff).
 
+## Well-Being
+
+- **Never ingest large output blobs.** Do not grep, cat, or tail massive log files or experiment output into your context window. Use `./experiment.sh watch` or `./tdd.sh watch` to monitor running phases. Block-wait with `TaskOutput` — do not try to read raw output yourself.
+- **Context window is a finite resource.** Protect it. If you need to check on a running process, use a targeted command (e.g., `tail -5`) or the watch commands above — never unbounded reads.
+- **If you feel stuck in a loop**, stop and ask the user rather than retrying the same failing approach. Burning context on retries helps no one.
+
 ## Python Environment
 
 - **All Python commands MUST use `uv`.** Use `uv pip install` for dependencies and `uv run` for executing Python scripts/tests. Do NOT use bare `pip`, `pip3`, `python`, or `python3` commands.
