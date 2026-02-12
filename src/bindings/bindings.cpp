@@ -19,6 +19,7 @@
 #include "replay/BatchAggregator.hpp"
 #include "features/FeatureFactory.hpp"
 #include "features/FeatureManager.hpp"
+#include "features/BarFeatureManager.hpp"
 #include "interfaces/features/IFeature.hpp"
 #include "interfaces/orderbook/IInstrumentBook.hpp"
 #include "databento/constants.hpp"
@@ -541,4 +542,19 @@ PYBIND11_MODULE(lob_rl_core, m) {
     }, py::arg("instrument_id") = 0u,
        py::arg("side") = cst_if_ob::BookSide::Bid,
        py::arg("price") = 0);
+
+    // ── Bar Feature System Bindings ──────────────────────────────────────
+    py::class_<cst_feat::BarFeatureManager>(m, "BarFeatureManager")
+        .def(py::init<>())
+        .def("register_bar_feature", &cst_feat::BarFeatureManager::RegisterBarFeature,
+             py::arg("feature"), py::arg("value_name"))
+        .def("on_mbo_event", &cst_feat::BarFeatureManager::OnMboEvent,
+             py::arg("source"), py::arg("market"))
+        .def("notify_bar_start", &cst_feat::BarFeatureManager::NotifyBarStart,
+             py::arg("bar_index"))
+        .def("notify_bar_complete", &cst_feat::BarFeatureManager::NotifyBarComplete,
+             py::arg("bar_index"))
+        .def("get_bar_feature_vector", &cst_feat::BarFeatureManager::GetBarFeatureVector)
+        .def("feature_count", &cst_feat::BarFeatureManager::FeatureCount)
+        .def("all_bars_complete", &cst_feat::BarFeatureManager::AllBarsComplete);
 }

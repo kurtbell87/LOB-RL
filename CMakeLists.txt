@@ -98,6 +98,8 @@ add_library(constellation_core STATIC
     src/constellation/modules/features/src/derived/CancelAddRatioFeature.cpp
     src/constellation/modules/features/src/derived/MidPriceFeature.cpp
     src/constellation/modules/features/src/derived/RollingVolatilityFeature.cpp
+    src/constellation/modules/features/src/AbstractBarFeature.cpp
+    src/constellation/modules/features/src/BarFeatureManager.cpp
     # Modules: market_data
     src/constellation/modules/market_data/src/DataBentoMboFeed.cpp
     src/constellation/modules/market_data/src/DbnFileFeed.cpp
@@ -152,6 +154,7 @@ add_executable(constellation_tests
     src/constellation/modules/features/tests/TestFeaturesAdvanced.cpp
     src/constellation/modules/features/tests/TestMultiInstrumentFeatures.cpp
     src/constellation/modules/features/tests/TestMicroDepthFeatureFix.cpp
+    src/constellation/modules/features/tests/TestBarFeature.cpp
     # Market data tests
     src/constellation/modules/market_data/tests/TestMarketDataIntegration.cpp
     src/constellation/modules/market_data/tests/TestMarketDataAdvanced.cpp
