@@ -218,6 +218,20 @@ target_include_directories(lob_tests PRIVATE
 include(GoogleTest)
 gtest_discover_tests(lob_tests)
 
+# ── LOB Validation Test (Databento reference comparison) ──────────────
+add_executable(lob_validation_tests tests/test_lob_vs_databento_reference.cpp)
+target_link_libraries(lob_validation_tests PRIVATE lob_core GTest::gtest_main)
+target_include_directories(lob_validation_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/data
+)
+# Run from project root so data/ paths resolve
+set_target_properties(lob_validation_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+gtest_discover_tests(lob_validation_tests)
+
 # ── Test fixture generator ────────────────────────────────────────────
 add_executable(gen_fixture tools/gen_fixture.cpp)
 target_link_libraries(gen_fixture PRIVATE databento::databento)
