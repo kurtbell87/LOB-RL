@@ -300,4 +300,82 @@ PYBIND11_MODULE(lob_rl_core, m) {
 
     // Price scale constant
     m.attr("FIXED_PRICE_SCALE") = databento::kFixedPriceScale;
+
+    // ── Constellation Replay & Market Bindings ──────────────────────────
+    namespace cst_replay = constellation::applications::replay;
+    namespace cst_ob = constellation::modules::orderbook;
+    using cst_replay::BatchAggregatorConfig;
+    using cst_replay::BatchAggregatorStats;
+
+    // BatchAggregatorConfig
+    py::class_<BatchAggregatorConfig>(m, "BatchAggregatorConfig")
+        .def(py::init<>())
+        .def_readwrite("batch_size", &BatchAggregatorConfig::batch_size)
+        .def_readwrite("enable_logging", &BatchAggregatorConfig::enable_logging)
+        .def_readwrite("release_gil_during_aggregation", &BatchAggregatorConfig::release_gil_during_aggregation)
+        .def_readwrite("enable_instrument_boundary", &BatchAggregatorConfig::enable_instrument_boundary)
+        .def_readwrite("boundary_instrument_id", &BatchAggregatorConfig::boundary_instrument_id)
+        .def_readwrite("boundary_instrument_trades", &BatchAggregatorConfig::boundary_instrument_trades)
+        .def_readwrite("enable_event_count_boundary", &BatchAggregatorConfig::enable_event_count_boundary)
+        .def_readwrite("boundary_event_type", &BatchAggregatorConfig::boundary_event_type)
+        .def_readwrite("boundary_event_count", &BatchAggregatorConfig::boundary_event_count);
+
+    // BatchAggregatorStats
+    py::class_<BatchAggregatorStats>(m, "BatchAggregatorStats")
+        .def(py::init<>())
+        .def_property_readonly("total_records", [](const BatchAggregatorStats& s) {
+            return s.total_records.load();
+        })
+        .def_property_readonly("total_mbo_messages", [](const BatchAggregatorStats& s) {
+            return s.total_mbo_messages.load();
+        })
+        .def_property_readonly("total_microseconds", [](const BatchAggregatorStats& s) {
+            return s.total_microseconds.load();
+        });
+
+    // FillRecord
+    py::class_<cst_replay::FillRecord>(m, "FillRecord")
+        .def(py::init<>())
+        .def_readonly("timestamp", &cst_replay::FillRecord::timestamp)
+        .def_readonly("order_id", &cst_replay::FillRecord::order_id)
+        .def_readonly("instrument_id", &cst_replay::FillRecord::instrument_id)
+        .def_readonly("fill_price", &cst_replay::FillRecord::fill_price)
+        .def_readonly("fill_qty", &cst_replay::FillRecord::fill_qty)
+        .def_readonly("is_buy", &cst_replay::FillRecord::is_buy)
+        .def_property_readonly("fill_price_float", [](const cst_replay::FillRecord& f) {
+            return static_cast<double>(f.fill_price) / databento::kFixedPriceScale;
+        });
+
+    // MarketBook
+    py::class_<cst_ob::MarketBook, std::shared_ptr<cst_ob::MarketBook>>(m, "MarketBook")
+        .def(py::init<>())
+        .def("instrument_count", &cst_ob::MarketBook::InstrumentCount)
+        .def("get_instrument_ids", &cst_ob::MarketBook::GetInstrumentIds)
+        .def("best_bid_price", [](const cst_ob::MarketBook& mb, uint32_t instrument_id) -> py::object {
+            auto p = mb.BestBidPrice(instrument_id);
+            if (!p) return py::none();
+            return py::cast(static_cast<double>(*p) / databento::kFixedPriceScale);
+        }, py::arg("instrument_id"))
+        .def("best_ask_price", [](const cst_ob::MarketBook& mb, uint32_t instrument_id) -> py::object {
+            auto p = mb.BestAskPrice(instrument_id);
+            if (!p) return py::none();
+            return py::cast(static_cast<double>(*p) / databento::kFixedPriceScale);
+        }, py::arg("instrument_id"))
+        .def("get_global_add_count", &cst_ob::MarketBook::GetGlobalAddCount)
+        .def("get_global_cancel_count", &cst_ob::MarketBook::GetGlobalCancelCount)
+        .def("get_global_modify_count", &cst_ob::MarketBook::GetGlobalModifyCount)
+        .def("get_global_trade_count", &cst_ob::MarketBook::GetGlobalTradeCount)
+        .def("get_global_total_event_count", &cst_ob::MarketBook::GetGlobalTotalEventCount);
+
+    // BatchBacktestEngine
+    py::class_<cst_replay::BatchBacktestEngine>(m, "BatchBacktestEngine")
+        .def(py::init<>())
+        .def("set_aggregator_config", &cst_replay::BatchBacktestEngine::SetAggregatorConfig,
+             py::arg("config"))
+        .def("process_files", &cst_replay::BatchBacktestEngine::ProcessFiles,
+             py::arg("dbn_files"))
+        .def("process_single_file", &cst_replay::BatchBacktestEngine::ProcessSingleFile,
+             py::arg("dbn_file"))
+        .def("get_fills", &cst_replay::BatchBacktestEngine::GetFills)
+        .def("reset_stats", &cst_replay::BatchBacktestEngine::ResetStats);
 }
