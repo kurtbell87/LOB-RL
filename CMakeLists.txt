@@ -66,9 +66,10 @@ add_library(lob_core STATIC
 target_include_directories(lob_core PUBLIC
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/data
+    ${CMAKE_SOURCE_DIR}/src  # for constellation/adapters/
 )
 
-target_link_libraries(lob_core PUBLIC databento::databento)
+target_link_libraries(lob_core PUBLIC constellation_core)
 
 # ── Constellation core library ────────────────────────────────────────
 add_library(constellation_core STATIC

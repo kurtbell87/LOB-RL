@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -1006,13 +1007,14 @@ TEST(DbnFileSourceRAction, ClearMapsToCancel) {
     // in dbn_file_source.cpp (or dbn_message_map.cpp) to map 'R' → Cancel.
     databento::MboMsg mbo{};
     mbo.hd.instrument_id = 12345;
-    mbo.hd.ts_event = 1000;
+    mbo.hd.ts_event = databento::UnixNanos{
+        std::chrono::nanoseconds{uint64_t{1000}}};
     mbo.order_id = 99;
     mbo.price = 999750000000LL;
     mbo.size = 10;
-    mbo.action = 'R';
-    mbo.side = 'B';
-    mbo.flags = 0;
+    mbo.action = static_cast<databento::Action>('R');
+    mbo.side = databento::Side::Bid;
+    mbo.flags = databento::FlagSet{0};
 
     Message msg;
     ASSERT_TRUE(map_mbo_to_message(mbo, msg, 12345))

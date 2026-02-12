@@ -1,4 +1,3 @@
-#define DBN_MESSAGE_MAP_SKIP_SHIM
 #include <databento/dbn_file_store.hpp>
 #include <databento/record.hpp>
 #include "dbn_file_source.h"

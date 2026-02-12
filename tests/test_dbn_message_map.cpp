@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <cmath>
 #include <cstdint>
+#include <chrono>
 #include "lob/message.h"
 #include "dbn_message_map.h"
 #include "test_helpers.h"
@@ -25,13 +26,14 @@ static databento::MboMsg make_mbo(uint32_t instrument_id, uint64_t ts_event,
                                    uint8_t flags = 0) {
     databento::MboMsg mbo{};
     mbo.hd.instrument_id = instrument_id;
-    mbo.hd.ts_event = ts_event;
+    mbo.hd.ts_event = databento::UnixNanos{
+        std::chrono::nanoseconds{ts_event}};
     mbo.order_id = order_id;
     mbo.price = price;
     mbo.size = size;
-    mbo.action = action;
-    mbo.side = side;
-    mbo.flags = flags;
+    mbo.action = static_cast<databento::Action>(action);
+    mbo.side = static_cast<databento::Side>(side);
+    mbo.flags = databento::FlagSet{flags};
     return mbo;
 }
 
