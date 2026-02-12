@@ -40,6 +40,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(databento)
 
+FetchContent_Declare(
+    Catch2
+    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+    GIT_TAG        v3.3.2
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(Catch2)
+
 # ── Core library ───────────────────────────────────────────────────────
 add_library(lob_core STATIC
     src/engine/book.cpp
@@ -61,6 +69,114 @@ target_include_directories(lob_core PUBLIC
 )
 
 target_link_libraries(lob_core PUBLIC databento::databento)
+
+# ── Constellation core library ────────────────────────────────────────
+add_library(constellation_core STATIC
+    # Interfaces
+    src/constellation/interfaces/src/batch/RecordBatch.cpp
+    # Modules: orderbook
+    src/constellation/modules/orderbook/src/LimitOrderBook.cpp
+    src/constellation/modules/orderbook/src/LimitOrderBookSnapshot.cpp
+    src/constellation/modules/orderbook/src/MarketBook.cpp
+    src/constellation/modules/orderbook/src/MarketBookSnapshot.cpp
+    src/constellation/modules/orderbook/src/OrderBookFactory.cpp
+    src/constellation/modules/orderbook/src/commands/OrderCommands.cpp
+    # Modules: features
+    src/constellation/modules/features/src/FeatureFactory.cpp
+    src/constellation/modules/features/src/FeatureManager.cpp
+    src/constellation/modules/features/src/FeatureRegistry.cpp
+    src/constellation/modules/features/src/MultiInstrumentFeatureManager.cpp
+    src/constellation/modules/features/src/primitives/BestAskPriceFeature.cpp
+    src/constellation/modules/features/src/primitives/BestBidPriceFeature.cpp
+    src/constellation/modules/features/src/primitives/LogReturnFeature.cpp
+    src/constellation/modules/features/src/primitives/MicroDepthFeature.cpp
+    src/constellation/modules/features/src/primitives/MicroPriceFeature.cpp
+    src/constellation/modules/features/src/primitives/OrderImbalanceFeature.cpp
+    src/constellation/modules/features/src/primitives/SpreadFeature.cpp
+    src/constellation/modules/features/src/primitives/VolumeAtPriceFeature.cpp
+    src/constellation/modules/features/src/derived/CancelAddRatioFeature.cpp
+    src/constellation/modules/features/src/derived/MidPriceFeature.cpp
+    src/constellation/modules/features/src/derived/RollingVolatilityFeature.cpp
+    # Modules: market_data
+    src/constellation/modules/market_data/src/DataBentoMboFeed.cpp
+    src/constellation/modules/market_data/src/DbnFileFeed.cpp
+    src/constellation/modules/market_data/src/MarketDataFactory.cpp
+    # Modules: orders
+    src/constellation/modules/orders/src/OrdersEngine.cpp
+    src/constellation/modules/orders/src/OrdersFactory.cpp
+    # Modules: strategy
+    src/constellation/modules/strategy/src/SampleBatchStrategy.cpp
+    src/constellation/modules/strategy/src/StrategyFactory.cpp
+    # Applications: replay
+    src/constellation/applications/replay/src/BatchAggregator.cpp
+    src/constellation/applications/replay/src/BatchBacktestEngine.cpp
+    src/constellation/applications/replay/src/buffers/BatchBuffer.cpp
+    src/constellation/applications/replay/src/buffers/InstrumentBuffer.cpp
+    # Applications: orchestrator
+    src/constellation/applications/orchestrator/src/Orchestrator.cpp
+    src/constellation/applications/orchestrator/src/SpscRingBuffer.cpp
+    # Applications: engine
+    src/constellation/applications/engine/src/Engine.cpp
+)
+
+target_include_directories(constellation_core PUBLIC
+    ${CMAKE_SOURCE_DIR}/src/constellation/interfaces/include
+    ${CMAKE_SOURCE_DIR}/src/constellation/modules/orderbook/include
+    ${CMAKE_SOURCE_DIR}/src/constellation/modules/features/include
+    ${CMAKE_SOURCE_DIR}/src/constellation/modules/market_data/include
+    ${CMAKE_SOURCE_DIR}/src/constellation/modules/orders/include
+    ${CMAKE_SOURCE_DIR}/src/constellation/modules/strategy/include
+    ${CMAKE_SOURCE_DIR}/src/constellation/applications/replay/include
+    ${CMAKE_SOURCE_DIR}/src/constellation/applications/orchestrator/include
+    ${CMAKE_SOURCE_DIR}/src/constellation/applications/engine/include
+)
+
+target_link_libraries(constellation_core PUBLIC databento::databento)
+
+# Constellation tests (Catch2-based, separate from lob_tests)
+add_executable(constellation_tests
+    # Interfaces tests
+    src/constellation/interfaces/tests/TestBatchAggregator.cpp
+    # Orderbook tests
+    src/constellation/modules/orderbook/tests/TestOrderBook.cpp
+    src/constellation/modules/orderbook/tests/TestOrderBookAdvanced.cpp
+    src/constellation/modules/orderbook/tests/TestOrderBookExtended.cpp
+    src/constellation/modules/orderbook/tests/TestOrderBookSnapshot.cpp
+    src/constellation/modules/orderbook/tests/TestOrderBookConcurrency.cpp
+    # Features tests
+    src/constellation/modules/features/tests/TestFeatures.cpp
+    src/constellation/modules/features/tests/TestExtendedFeatures.cpp
+    src/constellation/modules/features/tests/TestFeatureEdgeCases.cpp
+    src/constellation/modules/features/tests/TestFeaturesAdvanced.cpp
+    src/constellation/modules/features/tests/TestMultiInstrumentFeatures.cpp
+    # Market data tests
+    src/constellation/modules/market_data/tests/TestMarketDataIntegration.cpp
+    src/constellation/modules/market_data/tests/TestMarketDataAdvanced.cpp
+    src/constellation/modules/market_data/tests/TestMarketDataEdgeCases.cpp
+    # Orders tests
+    src/constellation/modules/orders/tests/TestOrders.cpp
+    src/constellation/modules/orders/tests/TestOrdersPartialFill.cpp
+    # Strategy tests
+    src/constellation/modules/strategy/tests/TestStrategy.cpp
+    # Engine tests
+    src/constellation/applications/engine/tests/TestEngine.cpp
+    src/constellation/applications/engine/tests/TestEngineIntegration.cpp
+    src/constellation/applications/engine/tests/TestEngineStress.cpp
+    # Replay tests
+    src/constellation/applications/replay/tests/TestBatchAggregatorTradeBoundary.cpp
+)
+
+target_link_libraries(constellation_tests PRIVATE
+    constellation_core
+    Catch2::Catch2WithMain
+)
+
+target_compile_definitions(constellation_tests PRIVATE
+    TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/src/constellation/test_data"
+)
+
+include(Catch)
+catch_discover_tests(constellation_tests)
 
 # ── Tests ──────────────────────────────────────────────────────────────
 enable_testing()
