@@ -1,8 +1,9 @@
-## Current State (updated 2026-02-10)
+## Current State (updated 2026-02-12)
 
-- **Build:** `build-release/` is current. 635 C++ tests pass (`./lob_tests`). 2070 Python tests pass (1308 core + 762 barrier). **2705 total.** (15 C++ + 39 Python skipped — need `.dbn.zst` fixture.)
+- **Build:** `build-release/` is current. 660 C++ tests pass (`./lob_tests`). 2246 Python tests pass (2211 core+barrier + 35 constellation). **2906 total.** Plus 65/67 Constellation Catch2 tests. (15 C++ + 59 Python skipped — need `.dbn.zst` fixture.)
+- **Constellation integration:** Branch `feat/constellation-integration` has 6 commits (Phases 0-6 complete). Book wraps Constellation's LimitOrderBook. OrdersEngine, BatchBacktestEngine, MarketBook, 11 feature types exposed via pybind11. `OrderSimulationEnv` Gymnasium env. 35 integration tests.
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
-- **Dependencies:** SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent) all installed.
+- **Dependencies:** SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent), Catch2 (FetchContent) all installed.
 - **Shuffle split DONE:** `--shuffle-split` and `--seed 42` on `train.py`. Reproducible random train/val/test splits. Episodes are independent days. PR #14 merged.
 - **Frame stacking DONE:** `--frame-stack N` on `train.py`. `VecFrameStack` inserted between SubprocVecEnv and VecNormalize. Eval wraps DummyVecEnv with VecFrameStack before VecNormalize. bar_size=1000 + frame_stack=4 → 84-dim obs. PR #15 merged.
 - **RecurrentPPO DONE:** `--recurrent` on `train.py`. Uses `RecurrentPPO('MlpLstmPolicy')` from sb3-contrib. LSTM state tracking in eval. Mutually exclusive with `--frame-stack > 1`. PR #16 merged.
