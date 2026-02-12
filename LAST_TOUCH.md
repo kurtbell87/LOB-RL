@@ -4,19 +4,24 @@
 
 ### Immediate next step
 
-**Phase 2b parameter sweep or pivot direction.**
+**Conditional signal detection or accept null and pivot.**
 
-exp-005 CONFIRMED null calibration (ȳ ≈ 1/3). exp-006 REFUTED signal detection — LR and GBT both fail to beat the constant Brier score on Y_long or Y_short (all 4 BSS negative, best -0.0003). The 220-dim barrier features contain weak discriminative signal (+5pp accuracy from T6) but zero calibrated probabilistic signal.
+exp-008 REFUTED bar-size sweep: B ∈ {200,500,1000,2000} × R ∈ {1x,2x,3x} — best BSS = 0.0023 (B=200/R=4/long), 2.3× below the 0.005 meaningful threshold. 20/24 cells negative. BSS degrades monotonically with bar size. Phase 2b is complete.
 
-**Options (per the analysis at `results/exp-006-signal-detection/analysis.md`):**
+**Three axes now exhausted:**
+- **Architecture:** LR, GBT, MLP, RF, LSTM, Transformer — all fail (exp-006, exp-007)
+- **Scale:** B ∈ {200,500,1000,2000} × R ∈ {1x,2x,3x} — all fail (exp-008)
+- **Data quantity:** 20d vs 199d — no effect (exp-001)
 
-1. **Phase 2b parameter sweep:** Sweep B ∈ {200, 500, 1000, 2000} × R calibrations. Current results are at B=500 only. Signal may exist at different bar sizes or different reward:risk ratios. This is the plan's prescribed next step when Phase 2 finds no signal.
+**Remaining options:**
 
-2. **Conditional signal detection (regime filtering):** Signal may exist in specific market regimes (high volatility, trend days) but average to zero across the full sample. Stratify by realized_vol quintile or session time.
+1. **Conditional signal detection (regime-filtered):** Stratify by realized_vol quartile or trend/mean-reversion regime. Run LR on each subset at B=500/R=6. Signal may exist conditionally but average to zero unconditionally. This is the cheapest experiment that could reveal hidden signal.
 
-3. **Longer lookback / temporal aggregation:** Current features use h=10 lookback bars. If predictive information is at a longer timescale (h=50 or session-level), current features miss it.
+2. **Alternative target formulation:** Test 1:1 symmetric barriers (ȳ ≈ 1/2 instead of 1/3). The 2:1 asymmetry makes the constant predictor hard to beat. Symmetric barriers expose different feature-outcome relationships.
 
-4. **Accept the null and pivot:** If bar-level features contain < 0.1% of outcome variance, no architecture will help. Productive paths: different features (cross-instrument, finer-grained order flow), different targets (longer-horizon barriers, different R:R), or different approach (execution optimization vs direction prediction).
+3. **Feature pivot — external context:** Add session-level features (time of day, daily vol, overnight gap, macro regime). The 22 current features are all intra-bar/lookback. Conditioning information may be missing.
+
+4. **Accept null and pivot to execution-timing RL:** If directional signal is absent, an RL agent can potentially learn execution-quality policies (when to enter/exit based on spread dynamics) without directional prediction.
 
 **Research plan:** `experiments/Asymmetric First-Passage Trading.md`
 
@@ -43,6 +48,14 @@ exp-005 CONFIRMED null calibration (ȳ ≈ 1/3). exp-006 REFUTED signal detectio
 Source: `data/symbology.json` from Databento download. Roll dates are ~1 week before CME 3rd-Friday expiry.
 
 ### What was just completed
+
+**exp-008 bar-size sweep REFUTED (2026-02-11).** Swept 4 bar sizes × 3 risk calibrations = 12 (B, R) configurations (24 cells with both labels). No cell achieves BSS ≥ 0.005. Best: B=200/R=4/long BSS = 0.0023 (p=0.0 Bonferroni) — statistically significant due to 1.15M samples but practically negligible (0.23% of variance). 20/24 cells negative. BSS degrades monotonically with bar size. All 12 null calibration gates passed. Wall time 143.5 min. Scripts at `scripts/run_exp008_bar_size_sweep.py`, results at `results/exp-008-bar-size-sweep/`.
+
+**exp-007 sequence model signal detection REFUTED (2026-02-11).** LSTM and Transformer on full-session bar sequences (22 features per bar, ~1000-4400 bars per session) both fail to beat constant Brier. All 8 (model, label, split) BSS values negative. Best: transformer/short BSS = -0.0004 (p=0.791). LSTM is *worse* than flat LR (BSS -0.0173 vs -0.0003). Transformer collapses to near-constant predictions (p̂_std=0.014). Key finding: temporal ordering contains no additional calibrated signal beyond flat features. MPS-accelerated locally (~26 min total). PR #49.
+
+**Per-bar feature cache DONE (2026-02-11).** C++ `barrier_precompute()` now outputs `bar_features` (n_trimmed, 22) per-bar z-score normalized features. `load_session_features()` loader in `first_passage_analysis.py`. Barrier cache rebuilt (248 sessions, 221 MB). PR #47.
+
+**Sequence model infrastructure DONE (2026-02-11).** `sequence_models.py` with `BarrierLSTM`, `BarrierTransformer`, swappable `BarEmbedding` interface, causal masking, masked BCEWithLogits loss, AdamW+cosine, early stopping, Brier evaluation. 49 tests. PR #48.
 
 **exp-006 signal detection REFUTED (2026-02-11).** LR and GBT both fail to beat constant Brier on Y_long/Y_short. All 4 (model, label) pairs have negative BSS. Best: logistic/short BSS = -0.0003. GBT is *worse* than LR (overfits). Key finding: T6's +5pp accuracy does not translate to calibrated probabilities — models are well-calibrated near ȳ≈0.32 but miscalibrated at tails. Information content < 0.1% of outcome variance. PR #46.
 
@@ -230,7 +243,10 @@ Key finding: **More training steps made things worse, not better.** MLP val went
 | `results/exp-004-22-feature-supervised-diagnostic/metrics.json` | Quick exp-004 results (22-feature vs 9-feature RF on 50K subsample) |
 | `scripts/run_barrier_diagnostic.py` | T6 supervised diagnostic runner — loads barrier cache, runs overfit/MLP/RF tests |
 | `scripts/precompute_barrier_cache.py` | Barrier cache builder — uses C++ `lob_rl_core.barrier_precompute()` backend. ~10 min for 312 files with `--workers 8`. |
-| `cache/barrier/` | 248 barrier `.npz` files (220-dim features, N_FEATURES=22). **FRESH** — rebuilt via C++ backend. 461K bars, 454K usable, 186 MB. |
+| `cache/barrier/` | 248 barrier `.npz` files (220-dim features + per-bar features, N_FEATURES=22). **FRESH** — rebuilt with `bar_features` key. 461K bars, 456K usable, 221 MB. |
+| `python/lob_rl/barrier/sequence_models.py` | Sequence model infrastructure — `BarrierLSTM`, `BarrierTransformer`, `BarEmbedding`, training/eval/predict. |
+| `results/exp-008-bar-size-sweep/` | exp-008 results — metrics.json, analysis.md. REFUTED. Bar-size sweep, 24 cells. |
+| `results/exp-007-sequence-model-signal-detection/` | exp-007 results — metrics.json, analysis.md, config.json. REFUTED. |
 | `python/lob_rl/barrier/lob_reconstructor.py` | `OrderBook` class — LOB reconstruction from MBO messages. `vamp(n)` method. |
 | `cache/t6_diagnostic_results.json` | Full T6 diagnostic results in JSON format |
 | `python/lob_rl/barrier/supervised_diagnostic.py` | MLP classifier + RF baseline functions for barrier label prediction |
@@ -262,7 +278,7 @@ Key finding: **More training steps made things worse, not better.** MLP val went
 
 ## Don't waste time on
 
-- **Build verification** — `build-release/` is current, 635 C++ + 2070 Python = 2705 tests pass.
+- **Build verification** — `build-release/` is current, 650 C++ + 2221 Python = 2871 tests pass.
 - **Dependency checks** — SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp all installed.
 - **Reading PRD.md** — everything relevant is in this file.
 - **Codebase exploration** — read directory `README.md` files instead.
@@ -293,9 +309,9 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 
 ## Test coverage
 
-- **635 C++ tests** — `cd build-release && ./lob_tests` (15 skipped: need `.dbn.zst` fixture)
-- **2070 Python tests** (1308 core + 762 barrier) — `PYTHONPATH=build-release:python uv run --with pytest --with pandas --with scipy --with scikit-learn --with torch --with sb3-contrib pytest python/tests/` (4 core + 39 barrier skipped: fixture-dependent)
-- **2705 total**, all passing.
+- **650 C++ tests** — `cd build-release && ./lob_tests` (15 skipped: need `.dbn.zst` fixture)
+- **2221 Python tests** (1308 core + 913 barrier) — `PYTHONPATH=build-release:python uv run --with pytest --with pandas --with scipy --with scikit-learn --with torch --with sb3-contrib pytest python/tests/` (4 core + 59 barrier skipped: fixture-dependent)
+- **2871 total**, all passing.
 
 ## Remaining work
 
@@ -322,7 +338,7 @@ data/mes/*.mbo.dbn.zst  →  precompute_cache.py --roll-calendar  →  cache/mes
 | ~~Phase 1 microstructure features~~ | ~~Done~~ | PR #35. OFI, depth ratio, wmid displacement, spread std. N_FEATURES 13→17. |
 | ~~Phase 2 microstructure features~~ | ~~Done~~ | PR #36. VAMP, aggressor imbalance, trade arrival, cancel-to-trade, price impact. N_FEATURES 17→22. |
 | ~~Re-precompute barrier cache~~ | ~~Done~~ | 248 sessions, N_FEATURES=22, 186 MB. C++ backend: 570s vs 8+ hours Python. |
-| **Architecture comparison** | **P1 (now unblocked)** | Transformer / SSM / LSTM on barrier features via SB3 `features_extractor_class`. RF > MLP suggests architecture matters. |
+| ~~Architecture comparison~~ | ~~CLOSED~~ | exp-007 REFUTED. Six model families (LR, GBT, MLP, RF, LSTM, Transformer) all fail to beat constant Brier. Architecture cannot amplify absent signal. |
 | **199d no-exec-cost 10M+ steps** | **P1** | Only positive OOS ever (exp-002 Run C val +10.93, undertrained). Needs GPU. |
 | Checkpoint early stopping | P1 | eval 4M vs 5M checkpoints. |
 | VecNormalize audit | P1 | Check for cross-day information leakage. |

@@ -1,0 +1,28 @@
+{
+  "bar_sizes": [
+    200,
+    500,
+    1000,
+    2000
+  ],
+  "r_multipliers": [
+    1.0,
+    2.0,
+    3.0
+  ],
+  "lookback": 10,
+  "seed": 42,
+  "n_boot": 1000,
+  "block_size": 50,
+  "tick_size": 0.25,
+  "model": "LogisticRegression(C=1.0, solver=lbfgs, max_iter=1000)",
+  "split": "temporal 60/20/20",
+  "gate_thresholds": {
+    "ybar_range": [
+      0.2,
+      0.46
+    ],
+    "timeout_max": 0.1
+  },
+  "bonferroni_alpha": 0.0020833333333333333
+}

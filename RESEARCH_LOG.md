@@ -5,6 +5,26 @@ Read this file FIRST when starting any new research task. It is the institutiona
 
 ---
 
+## exp-008-bar-size-sweep — REFUTED
+**Date:** 2026-02-11
+**Hypothesis:** At least one (B, R) configuration from B ∈ {200,500,1000,2000} × R ∈ {1x,2x,3x} median bar range produces BSS ≥ 0.005 with Bonferroni-corrected p < 0.05 for logistic regression on Y_long or Y_short.
+**Key result:** Best BSS = 0.0023 (B=200/R=4/long, p=0.0 Bonferroni) — statistically significant but 2.3× below the 0.005 magnitude threshold. 20 of 24 cells have negative BSS. BSS degrades monotonically with bar size. All 12 null calibration gates passed. The 22-feature barrier obs space does not contain exploitable signal at any tested scale.
+**Lesson:** Scale does not rescue signal. The tiny positive BSS at B=200/R=4 (0.23% of variance) is a sample-size artifact (1.15M samples). Phase 2b is complete: architecture (6 models), scale (4×3 grid), and data quantity (20d vs 199d) all exhausted — the current feature set cannot predict first-passage outcomes.
+**Next:** Conditional signal detection (regime-filtered), alternative targets (1:1 barriers), feature pivot (external context), or accept null and pivot to execution-timing RL.
+**Details:** results/exp-008-bar-size-sweep/analysis.md
+
+---
+
+## exp-007-sequence-model-signal-detection — REFUTED
+**Date:** 2026-02-11
+**Hypothesis:** LSTM or Transformer with full-session causal context achieves BSS > 0 on barrier prediction, where flat models failed in exp-006.
+**Key result:** All 8 (model, label, split) pairs have negative BSS. Best: transformer/short BSS = -0.0004 (val), p = 0.791. LSTM is worst (short BSS = -0.0173), worse than all exp-006 flat models. Transformer collapses to near-constant predictions (p̂_std = 0.014).
+**Lesson:** Temporal ordering contains no additional calibrated signal. Six model families (LR, GBT, LSTM, Transformer, MLP, RF) have now failed across two feature representations. More expressiveness → worse performance (noise fitting). The 22-feature barrier obs at B=500 appears near-unpredictable. H6 (architecture matters) is refuted.
+**Next:** Phase 2b bar-size sweep (B ∈ {200,500,1000,2000}), conditional signal by regime, or accept the null and pivot features/targets.
+**Details:** results/exp-007-sequence-model-signal-detection/analysis.md
+
+---
+
 ## exp-006-signal-detection — REFUTED
 **Date:** 2026-02-11
 **Hypothesis:** Logistic regression or GBT beats the constant Brier score on Y_long or Y_short using 220-dim barrier features.
