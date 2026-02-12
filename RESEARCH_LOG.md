@@ -5,6 +5,16 @@ Read this file FIRST when starting any new research task. It is the institutiona
 
 ---
 
+## exp-008-bar-size-sweep — REFUTED
+**Date:** 2026-02-11
+**Hypothesis:** At least one (B, R) configuration from B ∈ {200,500,1000,2000} × R ∈ {1x,2x,3x} median bar range produces BSS ≥ 0.005 with Bonferroni-corrected p < 0.05 for logistic regression on Y_long or Y_short.
+**Key result:** Best BSS = 0.0023 (B=200/R=4/long, p=0.0 Bonferroni) — statistically significant but 2.3× below the 0.005 magnitude threshold. 20 of 24 cells have negative BSS. BSS degrades monotonically with bar size. All 12 null calibration gates passed. The 22-feature barrier obs space does not contain exploitable signal at any tested scale.
+**Lesson:** Scale does not rescue signal. The tiny positive BSS at B=200/R=4 (0.23% of variance) is a sample-size artifact (1.15M samples). Phase 2b is complete: architecture (6 models), scale (4×3 grid), and data quantity (20d vs 199d) all exhausted — the current feature set cannot predict first-passage outcomes.
+**Next:** Conditional signal detection (regime-filtered), alternative targets (1:1 barriers), feature pivot (external context), or accept null and pivot to execution-timing RL.
+**Details:** results/exp-008-bar-size-sweep/analysis.md
+
+---
+
 ## exp-007-sequence-model-signal-detection — REFUTED
 **Date:** 2026-02-11
 **Hypothesis:** LSTM or Transformer with full-session causal context achieves BSS > 0 on barrier prediction, where flat models failed in exp-006.
