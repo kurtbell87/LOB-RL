@@ -9,6 +9,15 @@
 #include "lob/barrier/barrier_precompute.h"
 #include "synthetic_source.h"
 #include "dbn_file_source.h"
+// Constellation
+#include "orders/OrdersEngine.hpp"
+#include "interfaces/orders/IOrderModels.hpp"
+#include "interfaces/orders/IOrderEvents.hpp"
+#include "orderbook/LimitOrderBook.hpp"
+#include "orderbook/MarketBook.hpp"
+#include "replay/BatchBacktestEngine.hpp"
+#include "replay/BatchAggregator.hpp"
+#include "databento/constants.hpp"
 
 namespace py = pybind11;
 
@@ -212,4 +221,83 @@ PYBIND11_MODULE(lob_rl_core, m) {
     }, py::arg("path"), py::arg("instrument_id"),
        py::arg("bar_size") = 500, py::arg("lookback") = 10,
        py::arg("a") = 20, py::arg("b") = 10, py::arg("t_max") = 40);
+
+    // ── Constellation Order Simulation Bindings ──────────────────────────
+    namespace cst_orders = constellation::interfaces::orders;
+
+    // Enums
+    py::enum_<cst_orders::OrderType>(m, "OrderType")
+        .value("Market", cst_orders::OrderType::Market)
+        .value("Limit", cst_orders::OrderType::Limit)
+        .value("Stop", cst_orders::OrderType::Stop)
+        .value("StopLimit", cst_orders::OrderType::StopLimit);
+
+    py::enum_<cst_orders::OrderSide>(m, "OrderSide")
+        .value("Buy", cst_orders::OrderSide::Buy)
+        .value("Sell", cst_orders::OrderSide::Sell);
+
+    py::enum_<cst_orders::OrderStatus>(m, "OrderStatus")
+        .value("New", cst_orders::OrderStatus::New)
+        .value("PartiallyFilled", cst_orders::OrderStatus::PartiallyFilled)
+        .value("Filled", cst_orders::OrderStatus::Filled)
+        .value("Canceled", cst_orders::OrderStatus::Canceled)
+        .value("Rejected", cst_orders::OrderStatus::Rejected)
+        .value("Expired", cst_orders::OrderStatus::Expired)
+        .value("Unknown", cst_orders::OrderStatus::Unknown);
+
+    py::enum_<cst_orders::TimeInForce>(m, "TimeInForce")
+        .value("Day", cst_orders::TimeInForce::Day)
+        .value("GTC", cst_orders::TimeInForce::GTC)
+        .value("IOC", cst_orders::TimeInForce::IOC)
+        .value("FOK", cst_orders::TimeInForce::FOK);
+
+    // OrderSpec
+    py::class_<cst_orders::OrderSpec>(m, "OrderSpec")
+        .def(py::init<>())
+        .def_readwrite("instrument_id", &cst_orders::OrderSpec::instrument_id)
+        .def_readwrite("type", &cst_orders::OrderSpec::type)
+        .def_readwrite("side", &cst_orders::OrderSpec::side)
+        .def_readwrite("quantity", &cst_orders::OrderSpec::quantity)
+        .def_readwrite("limit_price", &cst_orders::OrderSpec::limit_price)
+        .def_readwrite("stop_price", &cst_orders::OrderSpec::stop_price)
+        .def_readwrite("tif", &cst_orders::OrderSpec::tif)
+        .def_readwrite("strategy_tag", &cst_orders::OrderSpec::strategy_tag);
+
+    // OrderUpdate
+    py::class_<cst_orders::OrderUpdate>(m, "OrderUpdate")
+        .def(py::init<>())
+        .def_readwrite("new_limit_price", &cst_orders::OrderUpdate::new_limit_price)
+        .def_readwrite("new_quantity", &cst_orders::OrderUpdate::new_quantity);
+
+    // OrderInfo
+    py::class_<cst_orders::OrderInfo>(m, "OrderInfo")
+        .def(py::init<>())
+        .def_readonly("order_id", &cst_orders::OrderInfo::order_id)
+        .def_readonly("instrument_id", &cst_orders::OrderInfo::instrument_id)
+        .def_readonly("type", &cst_orders::OrderInfo::type)
+        .def_readonly("side", &cst_orders::OrderInfo::side)
+        .def_readonly("original_quantity", &cst_orders::OrderInfo::original_quantity)
+        .def_readonly("filled_quantity", &cst_orders::OrderInfo::filled_quantity)
+        .def_readonly("avg_fill_price", &cst_orders::OrderInfo::avg_fill_price)
+        .def_readonly("limit_price", &cst_orders::OrderInfo::limit_price)
+        .def_readonly("status", &cst_orders::OrderInfo::status);
+
+    // OrdersEngine
+    py::class_<constellation::orders::OrdersEngine>(m, "OrdersEngine")
+        .def(py::init<>())
+        .def("place_order", &constellation::orders::OrdersEngine::PlaceOrder,
+             py::arg("order_spec"))
+        .def("modify_order", &constellation::orders::OrdersEngine::ModifyOrder,
+             py::arg("order_id"), py::arg("update"))
+        .def("cancel_order", &constellation::orders::OrdersEngine::CancelOrder,
+             py::arg("order_id"))
+        .def("get_order_status", &constellation::orders::OrdersEngine::GetOrderStatus,
+             py::arg("order_id"))
+        .def("get_order_info", &constellation::orders::OrdersEngine::GetOrderInfo,
+             py::arg("order_id"))
+        .def("list_open_orders", &constellation::orders::OrdersEngine::ListOpenOrders,
+             py::arg("instrument_id"));
+
+    // Price scale constant
+    m.attr("FIXED_PRICE_SCALE") = databento::kFixedPriceScale;
 }
