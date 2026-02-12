@@ -1,9 +1,10 @@
 #pragma once
 #include "lob/message.h"
-#include <map>
-#include <unordered_map>
+#include "orderbook/LimitOrderBook.hpp"
 #include <vector>
 #include <cstdint>
+#include <memory>
+#include <unordered_set>
 
 class Book {
 public:
@@ -11,6 +12,11 @@ public:
         double price;
         uint32_t qty;
     };
+
+    Book();
+    ~Book();
+    Book(Book&&) noexcept;
+    Book& operator=(Book&&) noexcept;
 
     void apply(const Message& msg);
     void reset();
@@ -31,21 +37,12 @@ public:
     double weighted_mid() const;
     double vamp(int n) const;
 
+    /// Access the underlying Constellation LimitOrderBook.
+    constellation::modules::orderbook::LimitOrderBook& constellation_lob();
+    const constellation::modules::orderbook::LimitOrderBook& constellation_lob() const;
+
 private:
-    void apply_add(const Message& msg, std::map<double, uint32_t>& levels);
-    void apply_cancel(const Message& msg, std::map<double, uint32_t>& levels);
-    void apply_modify(const Message& msg, std::map<double, uint32_t>& levels);
-    void apply_trade(const Message& msg, std::map<double, uint32_t>& levels);
-
-    // price -> total qty at that level
-    std::map<double, uint32_t> bids_;  // sorted ascending, best = rbegin
-    std::map<double, uint32_t> asks_;  // sorted ascending, best = begin
-
-    // order_id -> (side, price, qty) for cancel/modify/trade tracking
-    struct OrderEntry {
-        Message::Side side;
-        double price;
-        uint32_t qty;
-    };
-    std::unordered_map<uint64_t, OrderEntry> orders_;
+    static constexpr uint32_t kInstrumentId = 1;
+    std::unique_ptr<constellation::modules::orderbook::LimitOrderBook> lob_;
+    std::unordered_set<uint64_t> known_orders_;  // track order IDs for modify-as-add
 };

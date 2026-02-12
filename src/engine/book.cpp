@@ -1,149 +1,102 @@
 #include "lob/book.h"
+#include "constellation/adapters/message_adapter.h"
+#include "interfaces/orderbook/IMarketStateView.hpp"
+#include "databento/constants.hpp"
 #include <limits>
+#include <cmath>
 
-// Saturating addition for uint32_t
-static uint32_t saturating_add(uint32_t a, uint32_t b) {
-    uint32_t result = a + b;
-    if (result < a) {  // overflow occurred
-        return std::numeric_limits<uint32_t>::max();
-    }
-    return result;
+namespace cst_ob = constellation::modules::orderbook;
+namespace cst_if = constellation::interfaces::orderbook;
+
+// Convert Constellation int64 nano-price to double.
+static double to_double_price(std::int64_t p) {
+    return static_cast<double>(p) / databento::kFixedPriceScale;
 }
 
-// Subtract qty from a price level; erase the level if it reaches zero.
-static void reduce_level(std::map<double, uint32_t>& levels,
-                         std::map<double, uint32_t>::iterator lvl_it,
-                         uint32_t qty) {
-    if (lvl_it->second <= qty) {
-        levels.erase(lvl_it);
-    } else {
-        lvl_it->second -= qty;
-    }
+// Cap uint64 quantity to uint32 max (saturation).
+static uint32_t cap_qty(uint64_t q) {
+    return q > std::numeric_limits<uint32_t>::max()
+        ? std::numeric_limits<uint32_t>::max()
+        : static_cast<uint32_t>(q);
 }
+
+Book::Book()
+    : lob_(std::make_unique<cst_ob::LimitOrderBook>(kInstrumentId)) {}
+
+Book::~Book() = default;
+Book::Book(Book&&) noexcept = default;
+Book& Book::operator=(Book&&) noexcept = default;
 
 void Book::apply(const Message& msg) {
-    auto& levels = (msg.side == Message::Side::Bid) ? bids_ : asks_;
+    // Preserve LOB-RL behavior: Trade messages are no-ops for the book.
+    if (msg.action == Message::Action::Trade) return;
 
-    switch (msg.action) {
-        case Message::Action::Add:    apply_add(msg, levels);    break;
-        case Message::Action::Cancel: apply_cancel(msg, levels); break;
-        case Message::Action::Modify: apply_modify(msg, levels); break;
-        case Message::Action::Trade:  apply_trade(msg, levels);  break;
+    auto mbo = constellation::adapters::to_mbo_msg(msg, kInstrumentId);
+
+    // Preserve LOB-RL behavior: Modify of unknown order is treated as Add.
+    if (msg.action == Message::Action::Modify &&
+        known_orders_.find(msg.order_id) == known_orders_.end()) {
+        mbo.action = databento::Action::Add;
     }
-}
 
-void Book::apply_add(const Message& msg, std::map<double, uint32_t>& levels) {
-    levels[msg.price] = saturating_add(levels[msg.price], msg.qty);
-    orders_[msg.order_id] = {msg.side, msg.price, msg.qty};
-}
-
-void Book::apply_cancel(const Message& msg, std::map<double, uint32_t>& levels) {
-    auto it = orders_.find(msg.order_id);
-    if (it == orders_.end()) return;
-
-    // Capture entry fields before erasing
-    double cancel_price = it->second.price;
-    Message::Side cancel_side = it->second.side;
-    uint32_t cancel_qty = it->second.qty;
-
-    auto lvl_it = levels.find(cancel_price);
-    if (lvl_it != levels.end()) {
-        reduce_level(levels, lvl_it, cancel_qty);
+    // Track order lifecycle
+    if (mbo.action == databento::Action::Add) {
+        known_orders_.insert(msg.order_id);
+    } else if (mbo.action == databento::Action::Cancel) {
+        known_orders_.erase(msg.order_id);
     }
-    orders_.erase(it);
 
-    // If level was erased, recalculate from remaining orders at that price
-    // (needed when saturation caused loss of accounting)
-    if (levels.find(cancel_price) == levels.end()) {
-        uint32_t recalc = 0;
-        for (const auto& [oid, oentry] : orders_) {
-            if (oentry.side == cancel_side && oentry.price == cancel_price) {
-                recalc = saturating_add(recalc, oentry.qty);
-            }
-        }
-        if (recalc > 0) {
-            levels[cancel_price] = recalc;
-        }
-    }
-}
-
-void Book::apply_modify(const Message& msg, std::map<double, uint32_t>& levels) {
-    auto it = orders_.find(msg.order_id);
-    if (it == orders_.end()) {
-        // Treat as add if unknown
-        apply_add(msg, levels);
-        return;
-    }
-    auto& entry = it->second;
-    if (msg.price == entry.price) {
-        // Same price: subtract old order qty, add new order qty
-        auto& level_qty = levels[entry.price];
-        uint32_t remaining = (level_qty >= entry.qty) ? (level_qty - entry.qty) : 0;
-        level_qty = saturating_add(remaining, msg.qty);
-        if (level_qty == 0) {
-            levels.erase(entry.price);
-        }
-    } else {
-        // Price changed: remove old qty from old level, add new qty at new level
-        auto lvl_it = levels.find(entry.price);
-        if (lvl_it != levels.end()) {
-            reduce_level(levels, lvl_it, entry.qty);
-        }
-        levels[msg.price] = saturating_add(levels[msg.price], msg.qty);
-        entry.price = msg.price;
-    }
-    entry.qty = msg.qty;
-}
-
-void Book::apply_trade(const Message& /*msg*/, std::map<double, uint32_t>& /*levels*/) {
-    // No-op: Databento spec says Trade/Fill messages do not affect the book.
-    // Book changes are communicated entirely through Add, Cancel, and Modify.
+    lob_->OnMboUpdate(mbo);
 }
 
 void Book::reset() {
-    bids_.clear();
-    asks_.clear();
-    orders_.clear();
+    lob_ = std::make_unique<cst_ob::LimitOrderBook>(kInstrumentId);
+    known_orders_.clear();
 }
 
 double Book::best_bid() const {
-    if (bids_.empty()) return std::numeric_limits<double>::quiet_NaN();
-    return bids_.rbegin()->first;
+    auto lvl = lob_->BestBid();
+    if (!lvl) return std::numeric_limits<double>::quiet_NaN();
+    return to_double_price(lvl->price);
 }
 
 double Book::best_ask() const {
-    if (asks_.empty()) return std::numeric_limits<double>::quiet_NaN();
-    return asks_.begin()->first;
+    auto lvl = lob_->BestAsk();
+    if (!lvl) return std::numeric_limits<double>::quiet_NaN();
+    return to_double_price(lvl->price);
 }
 
 double Book::mid_price() const {
-    if (bids_.empty() || asks_.empty()) return std::numeric_limits<double>::quiet_NaN();
-    return (bids_.rbegin()->first + asks_.begin()->first) / 2.0;
+    auto bb = lob_->BestBid();
+    auto ba = lob_->BestAsk();
+    if (!bb || !ba) return std::numeric_limits<double>::quiet_NaN();
+    return (to_double_price(bb->price) + to_double_price(ba->price)) / 2.0;
 }
 
 double Book::spread() const {
-    if (bids_.empty() || asks_.empty()) return std::numeric_limits<double>::quiet_NaN();
-    return asks_.begin()->first - bids_.rbegin()->first;
+    auto bb = lob_->BestBid();
+    auto ba = lob_->BestAsk();
+    if (!bb || !ba) return std::numeric_limits<double>::quiet_NaN();
+    return to_double_price(ba->price) - to_double_price(bb->price);
 }
 
 size_t Book::bid_depth() const {
-    return bids_.size();
+    return lob_->GetBids().size();
 }
 
 size_t Book::ask_depth() const {
-    return asks_.size();
+    return lob_->GetAsks().size();
 }
 
-// Collect up to k levels from an iterator range, padding with NaN/0.
-template <typename Iter>
-static std::vector<Book::PriceLevel> collect_levels(Iter begin, Iter end, int k) {
-    std::vector<Book::PriceLevel> result;
+std::vector<Book::PriceLevel> Book::top_bids(int k) const {
+    std::vector<PriceLevel> result;
     if (k <= 0) return result;
     result.reserve(static_cast<size_t>(k));
 
-    int count = 0;
-    for (auto it = begin; it != end && count < k; ++it, ++count) {
-        result.push_back({it->first, it->second});
+    auto bids = lob_->GetBids();  // sorted best-first
+    for (size_t i = 0; i < bids.size() && static_cast<int>(i) < k; ++i) {
+        result.push_back({to_double_price(bids[i].price),
+                          cap_qty(bids[i].total_quantity)});
     }
 
     while (static_cast<int>(result.size()) < k) {
@@ -152,74 +105,102 @@ static std::vector<Book::PriceLevel> collect_levels(Iter begin, Iter end, int k)
     return result;
 }
 
-std::vector<Book::PriceLevel> Book::top_bids(int k) const {
-    return collect_levels(bids_.rbegin(), bids_.rend(), k);
-}
-
 std::vector<Book::PriceLevel> Book::top_asks(int k) const {
-    return collect_levels(asks_.begin(), asks_.end(), k);
+    std::vector<PriceLevel> result;
+    if (k <= 0) return result;
+    result.reserve(static_cast<size_t>(k));
+
+    auto asks = lob_->GetAsks();  // sorted best-first (lowest price first)
+    for (size_t i = 0; i < asks.size() && static_cast<int>(i) < k; ++i) {
+        result.push_back({to_double_price(asks[i].price),
+                          cap_qty(asks[i].total_quantity)});
+    }
+
+    while (static_cast<int>(result.size()) < k) {
+        result.push_back({std::numeric_limits<double>::quiet_NaN(), 0});
+    }
+    return result;
 }
 
 uint32_t Book::best_bid_qty() const {
-    if (bids_.empty()) return 0;
-    return bids_.rbegin()->second;
+    auto lvl = lob_->BestBid();
+    if (!lvl) return 0;
+    return cap_qty(lvl->total_quantity);
 }
 
 uint32_t Book::best_ask_qty() const {
-    if (asks_.empty()) return 0;
-    return asks_.begin()->second;
-}
-
-// Sum quantities from the first n levels of an iterator range.
-template <typename Iter>
-static uint32_t sum_first_n(Iter begin, Iter end, int n) {
-    uint32_t total = 0;
-    int count = 0;
-    for (auto it = begin; it != end && count < n; ++it, ++count) {
-        total += it->second;
-    }
-    return total;
+    auto lvl = lob_->BestAsk();
+    if (!lvl) return 0;
+    return cap_qty(lvl->total_quantity);
 }
 
 uint32_t Book::total_bid_depth(int n) const {
     if (n <= 0) return 0;
-    return sum_first_n(bids_.rbegin(), bids_.rend(), n);
+    auto bids = lob_->GetBids();
+    uint32_t total = 0;
+    for (size_t i = 0; i < bids.size() && static_cast<int>(i) < n; ++i) {
+        total += cap_qty(bids[i].total_quantity);
+    }
+    return total;
 }
 
 uint32_t Book::total_ask_depth(int n) const {
     if (n <= 0) return 0;
-    return sum_first_n(asks_.begin(), asks_.end(), n);
+    auto asks = lob_->GetAsks();
+    uint32_t total = 0;
+    for (size_t i = 0; i < asks.size() && static_cast<int>(i) < n; ++i) {
+        total += cap_qty(asks[i].total_quantity);
+    }
+    return total;
 }
 
 double Book::weighted_mid() const {
-    if (bids_.empty() || asks_.empty()) return std::numeric_limits<double>::quiet_NaN();
-    double bq = static_cast<double>(bids_.rbegin()->second);
-    double aq = static_cast<double>(asks_.begin()->second);
+    auto bb = lob_->BestBid();
+    auto ba = lob_->BestAsk();
+    if (!bb || !ba) return std::numeric_limits<double>::quiet_NaN();
+
+    double bq = static_cast<double>(bb->total_quantity);
+    double aq = static_cast<double>(ba->total_quantity);
     if (bq + aq == 0.0) return std::numeric_limits<double>::quiet_NaN();
-    double bp = bids_.rbegin()->first;
-    double ap = asks_.begin()->first;
+
+    double bp = to_double_price(bb->price);
+    double ap = to_double_price(ba->price);
     return (bq * ap + aq * bp) / (bq + aq);
 }
 
 double Book::vamp(int n) const {
-    if (n <= 0 || bids_.empty() || asks_.empty())
+    if (n <= 0) return std::numeric_limits<double>::quiet_NaN();
+
+    auto bids = lob_->GetBids();
+    auto asks = lob_->GetAsks();
+    if (bids.empty() || asks.empty())
         return std::numeric_limits<double>::quiet_NaN();
 
     double sum_pq = 0.0;
     double sum_q = 0.0;
 
-    int count = 0;
-    for (auto it = bids_.rbegin(); it != bids_.rend() && count < n; ++it, ++count) {
-        sum_pq += it->first * it->second;
-        sum_q += it->second;
+    for (size_t i = 0; i < bids.size() && static_cast<int>(i) < n; ++i) {
+        double p = to_double_price(bids[i].price);
+        double q = static_cast<double>(bids[i].total_quantity);
+        sum_pq += p * q;
+        sum_q += q;
     }
 
-    count = 0;
-    for (auto it = asks_.begin(); it != asks_.end() && count < n; ++it, ++count) {
-        sum_pq += it->first * it->second;
-        sum_q += it->second;
+    for (size_t i = 0; i < asks.size() && static_cast<int>(i) < n; ++i) {
+        double p = to_double_price(asks[i].price);
+        double q = static_cast<double>(asks[i].total_quantity);
+        sum_pq += p * q;
+        sum_q += q;
     }
 
     if (sum_q == 0.0) return std::numeric_limits<double>::quiet_NaN();
     return sum_pq / sum_q;
+}
+
+cst_ob::LimitOrderBook& Book::constellation_lob() {
+    return *lob_;
+}
+
+const cst_ob::LimitOrderBook& Book::constellation_lob() const {
+    return *lob_;
 }
