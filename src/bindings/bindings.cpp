@@ -17,6 +17,10 @@
 #include "orderbook/MarketBook.hpp"
 #include "replay/BatchBacktestEngine.hpp"
 #include "replay/BatchAggregator.hpp"
+#include "features/FeatureFactory.hpp"
+#include "features/FeatureManager.hpp"
+#include "interfaces/features/IFeature.hpp"
+#include "interfaces/orderbook/IInstrumentBook.hpp"
 #include "databento/constants.hpp"
 
 namespace py = pybind11;
@@ -378,4 +382,77 @@ PYBIND11_MODULE(lob_rl_core, m) {
              py::arg("dbn_file"))
         .def("get_fills", &cst_replay::BatchBacktestEngine::GetFills)
         .def("reset_stats", &cst_replay::BatchBacktestEngine::ResetStats);
+
+    // ── Constellation Feature System Bindings ───────────────────────────
+    namespace cst_feat = constellation::modules::features;
+    namespace cst_if_feat = constellation::interfaces::features;
+    namespace cst_if_ob = constellation::interfaces::orderbook;
+
+    // BookSide enum (used by MicroDepthFeature, VolumeAtPriceFeature)
+    py::enum_<cst_if_ob::BookSide>(m, "BookSide")
+        .value("Bid", cst_if_ob::BookSide::Bid)
+        .value("Ask", cst_if_ob::BookSide::Ask);
+
+    // IFeature (abstract base — exposed for shared_ptr holder)
+    py::class_<cst_if_feat::IFeature, std::shared_ptr<cst_if_feat::IFeature>>(m, "IFeature")
+        .def("get_value", &cst_if_feat::IFeature::GetValue, py::arg("name"))
+        .def("has_feature", &cst_if_feat::IFeature::HasFeature, py::arg("name"));
+
+    // FeatureManager (single-instrument)
+    py::class_<cst_if_feat::IFeatureManager, std::shared_ptr<cst_if_feat::IFeatureManager>>(m, "IFeatureManager")
+        .def("register_feature", &cst_if_feat::IFeatureManager::Register, py::arg("feature"))
+        .def("get_value", &cst_if_feat::IFeatureManager::GetValue, py::arg("feature_name"));
+
+    // Factory functions — create features
+    m.def("create_feature_manager", []() {
+        return cst_feat::CreateFeatureManager(nullptr);
+    });
+
+    m.def("create_best_bid_price_feature", [](uint32_t instrument_id) {
+        return cst_feat::CreateBestBidPriceFeature({instrument_id});
+    }, py::arg("instrument_id") = 0u);
+
+    m.def("create_best_ask_price_feature", [](uint32_t instrument_id) {
+        return cst_feat::CreateBestAskPriceFeature({instrument_id});
+    }, py::arg("instrument_id") = 0u);
+
+    m.def("create_spread_feature", [](uint32_t instrument_id) {
+        return cst_feat::CreateSpreadFeature({instrument_id});
+    }, py::arg("instrument_id") = 0u);
+
+    m.def("create_micro_price_feature", [](uint32_t instrument_id) {
+        return cst_feat::CreateMicroPriceFeature({instrument_id});
+    }, py::arg("instrument_id") = 0u);
+
+    m.def("create_order_imbalance_feature", [](uint32_t instrument_id) {
+        return cst_feat::CreateOrderImbalanceFeature({instrument_id});
+    }, py::arg("instrument_id") = 0u);
+
+    m.def("create_log_return_feature", [](uint32_t instrument_id) {
+        return cst_feat::CreateLogReturnFeature({instrument_id});
+    }, py::arg("instrument_id") = 0u);
+
+    m.def("create_mid_price_feature", [](uint32_t instrument_id) {
+        return cst_feat::CreateMidPriceFeature({instrument_id});
+    }, py::arg("instrument_id") = 0u);
+
+    m.def("create_cancel_add_ratio_feature", &cst_feat::CreateCancelAddRatioFeature);
+
+    m.def("create_rolling_volatility_feature", [](uint32_t instrument_id, size_t window_size) {
+        return cst_feat::CreateRollingVolatilityFeature({instrument_id, window_size});
+    }, py::arg("instrument_id") = 0u, py::arg("window_size") = 1u);
+
+    m.def("create_micro_depth_feature", [](uint32_t instrument_id,
+                                            cst_if_ob::BookSide side, size_t depth_index) {
+        return cst_feat::CreateMicroDepthFeature({instrument_id, side, depth_index});
+    }, py::arg("instrument_id") = 0u,
+       py::arg("side") = cst_if_ob::BookSide::Bid,
+       py::arg("depth_index") = 0u);
+
+    m.def("create_volume_at_price_feature", [](uint32_t instrument_id,
+                                                cst_if_ob::BookSide side, int64_t price) {
+        return cst_feat::CreateVolumeAtPriceFeature({instrument_id, side, price});
+    }, py::arg("instrument_id") = 0u,
+       py::arg("side") = cst_if_ob::BookSide::Bid,
+       py::arg("price") = 0);
 }
