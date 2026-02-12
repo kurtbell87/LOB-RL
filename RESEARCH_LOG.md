@@ -5,6 +5,17 @@ Read this file FIRST when starting any new research task. It is the institutiona
 
 ---
 
+## phase-0-lob-fix-impact — Gate A FAIL (no impact)
+**Date:** 2026-02-12
+**Question:** Did the 4-bug LOB fix (commit 77c7a74) change barrier cache features for MES data?
+**Method:** Saved pre-fix cache, rebuilt single days (Jan 3, Jun 14 2022) with corrected LOB, compared all 22 feature columns (11 trade-only + 11 book-dependent).
+**Key result:** All 22 features are byte-identical between pre-fix and post-fix cache. Max absolute difference = 0.0 across all bars and all features. Labels also identical.
+**Explanation:** Bugs 3 (modify-as-add) and 4 (trade no-op) were already handled by `Book::apply()` workarounds. Bugs 1 (IsTob) and 2 (partial cancel) genuinely don't exist in MES/GLBX data: out of 8.4M messages on a single day, there are **0 IsTob adds** and **0 partial cancels**. CME futures (GLBX) provides full MBO depth and never sets IsTob flags (an equity exchange convention). All CME cancels are full cancels. The fix matters for DBEQ equities where IsTob and partial cancels are common, but is irrelevant for CME MES futures.
+**Conclusion:** Existing barrier cache (`cache/barrier/`) is valid. No rebuild needed. All 13 prior experiment results remain valid. Phase 1 (full rebuild + re-run exp-006/exp-011) skipped.
+**Impact on research:** The "no calibrated signal" finding across 6 model families is confirmed with correct LOB. The research bottleneck is features/targets, not LOB correctness.
+
+---
+
 ## exp-007-sequence-model-signal-detection — REFUTED
 **Date:** 2026-02-11
 **Hypothesis:** LSTM or Transformer with full-session causal context achieves BSS > 0 on barrier prediction, where flat models failed in exp-006.

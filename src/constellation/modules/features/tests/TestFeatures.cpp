@@ -5,64 +5,14 @@
 #include <chrono>
 
 #include "features/FeatureManager.hpp"
-#include "interfaces/orderbook/IMarketBookDataSource.hpp"
 #include "features/primitives/BestBidPriceFeature.hpp"
 #include "features/primitives/BestAskPriceFeature.hpp"
 #include "features/derived/MidPriceFeature.hpp"
+#include "MockMarketDataSource.hpp"
 
 using namespace constellation::modules::features::primitives;
 using namespace constellation::modules::features::derived;
 using constellation::modules::features::FeatureManager;
-
-/**
- * @brief A mock data source that provides best bid/ask as int64 nanos,
- *        returning std::optional<std::int64_t>.
- */
-class MockMarketDataSource final 
-  : public constellation::interfaces::orderbook::IMarketBookDataSource
-{
-public:
-  // We'll store them as double internally, but convert to int64 on return
-  std::atomic<double> best_bid{100.0};
-  std::atomic<double> best_ask{105.0};
-  bool bid_valid{true};
-  bool ask_valid{true};
-
-  // convert to int64 raw = value * 1e9
-  static std::int64_t toNano(double x) {
-    return static_cast<std::int64_t>(x * 1e9 + 0.5);
-  }
-
-  // Implement required method
-  constellation::interfaces::common::InterfaceVersionInfo GetVersionInfo() const noexcept override {
-    return {1, 0};
-  }
-
-  std::optional<std::int64_t> BestBidPrice(std::uint32_t instrument_id) const override {
-    if (!bid_valid) return std::nullopt;
-    // ignore instrument_id for test
-    double b = best_bid.load();
-    if (b <= 0.0) return std::nullopt;
-    return toNano(b);
-  }
-
-  std::optional<std::int64_t> BestAskPrice(std::uint32_t instrument_id) const override {
-    if (!ask_valid) return std::nullopt;
-    double a = best_ask.load();
-    if (a <= 0.0) return std::nullopt;
-    return toNano(a);
-  }
-
-  // aggregator returns sum of bid+ask volumes? We'll just do nullopt.
-  std::optional<std::uint64_t> VolumeAtPrice(std::uint32_t /*instrument_id*/,
-                                             std::int64_t /*priceNanos*/) const override {
-    return std::nullopt;
-  }
-
-  std::vector<std::uint32_t> GetInstrumentIds() const override {
-    return {1234};
-  }
-};
 
 TEST_CASE("Test Basic Features - Best Bid, Best Ask, MidPrice") {
   // Provide config for instrument_id=1234
@@ -76,6 +26,8 @@ TEST_CASE("Test Basic Features - Best Bid, Best Ask, MidPrice") {
 
   // Create the mock data source
   MockMarketDataSource source;
+  source.best_bid = 100.0;
+  source.best_ask = 105.0;
 
   // Force an update
   bid_feat->OnDataUpdate(source, nullptr);
@@ -103,7 +55,8 @@ TEST_CASE("Handling missing data: no best bid or no best ask", "[features]") {
   manager.Register(mid_feat);
 
   MockMarketDataSource source;
-  // By default best_bid=100.0, best_ask=105.0
+  source.best_bid = 100.0;
+  source.best_ask = 105.0;
 
   SECTION("No best bid => best_bid_price=0.0, mid_price=0.0") {
     source.bid_valid = false;  // no best bid

@@ -1,7 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <memory>
-#include <map>
 #include "features/FeatureManager.hpp"
 #include "features/primitives/SpreadFeature.hpp"
 #include "features/primitives/MicroPriceFeature.hpp"
@@ -9,77 +8,7 @@
 #include "features/primitives/LogReturnFeature.hpp"
 #include "features/derived/RollingVolatilityFeature.hpp"
 #include "features/derived/MidPriceFeature.hpp"
-
-namespace constellation {
-namespace modules {
-namespace features {
-
-/**
- * @brief A mock data source that returns best bid/ask in double internally,
- *        but implements IMarketBookDataSource with int64. We'll do the 1e9 conversion.
- */
-class MockDataSource final 
-  : public constellation::interfaces::orderbook::IMarketBookDataSource
-{
-public:
-  std::atomic<double> best_bid{0.0};
-  std::atomic<double> best_ask{0.0};
-  bool bid_valid{true};
-  bool ask_valid{true};
-  std::map<double, std::uint64_t> volumes; // we store double key, but convert to int64 for VolumeAtPrice
-
-  static std::int64_t toNano(double x) {
-    return static_cast<std::int64_t>(x * 1e9 + 0.5);
-  }
-
-  // Implement required method
-  constellation::interfaces::common::InterfaceVersionInfo GetVersionInfo() const noexcept override {
-    return {1, 0};
-  }
-
-  std::optional<std::int64_t> BestBidPrice(std::uint32_t /*instrument_id*/) const override {
-    if (!bid_valid) return std::nullopt;
-    double bb = best_bid.load();
-    if (bb <= 0.0) return std::nullopt;
-    return toNano(bb);
-  }
-
-  std::optional<std::int64_t> BestAskPrice(std::uint32_t /*instrument_id*/) const override {
-    if (!ask_valid) return std::nullopt;
-    double ba = best_ask.load();
-    if (ba <= 0.0) return std::nullopt;
-    return toNano(ba);
-  }
-
-  std::optional<std::uint64_t> VolumeAtPrice(std::uint32_t /*instrument_id*/,
-                                             std::int64_t priceNanos) const override
-  {
-    double keyD = static_cast<double>(priceNanos) / 1e9;
-    auto it = volumes.find(keyD);
-    if (it != volumes.end()) {
-      return it->second;
-    }
-    return std::nullopt;
-  }
-
-  std::vector<std::uint32_t> GetInstrumentIds() const override {
-    return {777};
-  }
-};
-
-} // end namespace features
-} // end namespace modules
-} // end namespace constellation
-
-#include <catch2/catch_approx.hpp>
-#include <catch2/catch_test_macros.hpp>
-#include "features/FeatureManager.hpp"
-#include "features/primitives/SpreadFeature.hpp"
-#include "features/primitives/MicroPriceFeature.hpp"
-#include "features/primitives/OrderImbalanceFeature.hpp"
-#include "features/primitives/LogReturnFeature.hpp"
-#include "features/derived/RollingVolatilityFeature.hpp"
-#include "features/derived/MidPriceFeature.hpp"
+#include "MockMarketDataSource.hpp"
 
 using namespace constellation::modules::features;
 
@@ -91,7 +20,8 @@ TEST_CASE("ExtendedFeatures: SpreadFeature basic usage") {
   FeatureManager manager;
   manager.Register(spread);
 
-  MockDataSource src;
+  MockMarketDataSource src;
+  src.instrument_ids = {777};
   src.best_bid = 100.0;
   src.best_ask = 103.0;
 
@@ -105,7 +35,8 @@ TEST_CASE("ExtendedFeatures: MicroPriceFeature basic usage") {
                     primitives::MicroPriceFeature::Config{777});
   manager.Register(mp_feat);
 
-  MockDataSource src;
+  MockMarketDataSource src;
+  src.instrument_ids = {777};
   src.best_bid = 98.0;
   src.best_ask = 102.0;
   src.volumes[98.0]  = 10;  // best bid vol
@@ -124,7 +55,8 @@ TEST_CASE("ExtendedFeatures: OrderImbalanceFeature basic usage") {
                 primitives::OrderImbalanceFeature::Config{777});
   manager.Register(imb);
 
-  MockDataSource src;
+  MockMarketDataSource src;
+  src.instrument_ids = {777};
   src.best_bid = 100.0;
   src.best_ask = 101.0;
   src.volumes[100.0] = 30;
@@ -141,7 +73,8 @@ TEST_CASE("ExtendedFeatures: LogReturnFeature basic usage") {
                    primitives::LogReturnFeature::Config{777});
   manager.Register(logret);
 
-  MockDataSource src;
+  MockMarketDataSource src;
+  src.instrument_ids = {777};
   src.best_bid = 100.0;
 
   // first update => no previous => 0.0
@@ -162,7 +95,8 @@ TEST_CASE("ExtendedFeatures: RollingVolatilityFeature basic usage") {
   FeatureManager manager;
   manager.Register(rollvol);
 
-  MockDataSource src;
+  MockMarketDataSource src;
+  src.instrument_ids = {777};
   src.best_bid = 100.0;
 
   // 1) first update => no prior => vol=0
@@ -193,7 +127,8 @@ TEST_CASE("ExtendedFeatures: MidPriceFeature basic usage") {
                     derived::MidPriceFeature::Config{777});
   manager.Register(mid_feat);
 
-  MockDataSource src;
+  MockMarketDataSource src;
+  src.instrument_ids = {777};
   src.best_bid = 100.0;
   src.best_ask = 102.0;
   manager.OnDataUpdate(src, nullptr);

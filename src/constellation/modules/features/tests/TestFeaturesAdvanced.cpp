@@ -9,67 +9,11 @@
 #include <stdexcept>
 
 #include "features/FeatureManager.hpp"
-#include "features/primitives/BestBidPriceFeature.hpp"
-#include "features/primitives/BestAskPriceFeature.hpp"
-#include "features/derived/MidPriceFeature.hpp"
-
-namespace constellation {
-namespace modules {
-namespace features {
-
-/**
- * @brief A simple data source that can optionally throw exceptions,
- *        but uses int64 methods. We'll just store double and convert.
- */
-class FaultyDataSource final : public constellation::interfaces::orderbook::IMarketBookDataSource {
-public:
-  bool enable_faults{false};
-  double fault_probability{0.1};
-
-  std::atomic<double> bid{100.0};
-  std::atomic<double> ask{110.0};
-
-  static std::int64_t toNano(double x) {
-    return static_cast<std::int64_t>(x * 1e9 + 0.5);
-  }
-
-  // overrides
-  constellation::interfaces::common::InterfaceVersionInfo GetVersionInfo() const noexcept override {
-    return {1, 0};
-  }
-
-  std::optional<std::int64_t> BestBidPrice(std::uint32_t /*instrument_id*/) const override {
-    double b = bid.load();
-    if (b <= 0.0) return std::nullopt;
-    return toNano(b);
-  }
-
-  std::optional<std::int64_t> BestAskPrice(std::uint32_t /*instrument_id*/) const override {
-    double a = ask.load();
-    if (a <= 0.0) return std::nullopt;
-    return toNano(a);
-  }
-
-  std::optional<std::uint64_t> VolumeAtPrice(std::uint32_t /*instrument_id*/,
-                                             std::int64_t /*priceNanos*/) const override {
-    return std::nullopt; // not used here
-  }
-
-  std::vector<std::uint32_t> GetInstrumentIds() const override {
-    return {};
-  }
-};
-
-} // end namespace features
-} // end namespace modules
-} // end namespace constellation
-
-#include <catch2/catch_test_macros.hpp>
-#include "features/FeatureManager.hpp"
 #include "interfaces/logging/NullLogger.hpp"
 #include "features/primitives/BestBidPriceFeature.hpp"
 #include "features/primitives/BestAskPriceFeature.hpp"
 #include "features/derived/MidPriceFeature.hpp"
+#include "MockMarketDataSource.hpp"
 
 using namespace constellation::modules::features;
 
@@ -82,13 +26,14 @@ TEST_CASE("Features concurrency stress test", "[features][advanced][concurrency]
   manager.Register(std::make_shared<derived::MidPriceFeature>(
                      derived::MidPriceFeature::Config{999}));
 
-  FaultyDataSource ds;
-  ds.enable_faults = false;
+  MockMarketDataSource ds;
+  ds.best_bid = 100.0;
+  ds.best_ask = 110.0;
 
   auto writer = [&]() {
     for (int i = 0; i < 200; ++i) {
-      ds.bid.store(100.0 + i);
-      ds.ask.store(110.0 + i);
+      ds.best_bid.store(100.0 + i);
+      ds.best_ask.store(110.0 + i);
       manager.OnDataUpdate(ds, nullptr);
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -124,15 +69,14 @@ TEST_CASE("Features performance benchmark", "[features][advanced][performance]")
   manager.Register(std::make_shared<derived::MidPriceFeature>(
                      derived::MidPriceFeature::Config{999}));
 
-  FaultyDataSource ds;
-  ds.enable_faults = false;
+  MockMarketDataSource ds;
 
   constexpr int NUM_UPDATES = 100000;
   auto start = std::chrono::steady_clock::now();
 
   for (int i = 0; i < NUM_UPDATES; ++i) {
-    ds.bid.store(100.0 + i * 0.01);
-    ds.ask.store(110.0 + i * 0.01);
+    ds.best_bid.store(100.0 + i * 0.01);
+    ds.best_ask.store(110.0 + i * 0.01);
     manager.OnDataUpdate(ds, nullptr);
   }
 
@@ -151,9 +95,7 @@ TEST_CASE("Features fault injection test", "[features][advanced][fault]") {
   manager.Register(std::make_shared<derived::MidPriceFeature>(
                      derived::MidPriceFeature::Config{999}));
 
-  FaultyDataSource ds;
-  ds.enable_faults = true;
-  ds.fault_probability = 0.2;
+  MockMarketDataSource ds;
 
   int success_count = 0;
   int fail_count = 0;

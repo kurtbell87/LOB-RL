@@ -93,6 +93,17 @@ public:
   std::optional<std::int64_t> BestAskPrice(std::uint32_t instrument_id) const override;
   std::optional<std::uint64_t> VolumeAtPrice(std::uint32_t instrument_id, std::int64_t priceNanos) const override;
 
+  // Depth query methods (IMarketBookDataSource)
+  std::optional<PriceLevel> GetLevel(std::uint32_t instrument_id,
+                                      interfaces::orderbook::BookSide side,
+                                      std::size_t depth_index) const override;
+  std::uint64_t TotalDepth(std::uint32_t instrument_id,
+                            interfaces::orderbook::BookSide side,
+                            std::size_t n_levels) const override;
+  std::optional<double> WeightedMidPrice(std::uint32_t instrument_id) const override;
+  std::optional<double> VolumeAdjustedMidPrice(std::uint32_t instrument_id,
+                                                std::size_t n_levels) const override;
+
   /**
    * @brief Return {instrument_id, bestBid, bestAsk} for each known LOB
    */
@@ -123,6 +134,8 @@ private:
    * @return Pointer to the LimitOrderBook
    */
   LimitOrderBook* FindOrCreateBook(std::uint32_t instrument_id);
+
+  void InvalidateCache();
 
 private:
   mutable std::mutex mapMutex_; // Only protects map operations (add/remove/find)

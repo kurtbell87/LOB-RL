@@ -35,18 +35,17 @@ void MicroDepthFeature::SetParam(const std::string& key, const std::string& valu
 }
 
 void MicroDepthFeature::ComputeUpdate(
-    const constellation::interfaces::orderbook::IMarketBookDataSource& /*source*/,
-    const constellation::interfaces::orderbook::IMarketView* market)
+    const constellation::interfaces::orderbook::IMarketBookDataSource& source,
+    const constellation::interfaces::orderbook::IMarketView* /*market*/)
 {
-  if (!market) {
+  auto lvl = source.GetLevel(config_.instrument_id, config_.side, config_.depth_index);
+  if (!lvl.has_value()) {
     price_.store(0.0);
     size_.store(0ULL);
     return;
   }
-  // We would normally query the single instrument LOB to get the nth level. However,
-  // we have no direct aggregator function here. For demonstration, we store zero.
-  price_.store(0.0);
-  size_.store(0ULL);
+  price_.store(static_cast<double>(lvl->price) / 1e9);
+  size_.store(lvl->total_quantity);
 }
 
 double MicroDepthFeature::GetValue(const std::string& name) const {

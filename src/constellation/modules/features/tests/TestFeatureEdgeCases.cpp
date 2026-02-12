@@ -5,7 +5,6 @@
 #include <vector>
 #include <stdexcept>
 #include <algorithm>
-#include <map>
 
 #include "features/FeatureManager.hpp"
 #include "features/primitives/BestBidPriceFeature.hpp"
@@ -19,6 +18,7 @@
 #include "features/derived/MidPriceFeature.hpp"
 #include "features/derived/CancelAddRatioFeature.hpp"
 #include "features/derived/RollingVolatilityFeature.hpp"
+#include "MockMarketDataSource.hpp"
 
 using namespace constellation::modules::features;
 using primitives::BestAskPriceFeature;
@@ -33,61 +33,6 @@ using derived::MidPriceFeature;
 using derived::CancelAddRatioFeature;
 using derived::RollingVolatilityFeature;
 
-/**
- * @brief A specialized data source that can optionally throw
- *        exceptions, but must override the new int64-based methods.
- */
-class EdgeCaseDataSource final 
-  : public constellation::interfaces::orderbook::IMarketBookDataSource 
-{
-public:
-  std::atomic<double> best_bid{0.0};
-  std::atomic<double> best_ask{0.0};
-  bool bid_valid{true};
-  bool ask_valid{true};
-  std::map<double, std::uint64_t> volume_map; // double => volumes, we convert
-
-  bool enable_faults{false};
-  double fault_probability{0.1};
-
-  static std::int64_t toNano(double x) {
-    return static_cast<std::int64_t>(x * 1e9 + 0.5);
-  }
-
-  // override required
-  constellation::interfaces::common::InterfaceVersionInfo GetVersionInfo() const noexcept override {
-    return {1, 0};
-  }
-
-  std::optional<std::int64_t> BestBidPrice(std::uint32_t /*instrument_id*/) const override {
-    if (!bid_valid) return std::nullopt;
-    double b = best_bid.load();
-    if (b <= 0.0) return std::nullopt;
-    return toNano(b);
-  }
-  std::optional<std::int64_t> BestAskPrice(std::uint32_t /*instrument_id*/) const override {
-    if (!ask_valid) return std::nullopt;
-    double a = best_ask.load();
-    if (a <= 0.0) return std::nullopt;
-    return toNano(a);
-  }
-
-  std::optional<std::uint64_t> VolumeAtPrice(std::uint32_t /*instrument_id*/,
-                                             std::int64_t priceNanos) const override
-  {
-    double keyD = static_cast<double>(priceNanos) / 1e9;
-    auto it = volume_map.find(keyD);
-    if (it != volume_map.end()) {
-      return it->second;
-    }
-    return std::nullopt;
-  }
-
-  std::vector<std::uint32_t> GetInstrumentIds() const override {
-    return {1234};
-  }
-};
-
 TEST_CASE("RollingVolatilityFeature handles zero or invalid window size", "[features][rolling-vol][edge]") {
   RollingVolatilityFeature::Config bad_cfg{1234, 0};
   CHECK_THROWS_AS(std::make_shared<RollingVolatilityFeature>(bad_cfg), FeatureException);
@@ -99,7 +44,7 @@ TEST_CASE("RollingVolatilityFeature handles zero or invalid window size", "[feat
   FeatureManager manager;
   manager.Register(large_roll);
 
-  EdgeCaseDataSource ds;
+  MockMarketDataSource ds;
   ds.best_bid = 100.0;
 
   auto writer = [&]() {
@@ -134,7 +79,7 @@ TEST_CASE("FeatureManager sub-feature name conflict resolution", "[features][con
   mgr.Register(feat1);
   mgr.Register(feat2);
 
-  EdgeCaseDataSource ds;
+  MockMarketDataSource ds;
   ds.best_bid = 100.0;
   mgr.OnDataUpdate(ds, nullptr);
   ds.best_bid = 110.0;
@@ -152,7 +97,7 @@ TEST_CASE("FeatureManager repeated registration of the exact same feature instan
   mgr.Register(mid_price);
   mgr.Register(mid_price);
 
-  EdgeCaseDataSource ds;
+  MockMarketDataSource ds;
   ds.best_bid = 100;
   ds.best_ask = 102;
   mgr.OnDataUpdate(ds, nullptr);
@@ -168,7 +113,7 @@ TEST_CASE("Features handle extremely large or invalid best bid/ask", "[features]
   mgr.Register(std::make_shared<SpreadFeature>(SpreadFeature::Config{1234}));
   mgr.Register(std::make_shared<MidPriceFeature>(MidPriceFeature::Config{1234}));
 
-  EdgeCaseDataSource ds;
+  MockMarketDataSource ds;
   ds.best_bid = 1e9;       // $1,000,000,000
   ds.best_ask = 1e9 + 100; // $1,000,000,100
   mgr.OnDataUpdate(ds, nullptr);
@@ -200,7 +145,7 @@ TEST_CASE("VolumeAtPriceFeature and MicroDepthFeature handle missing market poin
   mgr.Register(vol_feat);
   mgr.Register(depth_feat);
 
-  EdgeCaseDataSource ds;
+  MockMarketDataSource ds;
   ds.best_bid = 100.0;
   mgr.OnDataUpdate(ds, nullptr);
 
@@ -214,11 +159,11 @@ TEST_CASE("MicroPriceFeature large volumes and concurrency", "[features][micro-p
   auto mp_feat = std::make_shared<MicroPriceFeature>(MicroPriceFeature::Config{1234});
   mgr.Register(mp_feat);
 
-  EdgeCaseDataSource ds;
+  MockMarketDataSource ds;
   ds.best_bid = 1000.0;
   ds.best_ask = 1002.0;
-  ds.volume_map[1000.0] = 5000000000ULL;
-  ds.volume_map[1002.0] = 3000000000ULL;
+  ds.volumes[1000.0] = 5000000000ULL;
+  ds.volumes[1002.0] = 3000000000ULL;
 
   mgr.OnDataUpdate(ds, nullptr);
 
@@ -229,8 +174,8 @@ TEST_CASE("MicroPriceFeature large volumes and concurrency", "[features][micro-p
     for (int i = 0; i < 100; ++i) {
       ds.best_bid = 1000.0 + i;
       ds.best_ask = 1002.0 + i;
-      ds.volume_map[1000.0 + i] = 5000000000ULL;
-      ds.volume_map[1002.0 + i] = 3000000000ULL;
+      ds.volumes[1000.0 + i] = 5000000000ULL;
+      ds.volumes[1002.0 + i] = 3000000000ULL;
       mgr.OnDataUpdate(ds, nullptr);
     }
   };
@@ -254,10 +199,10 @@ TEST_CASE("OrderImbalanceFeature missing volumes, partial data", "[features][imb
   auto imb = std::make_shared<OrderImbalanceFeature>(OrderImbalanceFeature::Config{1234});
   mgr.Register(imb);
 
-  EdgeCaseDataSource ds;
+  MockMarketDataSource ds;
   ds.best_bid = 101.0;
   ds.best_ask = 102.0;
-  ds.volume_map[102.0] = 50ULL; // no volume at 101 => zero => imbalance negative
+  ds.volumes[102.0] = 50ULL; // no volume at 101 => zero => imbalance negative
 
   mgr.OnDataUpdate(ds, nullptr);
   double val = mgr.GetValue("order_imbalance");
@@ -302,7 +247,7 @@ TEST_CASE("CancelAddRatioFeature zero adds and concurrency", "[features][cancel-
   };
 
   MockMarketView mock_mv;
-  EdgeCaseDataSource ds;
+  MockMarketDataSource ds;
 
   auto writer = [&](int steps) {
     for (int i = 1; i <= steps; ++i) {
@@ -358,18 +303,18 @@ TEST_CASE("FeatureManager concurrency with many different features registered", 
     manager.Register(std::make_shared<MicroDepthFeature>(mcfg));
   }
 
-  EdgeCaseDataSource ds;
+  MockMarketDataSource ds;
   ds.best_bid = 100.0;
   ds.best_ask = 102.0;
-  ds.volume_map[100.0] = 10ULL;
-  ds.volume_map[102.0] = 20ULL;
+  ds.volumes[100.0] = 10ULL;
+  ds.volumes[102.0] = 20ULL;
 
   auto updater = [&]() {
     for (int i = 0; i < 50; ++i) {
       ds.best_bid.store(100.0 + i);
       ds.best_ask.store(102.0 + i);
-      ds.volume_map[100.0 + i] = 10ULL + i;
-      ds.volume_map[102.0 + i] = 20ULL + i;
+      ds.volumes[100.0 + i] = 10ULL + i;
+      ds.volumes[102.0 + i] = 20ULL + i;
       manager.OnDataUpdate(ds, nullptr);
     }
   };

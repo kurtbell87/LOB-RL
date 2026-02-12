@@ -26,6 +26,12 @@ void MarketBook::UpdateGlobalCounters(databento::Action action) {
   }
 }
 
+void MarketBook::InvalidateCache() {
+  std::lock_guard<std::mutex> lock(cacheMutex_);
+  cached_instrument_count_ = 0;
+  cached_ids_.clear();
+}
+
 LimitOrderBook* MarketBook::FindOrCreateBook(std::uint32_t instrument_id) {
   // Lock map for find/create operations
   std::lock_guard<std::mutex> lock(mapMutex_);
@@ -34,13 +40,7 @@ LimitOrderBook* MarketBook::FindOrCreateBook(std::uint32_t instrument_id) {
     auto new_lob = std::make_unique<LimitOrderBook>(instrument_id, logger_);
     auto [ins_it, _] = books_.emplace(instrument_id, std::move(new_lob));
     it = ins_it;
-    
-    // Invalidate cache
-    {
-      std::lock_guard<std::mutex> cacheLock(cacheMutex_);
-      cached_instrument_count_ = 0;
-      cached_ids_.clear();
-    }
+    InvalidateCache();
   }
   return it->second.get();
 }
@@ -49,13 +49,7 @@ void MarketBook::AddInstrument(std::uint32_t instrument_id,
                                std::unique_ptr<LimitOrderBook> lob) {
   std::lock_guard<std::mutex> lock(mapMutex_);
   books_[instrument_id] = std::move(lob);
-  
-  // Invalidate cache
-  {
-    std::lock_guard<std::mutex> cacheLock(cacheMutex_);
-    cached_instrument_count_ = 0;
-    cached_ids_.clear();
-  }
+  InvalidateCache();
 }
 
 LimitOrderBook* MarketBook::GetBook(std::uint32_t instrument_id) const {
@@ -314,12 +308,7 @@ void MarketBook::RestoreSnapshot(const MarketBookSnapshot& snapshot) {
     global_clear_count_  = snapshot.global_clear_count_;
   }
   
-  // Invalidate cache
-  {
-    std::lock_guard<std::mutex> cacheLock(cacheMutex_);
-    cached_instrument_count_ = 0;
-    cached_ids_.clear();
-  }
+  InvalidateCache();
 
   // Restore each LOB from the snapshot
   {
@@ -350,12 +339,89 @@ void MarketBook::ResetGlobalCounters() {
     global_clear_count_ = 0;
   }
   
-  // Reset cache
-  {
-    std::lock_guard<std::mutex> cacheLock(cacheMutex_);
-    cached_instrument_count_ = 0;
-    cached_ids_.clear();
+  InvalidateCache();
+}
+
+// ── Depth query methods ──────────────────────────────────────────────
+
+std::optional<PriceLevel>
+MarketBook::GetLevel(std::uint32_t instrument_id,
+                     constellation::interfaces::orderbook::BookSide side,
+                     std::size_t depth_index) const {
+  std::lock_guard<std::mutex> lock(mapMutex_);
+  auto it = books_.find(instrument_id);
+  if (it == books_.end()) return std::nullopt;
+  return it->second->GetLevel(side, depth_index);
+}
+
+std::uint64_t
+MarketBook::TotalDepth(std::uint32_t instrument_id,
+                       constellation::interfaces::orderbook::BookSide side,
+                       std::size_t n_levels) const {
+  std::lock_guard<std::mutex> lock(mapMutex_);
+  auto it = books_.find(instrument_id);
+  if (it == books_.end()) return 0;
+
+  std::uint64_t total = 0;
+  for (std::size_t i = 0; i < n_levels; ++i) {
+    auto lvl = it->second->GetLevel(side, i);
+    if (!lvl.has_value()) break;
+    total += lvl->total_quantity;
   }
+  return total;
+}
+
+std::optional<double>
+MarketBook::WeightedMidPrice(std::uint32_t instrument_id) const {
+  std::lock_guard<std::mutex> lock(mapMutex_);
+  auto it = books_.find(instrument_id);
+  if (it == books_.end()) return std::nullopt;
+
+  auto bid = it->second->BestBid();
+  auto ask = it->second->BestAsk();
+  if (!bid.has_value() || !ask.has_value()) return std::nullopt;
+
+  double bid_price = static_cast<double>(bid->price) / 1e9;
+  double ask_price = static_cast<double>(ask->price) / 1e9;
+  double bid_qty = static_cast<double>(bid->total_quantity);
+  double ask_qty = static_cast<double>(ask->total_quantity);
+
+  return (bid_price * ask_qty + ask_price * bid_qty) / (bid_qty + ask_qty);
+}
+
+std::optional<double>
+MarketBook::VolumeAdjustedMidPrice(std::uint32_t instrument_id,
+                                    std::size_t n_levels) const {
+  if (n_levels == 0) return std::nullopt;
+
+  std::lock_guard<std::mutex> lock(mapMutex_);
+  auto it = books_.find(instrument_id);
+  if (it == books_.end()) return std::nullopt;
+
+  using constellation::interfaces::orderbook::BookSide;
+
+  double sum_pq = 0.0;
+  double sum_q = 0.0;
+  bool has_bid = false;
+  bool has_ask = false;
+
+  auto accumulate_side = [&](BookSide side, bool& has_side) {
+    for (std::size_t i = 0; i < n_levels; ++i) {
+      auto lvl = it->second->GetLevel(side, i);
+      if (!lvl.has_value()) break;
+      has_side = true;
+      double price = static_cast<double>(lvl->price) / 1e9;
+      double qty = static_cast<double>(lvl->total_quantity);
+      sum_pq += price * qty;
+      sum_q += qty;
+    }
+  };
+
+  accumulate_side(BookSide::Bid, has_bid);
+  accumulate_side(BookSide::Ask, has_ask);
+
+  if (!has_bid || !has_ask || sum_q == 0.0) return std::nullopt;
+  return sum_pq / sum_q;
 }
 
 } // end namespace constellation::modules::orderbook

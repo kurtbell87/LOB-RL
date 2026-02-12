@@ -144,12 +144,14 @@ add_executable(constellation_tests
     src/constellation/modules/orderbook/tests/TestOrderBookExtended.cpp
     src/constellation/modules/orderbook/tests/TestOrderBookSnapshot.cpp
     src/constellation/modules/orderbook/tests/TestOrderBookConcurrency.cpp
+    src/constellation/modules/orderbook/tests/TestMarketBookDepthQueries.cpp
     # Features tests
     src/constellation/modules/features/tests/TestFeatures.cpp
     src/constellation/modules/features/tests/TestExtendedFeatures.cpp
     src/constellation/modules/features/tests/TestFeatureEdgeCases.cpp
     src/constellation/modules/features/tests/TestFeaturesAdvanced.cpp
     src/constellation/modules/features/tests/TestMultiInstrumentFeatures.cpp
+    src/constellation/modules/features/tests/TestMicroDepthFeatureFix.cpp
     # Market data tests
     src/constellation/modules/market_data/tests/TestMarketDataIntegration.cpp
     src/constellation/modules/market_data/tests/TestMarketDataAdvanced.cpp

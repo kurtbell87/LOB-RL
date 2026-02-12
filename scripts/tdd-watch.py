@@ -3,11 +3,11 @@
 TDD Sub-Agent Monitor — a live dashboard for tdd.sh stream-json logs.
 
 Usage:
-    uv run python3 scripts/tdd-watch.py              # auto-detects most recent phase
-    uv run python3 scripts/tdd-watch.py green         # watch the green phase
-    uv run python3 scripts/tdd-watch.py refactor      # watch the refactor phase
-    uv run python3 scripts/tdd-watch.py red --resolve  # one-shot summary of red phase
-    uv run python3 scripts/tdd-watch.py green --verbose  # show tool result output (build logs, test output)
+    python3 scripts/tdd-watch.py              # auto-detects most recent phase
+    python3 scripts/tdd-watch.py green         # watch the green phase
+    python3 scripts/tdd-watch.py refactor      # watch the refactor phase
+    python3 scripts/tdd-watch.py red --resolve  # one-shot summary of red phase
+    python3 scripts/tdd-watch.py green --verbose  # show tool result output (build logs, test output)
 
 Parses the stream-json events emitted by `claude --output-format stream-json`
 and renders a compact, human-readable live view.
@@ -36,6 +36,7 @@ BLUE      = "\033[34m"
 MAGENTA   = "\033[35m"
 CYAN      = "\033[36m"
 WHITE     = "\033[37m"
+
 CLEAR_LINE = "\033[2K"
 MOVE_UP    = "\033[A"
 
@@ -57,7 +58,7 @@ class AgentState:
         self.files_edited = []
         self.bash_commands = []
         self.agent_texts = []
-        self.test_results = []     # list of (cpp_pass, cpp_total, py_pass, py_total)
+        self.test_results = []     # list of (kind, count, status)
         self.current_action = None
         self.current_tool_id = None
         self.sub_agents = 0
@@ -217,9 +218,9 @@ def _format_tool_call(name: str, inp: dict, state: AgentState) -> str:
         state.bash_commands.append(cmd)
         state.current_action = f"Running: {display}"
 
-        if any(kw in cmd for kw in ["cmake --build", "make", "cargo build", "npm run build", "ctest"]):
+        if any(kw in cmd for kw in ["cmake --build", "make", "cargo build", "npm run build"]):
             return f"  {MAGENTA}🔨 Build{RESET} {display}"
-        elif "pytest" in cmd:
+        elif any(kw in cmd for kw in ["pytest", "ctest", "npm test", "cargo test", "jest"]):
             return f"  {MAGENTA}🧪 Test{RESET}  {display}"
         else:
             return f"  {BLUE}$ Bash{RESET}  {display}"
@@ -246,23 +247,23 @@ def _format_tool_call(name: str, inp: dict, state: AgentState) -> str:
 
 
 def _extract_test_results(text: str, state: AgentState):
-    """Pull ctest/pytest pass counts from tool results."""
+    """Pull test pass counts from tool results."""
     if not isinstance(text, str):
         return
-    # ctest: "XX tests passed" or "XX/YY Test #..."
+    # Generic: "XX tests passed" / "XX tests failed"
     m = re.search(r'(\d+) tests? passed', text)
     if m:
-        state.test_results.append(("cpp", int(m.group(1)), "passed"))
+        state.test_results.append(("test", int(m.group(1)), "passed"))
     m = re.search(r'(\d+) tests? failed', text)
     if m:
-        state.test_results.append(("cpp", int(m.group(1)), "failed"))
-    # pytest: "XX passed"
+        state.test_results.append(("test", int(m.group(1)), "failed"))
+    # pytest: "XX passed" / "XX failed"
     m = re.search(r'(\d+) passed', text)
-    if m and ('pytest' in text.lower() or 'python' in text.lower() or '.py' in text):
-        state.test_results.append(("py", int(m.group(1)), "passed"))
+    if m:
+        state.test_results.append(("test", int(m.group(1)), "passed"))
     m = re.search(r'(\d+) failed', text)
-    if m and ('pytest' in text.lower() or 'python' in text.lower() or '.py' in text):
-        state.test_results.append(("py", int(m.group(1)), "failed"))
+    if m:
+        state.test_results.append(("test", int(m.group(1)), "failed"))
 
 
 def _short_path(fp: str) -> str:
@@ -297,7 +298,6 @@ def print_header(state: AgentState):
     if state.sub_agents:
         bar += f" {DIM}│{RESET} 🤖{state.sub_agents}"
 
-    # Test result summary
     last_tests = _latest_test_summary(state)
     if last_tests:
         bar += f" {DIM}│{RESET} {last_tests}"
@@ -310,7 +310,6 @@ def _latest_test_summary(state: AgentState) -> str:
     """Summarize the most recent test results."""
     if not state.test_results:
         return ""
-    # Get last few results
     recent = state.test_results[-4:]
     parts = []
     for kind, count, status in recent:
@@ -347,10 +346,9 @@ def print_summary(state: AgentState):
         for f in sorted(set(state.files_edited)):
             print(f"    ~ {f}")
 
-    # Show agent narration highlights
     if state.agent_texts:
         print(f"\n  {CYAN}Agent notes:{RESET}")
-        for t in state.agent_texts[-5:]:  # last 5
+        for t in state.agent_texts[-5:]:
             wrapped = textwrap.fill(t, width=80, initial_indent="    ", subsequent_indent="    ")
             print(wrapped)
 
@@ -366,7 +364,6 @@ def find_log_file() -> str:
         print(f"{RED}No /tmp/tdd-*.log files found.{RESET}")
         print(f"Start a TDD phase first:  ./tdd.sh red docs/feature.md")
         sys.exit(1)
-    # Pick most recently modified
     best = max(candidates, key=os.path.getmtime)
     return best
 
@@ -374,20 +371,17 @@ def find_log_file() -> str:
 def tail_follow(filepath: str):
     """Generator that yields new lines from a file, following like tail -f."""
     with open(filepath, "r") as f:
-        # First, yield all existing content
         while True:
             line = f.readline()
             if not line:
                 break
             yield line
 
-        # Then follow for new content
         while True:
             line = f.readline()
             if line:
                 yield line
             else:
-                # Check if the process is still running
                 time.sleep(0.3)
 
 
@@ -440,14 +434,12 @@ def run_live(filepath: str, verbose: bool = False):
 
         event_count += 1
 
-        # Reprint header periodically
         if event_count % header_interval == 1:
             print_header(state)
 
         for dl in display_lines:
             print(dl)
 
-        # Check for completion signals
         for text in state.agent_texts[-1:]:
             if any(phrase in text.lower() for phrase in [
                 "all tests pass", "final summary", "implementation complete"
@@ -457,7 +449,6 @@ def run_live(filepath: str, verbose: bool = False):
 
 
 def main():
-    # Graceful Ctrl+C
     signal.signal(signal.SIGINT, lambda *_: (print(f"\n{RESET}"), sys.exit(0)))
 
     PHASES = {"red", "green", "refactor"}

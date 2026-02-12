@@ -53,6 +53,10 @@ static py::array_t<float> to_numpy_2d(const std::vector<float>& vec, int rows, i
     return arr;
 }
 
+static double to_real_price(std::int64_t nano_price) {
+    return static_cast<double>(nano_price) / databento::kFixedPriceScale;
+}
+
 static RewardMode parse_reward_mode(const std::string& mode_str) {
     if (mode_str.empty() || mode_str == "pnl_delta") return RewardMode::PnLDelta;
     if (mode_str == "pnl_delta_penalized") return RewardMode::PnLDeltaPenalized;
@@ -347,7 +351,7 @@ PYBIND11_MODULE(lob_rl_core, m) {
         .def_readonly("fill_qty", &cst_replay::FillRecord::fill_qty)
         .def_readonly("is_buy", &cst_replay::FillRecord::is_buy)
         .def_property_readonly("fill_price_float", [](const cst_replay::FillRecord& f) {
-            return static_cast<double>(f.fill_price) / databento::kFixedPriceScale;
+            return to_real_price(f.fill_price);
         });
 
     // MarketBook
@@ -358,18 +362,66 @@ PYBIND11_MODULE(lob_rl_core, m) {
         .def("best_bid_price", [](const cst_ob::MarketBook& mb, uint32_t instrument_id) -> py::object {
             auto p = mb.BestBidPrice(instrument_id);
             if (!p) return py::none();
-            return py::cast(static_cast<double>(*p) / databento::kFixedPriceScale);
+            return py::cast(to_real_price(*p));
         }, py::arg("instrument_id"))
         .def("best_ask_price", [](const cst_ob::MarketBook& mb, uint32_t instrument_id) -> py::object {
             auto p = mb.BestAskPrice(instrument_id);
             if (!p) return py::none();
-            return py::cast(static_cast<double>(*p) / databento::kFixedPriceScale);
+            return py::cast(to_real_price(*p));
         }, py::arg("instrument_id"))
         .def("get_global_add_count", &cst_ob::MarketBook::GetGlobalAddCount)
         .def("get_global_cancel_count", &cst_ob::MarketBook::GetGlobalCancelCount)
         .def("get_global_modify_count", &cst_ob::MarketBook::GetGlobalModifyCount)
         .def("get_global_trade_count", &cst_ob::MarketBook::GetGlobalTradeCount)
-        .def("get_global_total_event_count", &cst_ob::MarketBook::GetGlobalTotalEventCount);
+        .def("get_global_total_event_count", &cst_ob::MarketBook::GetGlobalTotalEventCount)
+        // on_mbo_update: convenience method for Python tests
+        // Takes price as float in real currency, converts to nanos internally
+        .def("on_mbo_update", [](cst_ob::MarketBook& mb, uint32_t instrument_id,
+                                  uint64_t order_id, double price, uint32_t qty,
+                                  constellation::interfaces::orderbook::BookSide side) {
+            databento::MboMsg mbo{};
+            mbo.hd.instrument_id = instrument_id;
+            mbo.order_id = order_id;
+            mbo.price = static_cast<int64_t>(price * 1e9);
+            mbo.size = qty;
+            mbo.side = (side == constellation::interfaces::orderbook::BookSide::Bid)
+                        ? databento::Side::Bid : databento::Side::Ask;
+            mbo.action = databento::Action::Add;
+            mb.OnMboUpdate(mbo);
+        }, py::arg("instrument_id"), py::arg("order_id"), py::arg("price"),
+           py::arg("qty"), py::arg("side"))
+        // get_level: returns dict {price, quantity, order_count} or None
+        .def("get_level", [](const cst_ob::MarketBook& mb, uint32_t instrument_id,
+                              constellation::interfaces::orderbook::BookSide side,
+                              size_t depth_index) -> py::object {
+            auto lvl = mb.GetLevel(instrument_id, side, depth_index);
+            if (!lvl.has_value()) return py::none();
+            py::dict result;
+            result["price"] = to_real_price(lvl->price);
+            result["quantity"] = lvl->total_quantity;
+            result["order_count"] = lvl->order_count;
+            return result;
+        }, py::arg("instrument_id"), py::arg("side"), py::arg("depth_index"))
+        // total_depth: returns int
+        .def("total_depth", [](const cst_ob::MarketBook& mb, uint32_t instrument_id,
+                                constellation::interfaces::orderbook::BookSide side,
+                                size_t n_levels) -> uint64_t {
+            return mb.TotalDepth(instrument_id, side, n_levels);
+        }, py::arg("instrument_id"), py::arg("side"), py::arg("n_levels"))
+        // weighted_mid_price: returns float or None
+        .def("weighted_mid_price", [](const cst_ob::MarketBook& mb,
+                                       uint32_t instrument_id) -> py::object {
+            auto wmid = mb.WeightedMidPrice(instrument_id);
+            if (!wmid.has_value()) return py::none();
+            return py::cast(*wmid);
+        }, py::arg("instrument_id"))
+        // vamp: returns float or None
+        .def("vamp", [](const cst_ob::MarketBook& mb, uint32_t instrument_id,
+                         size_t n_levels) -> py::object {
+            auto v = mb.VolumeAdjustedMidPrice(instrument_id, n_levels);
+            if (!v.has_value()) return py::none();
+            return py::cast(*v);
+        }, py::arg("instrument_id"), py::arg("n_levels"));
 
     // BatchBacktestEngine
     py::class_<cst_replay::BatchBacktestEngine>(m, "BatchBacktestEngine")
@@ -397,12 +449,10 @@ PYBIND11_MODULE(lob_rl_core, m) {
                 auto bid = mv->GetBestBid(id);
                 auto ask = mv->GetBestAsk(id);
                 py::dict inst;
-                inst["best_bid_price"] = bid ? py::cast(
-                    static_cast<double>(bid->price) / databento::kFixedPriceScale)
+                inst["best_bid_price"] = bid ? py::cast(to_real_price(bid->price))
                     : py::none();
                 inst["best_bid_qty"] = bid ? py::cast(bid->total_quantity) : py::none();
-                inst["best_ask_price"] = ask ? py::cast(
-                    static_cast<double>(ask->price) / databento::kFixedPriceScale)
+                inst["best_ask_price"] = ask ? py::cast(to_real_price(ask->price))
                     : py::none();
                 inst["best_ask_qty"] = ask ? py::cast(ask->total_quantity) : py::none();
                 bbo[py::cast(id)] = inst;
