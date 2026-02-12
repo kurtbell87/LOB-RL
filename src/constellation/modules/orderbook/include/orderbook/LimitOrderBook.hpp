@@ -82,6 +82,7 @@ private:
   void HandleModify(const databento::MboMsg& mbo);
   void HandleFillOrCancel(const databento::MboMsg& mbo);
   void ClearAll();
+  void ClearSide(databento::Side side);
 
 private:
   mutable std::shared_mutex mtx_;

@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <shared_mutex>
+#include "databento/constants.hpp"
 #include "databento/record.hpp"
 
 namespace constellation::modules::orderbook {
@@ -41,10 +42,11 @@ void LimitOrderBook::OnMboUpdate(const databento::MboMsg& mbo) {
       HandleModify(mbo);
       break;
     case databento::Action::Cancel:
-    case databento::Action::Trade:
-    case databento::Action::Fill:
       HandleFillOrCancel(mbo);
       break;
+    case databento::Action::Trade:
+    case databento::Action::Fill:
+      break;  // no-op: orders removed only by Cancel
     case databento::Action::Clear:
       ClearAll();
       break;
@@ -80,10 +82,11 @@ void LimitOrderBook::BatchOnMboUpdate(const std::vector<databento::MboMsg>& mess
         HandleModify(mbo);
         break;
       case databento::Action::Cancel:
-      case databento::Action::Trade:
-      case databento::Action::Fill:
         HandleFillOrCancel(mbo);
         break;
+      case databento::Action::Trade:
+      case databento::Action::Fill:
+        break;  // no-op: orders removed only by Cancel
       case databento::Action::Clear:
         ClearAll();
         break;
@@ -215,6 +218,26 @@ std::vector<constellation::interfaces::orderbook::PriceLevel> LimitOrderBook::Ge
 
 void LimitOrderBook::HandleAdd(const databento::MboMsg& mbo) {
   if (mbo.side != databento::Side::Bid && mbo.side != databento::Side::Ask) return;
+
+  // IsTob: clear entire side, then add one synthetic level (count=0, not tracked)
+  if (mbo.flags.IsTob()) {
+    ClearSide(mbo.side);
+    if (mbo.price == databento::kUndefPrice) return;
+    if (mbo.side == databento::Side::Bid) {
+      auto key = -static_cast<std::int64_t>(mbo.price);
+      PriceBucket pb;
+      pb.agg_qty = mbo.size;
+      pb.count   = 0;
+      bids_.insert(key, pb);
+    } else {
+      PriceBucket pb;
+      pb.agg_qty = mbo.size;
+      pb.count   = 0;
+      asks_.insert(mbo.price, pb);
+    }
+    return;
+  }
+
   if (mbo.size == 0) return;
   orders_[mbo.order_id] = mbo;
 
@@ -257,7 +280,10 @@ void LimitOrderBook::HandleAdd(const databento::MboMsg& mbo) {
 
 void LimitOrderBook::HandleModify(const databento::MboMsg& mbo) {
   auto it = orders_.find(mbo.order_id);
-  if (it == orders_.end()) return;
+  if (it == orders_.end()) {
+    HandleAdd(mbo);
+    return;
+  }
 
   auto old = it->second;
   if (old.side == databento::Side::Bid) {
@@ -349,29 +375,22 @@ void LimitOrderBook::HandleFillOrCancel(const databento::MboMsg& mbo) {
     auto pb = *f;
     bids_.erase(key);
 
-    if (mbo.action == databento::Action::Cancel) {
-      if (pb.agg_qty >= old.size) {
-        pb.agg_qty -= old.size;
-      }
+    // Partial cancel: subtract mbo.size (not old.size)
+    std::uint32_t cancel_sz = mbo.size;
+    if (cancel_sz > old.size) cancel_sz = old.size;
+    if (pb.agg_qty >= cancel_sz) {
+      pb.agg_qty -= cancel_sz;
+    }
+    std::uint32_t new_qty = old.size - cancel_sz;
+    if (new_qty == 0) {
       pb.count -= 1;
       pb.orders.erase(old.order_id);
       orders_.erase(it);
     } else {
-      std::uint32_t fill_sz = mbo.size;
-      if (fill_sz > old.size) fill_sz = old.size;
-      if (pb.agg_qty >= fill_sz) {
-        pb.agg_qty -= fill_sz;
-      }
-      std::uint32_t new_qty = old.size - fill_sz;
-      if (new_qty == 0) {
-        pb.count -= 1;
-        pb.orders.erase(old.order_id);
-        orders_.erase(it);
-      } else {
-        old.size = new_qty;
-        pb.orders[old.order_id] = old;
-      }
+      old.size = new_qty;
+      pb.orders[old.order_id] = old;
     }
+
     if (pb.count > 0) {
       bids_.insert(key, pb);
     }
@@ -383,32 +402,51 @@ void LimitOrderBook::HandleFillOrCancel(const databento::MboMsg& mbo) {
     auto pb = *f;
     asks_.erase(key);
 
-    if (mbo.action == databento::Action::Cancel) {
-      if (pb.agg_qty >= old.size) {
-        pb.agg_qty -= old.size;
-      }
+    // Partial cancel: subtract mbo.size (not old.size)
+    std::uint32_t cancel_sz = mbo.size;
+    if (cancel_sz > old.size) cancel_sz = old.size;
+    if (pb.agg_qty >= cancel_sz) {
+      pb.agg_qty -= cancel_sz;
+    }
+    std::uint32_t new_qty = old.size - cancel_sz;
+    if (new_qty == 0) {
       pb.count -= 1;
       pb.orders.erase(old.order_id);
       orders_.erase(it);
     } else {
-      std::uint32_t fill_sz = mbo.size;
-      if (fill_sz > old.size) fill_sz = old.size;
-      if (pb.agg_qty >= fill_sz) {
-        pb.agg_qty -= fill_sz;
-      }
-      std::uint32_t new_qty = old.size - fill_sz;
-      if (new_qty == 0) {
-        pb.count -= 1;
-        pb.orders.erase(old.order_id);
-        orders_.erase(it);
-      } else {
-        old.size = new_qty;
-        pb.orders[old.order_id] = old;
-      }
+      old.size = new_qty;
+      pb.orders[old.order_id] = old;
     }
+
     if (pb.count > 0) {
       asks_.insert(key, pb);
     }
+  }
+}
+
+void LimitOrderBook::ClearSide(databento::Side side) {
+  if (side == databento::Side::Bid) {
+    auto n = bids_.size();
+    for (size_t i = 0; i < n; ++i) {
+      auto p = bids_.nth(i);
+      if (p) {
+        for (auto& [oid, msg] : p->second.orders) {
+          orders_.erase(oid);
+        }
+      }
+    }
+    bids_ = AugmentedPriceMap<std::int64_t, PriceBucket>();
+  } else if (side == databento::Side::Ask) {
+    auto n = asks_.size();
+    for (size_t i = 0; i < n; ++i) {
+      auto p = asks_.nth(i);
+      if (p) {
+        for (auto& [oid, msg] : p->second.orders) {
+          orders_.erase(oid);
+        }
+      }
+    }
+    asks_ = AugmentedPriceMap<std::int64_t, PriceBucket>();
   }
 }
 

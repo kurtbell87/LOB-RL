@@ -381,7 +381,43 @@ PYBIND11_MODULE(lob_rl_core, m) {
         .def("process_single_file", &cst_replay::BatchBacktestEngine::ProcessSingleFile,
              py::arg("dbn_file"))
         .def("get_fills", &cst_replay::BatchBacktestEngine::GetFills)
-        .def("reset_stats", &cst_replay::BatchBacktestEngine::ResetStats);
+        .def("reset_stats", &cst_replay::BatchBacktestEngine::ResetStats)
+        .def("get_market_view", [](const cst_replay::BatchBacktestEngine& engine) -> py::object {
+            auto mv = engine.GetMarketView();
+            if (!mv) return py::none();
+            // Return a dict with instrument-level market state
+            py::dict result;
+            auto ids = mv->GetInstrumentIds();
+            result["instrument_count"] = mv->InstrumentCount();
+            result["instrument_ids"] = ids;
+
+            // Per-instrument BBO
+            py::dict bbo;
+            for (auto id : ids) {
+                auto bid = mv->GetBestBid(id);
+                auto ask = mv->GetBestAsk(id);
+                py::dict inst;
+                inst["best_bid_price"] = bid ? py::cast(
+                    static_cast<double>(bid->price) / databento::kFixedPriceScale)
+                    : py::none();
+                inst["best_bid_qty"] = bid ? py::cast(bid->total_quantity) : py::none();
+                inst["best_ask_price"] = ask ? py::cast(
+                    static_cast<double>(ask->price) / databento::kFixedPriceScale)
+                    : py::none();
+                inst["best_ask_qty"] = ask ? py::cast(ask->total_quantity) : py::none();
+                bbo[py::cast(id)] = inst;
+            }
+            result["instruments"] = bbo;
+
+            // Global counters
+            result["global_add_count"] = mv->GetGlobalAddCount();
+            result["global_cancel_count"] = mv->GetGlobalCancelCount();
+            result["global_modify_count"] = mv->GetGlobalModifyCount();
+            result["global_trade_count"] = mv->GetGlobalTradeCount();
+            result["global_total_event_count"] = mv->GetGlobalTotalEventCount();
+
+            return result;
+        });
 
     // ── Constellation Feature System Bindings ───────────────────────────
     namespace cst_feat = constellation::modules::features;

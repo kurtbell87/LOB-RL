@@ -29,16 +29,16 @@ TEST_CASE("LimitOrderBook Snapshot/Restore", "[orderbook][snapshot]") {
   m3.hd.instrument_id=999; m3.order_id=2001; m3.price=12400; m3.size=7; m3.side=databento::Side::Ask; m3.action=databento::Action::Add;
   lob.OnMboUpdate(m3);
 
-  // partial fill order_id=1001 => fill=5
-  databento::MboMsg fill{};
-  fill.hd.instrument_id=999; fill.order_id=1001; fill.price=12345; fill.size=5; fill.side=databento::Side::Bid; fill.action=databento::Action::Trade;
-  lob.OnMboUpdate(fill);
+  // partial cancel order_id=1001 => cancel 5
+  databento::MboMsg cxl{};
+  cxl.hd.instrument_id=999; cxl.order_id=1001; cxl.price=12345; cxl.size=5; cxl.side=databento::Side::Bid; cxl.action=databento::Action::Cancel;
+  lob.OnMboUpdate(cxl);
 
   // now restore
   lob.RestoreSnapshot(*snap);
 
   CHECK(lob.GetAddCount()==2ULL);
-  CHECK(lob.GetTradeCount()==0ULL);
+  CHECK(lob.GetCancelCount()==0ULL);
   CHECK_FALSE(lob.BestAsk().has_value());
   auto b = lob.BestBid();
   REQUIRE(b);

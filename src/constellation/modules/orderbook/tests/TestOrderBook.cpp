@@ -66,30 +66,30 @@ TEST_CASE("LimitOrderBook basic actions: Add, Cancel, Modify, Fill", "[orderbook
         REQUIRE(best_bid.has_value());
         CHECK(best_bid->price == 400000);
 
-        // Cancel
-        lob.OnMboUpdate(make_mbo(111, 400000, 0, databento::Side::Bid, databento::Action::Cancel));
+        // Cancel full size
+        lob.OnMboUpdate(make_mbo(111, 400000, 10, databento::Side::Bid, databento::Action::Cancel));
         CHECK_FALSE(lob.BestBid().has_value());
     }
 
-    SECTION("Partial fill => reduce quantity") {
+    SECTION("Partial cancel => reduce quantity") {
         lob.OnMboUpdate(make_mbo(777, 410000, 10, databento::Side::Ask, databento::Action::Add));
-        // fill 3
-        auto trade_mbo = make_mbo(777, 410000, 3, databento::Side::Ask, databento::Action::Trade);
-        lob.OnMboUpdate(trade_mbo);
+        // cancel 3
+        auto cancel_mbo = make_mbo(777, 410000, 3, databento::Side::Ask, databento::Action::Cancel);
+        lob.OnMboUpdate(cancel_mbo);
         auto ask = lob.BestAsk();
         REQUIRE(ask.has_value());
         CHECK(ask->total_quantity == 7);
 
-        // fill 4 => leftover=3
-        trade_mbo.size = 4;
-        lob.OnMboUpdate(trade_mbo);
+        // cancel 4 => leftover=3
+        cancel_mbo.size = 4;
+        lob.OnMboUpdate(cancel_mbo);
         ask = lob.BestAsk();
         REQUIRE(ask.has_value());
         CHECK(ask->total_quantity == 3);
 
-        // fill final 3 => gone
-        trade_mbo.size = 3;
-        lob.OnMboUpdate(trade_mbo);
+        // cancel final 3 => gone
+        cancel_mbo.size = 3;
+        lob.OnMboUpdate(cancel_mbo);
         CHECK_FALSE(lob.BestAsk().has_value());
     }
 

@@ -1,7 +1,8 @@
 ## Current State (updated 2026-02-12)
 
-- **Build:** `build-release/` is current. 660 C++ tests pass (`./lob_tests`). 2246 Python tests pass (2211 core+barrier + 35 constellation). **2906 total.** Plus 65/67 Constellation Catch2 tests. (15 C++ + 59 Python skipped — need `.dbn.zst` fixture.)
+- **Build:** `build-release/` is current. 660 C++ tests pass (`./lob_tests`). 2246 Python tests pass (2211 core+barrier + 35 constellation). **2906 total.** Plus 71/73 Constellation Catch2 tests (6 new TOB/partial-cancel/modify-as-add tests). 6/6 LOB validation tests pass (4 DBEQ + 2 MES). (15 C++ + 59 Python skipped — need `.dbn.zst` fixture.)
 - **Constellation integration:** Branch `feat/constellation-integration` has 6 commits (Phases 0-6 complete). Book wraps Constellation's LimitOrderBook. OrdersEngine, BatchBacktestEngine, MarketBook, 11 feature types exposed via pybind11. `OrderSimulationEnv` Gymnasium env. 35 integration tests.
+- **LOB bug fixes DONE:** 4 bugs fixed in Constellation's LimitOrderBook to match Databento reference: (1) IsTob flag handling — clears side + synthetic level with count=0, (2) partial cancel — subtracts mbo.size not old.size, (3) modify-as-add for unknown orders, (4) Trade/Fill as no-ops. Validated: **0 mismatches** on DBEQ GOOG/GOOGL (161K BBO checks) AND MES futures (7.5M BBO checks). 6 new Catch2 tests + 6 validation tests. Reference output at `references/known_working/`.
 - **Python:** Always use `uv`. Run with `PYTHONPATH=build-release:python uv run ...`
 - **Dependencies:** SB3, sb3-contrib, gymnasium, numpy, tensorboard, torch, databento-cpp (FetchContent), Catch2 (FetchContent) all installed.
 - **Shuffle split DONE:** `--shuffle-split` and `--seed 42` on `train.py`. Reproducible random train/val/test splits. Episodes are independent days. PR #14 merged.

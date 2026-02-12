@@ -8,6 +8,7 @@
 #include <atomic>
 #include "orderbook/LimitOrderBook.hpp"
 #include "orderbook/MarketBook.hpp"
+#include "databento/constants.hpp"
 #include "databento/record.hpp"
 #include "databento/enums.hpp"
 
@@ -49,9 +50,9 @@ TEST_CASE("Multiple orders at the same price", "[orderbook][same-price]") {
   CHECK(best_bid->total_quantity == 17);
   CHECK(best_bid->order_count == 3);
 
-  // partial fill of the second => reduce from 10 to 5 => total=12
-  auto fill2 = MakeMbo(1234, 2, 100000, 5, databento::Side::Bid, databento::Action::Trade);
-  lob.OnMboUpdate(fill2);
+  // partial cancel of the second => reduce from 10 to 5 => total=12
+  auto cxl2 = MakeMbo(1234, 2, 100000, 5, databento::Side::Bid, databento::Action::Cancel);
+  lob.OnMboUpdate(cxl2);
   best_bid = lob.BestBid();
   REQUIRE(best_bid.has_value());
   CHECK(best_bid->total_quantity == 12);
@@ -145,36 +146,36 @@ TEST_CASE("Actions side=None, action=None => ignored", "[orderbook][none]") {
   }
 }
 
-TEST_CASE("Multi-step partial fill", "[orderbook][partial-fills]") {
+TEST_CASE("Multi-step partial cancel", "[orderbook][partial-cancels]") {
   LimitOrderBook lob(5555);
 
   // big ask => price=20000, size=50
   auto add = MakeMbo(5555, 99, 20000, 50, databento::Side::Ask, databento::Action::Add);
   lob.OnMboUpdate(add);
 
-  // fill 10 => leftover=40
-  auto fill = MakeMbo(5555, 99, 20000, 10, databento::Side::Ask, databento::Action::Trade);
-  lob.OnMboUpdate(fill);
+  // cancel 10 => leftover=40
+  auto cxl = MakeMbo(5555, 99, 20000, 10, databento::Side::Ask, databento::Action::Cancel);
+  lob.OnMboUpdate(cxl);
   CHECK(lob.BestAsk()->total_quantity == 40);
 
-  // fill 10 => leftover=30
-  fill.size = 10;
-  lob.OnMboUpdate(fill);
+  // cancel 10 => leftover=30
+  cxl.size = 10;
+  lob.OnMboUpdate(cxl);
   CHECK(lob.BestAsk()->total_quantity == 30);
 
-  // fill 5 => leftover=25
-  fill.size = 5;
-  lob.OnMboUpdate(fill);
+  // cancel 5 => leftover=25
+  cxl.size = 5;
+  lob.OnMboUpdate(cxl);
   CHECK(lob.BestAsk()->total_quantity == 25);
 
-  // fill 15 => leftover=10
-  fill.size = 15;
-  lob.OnMboUpdate(fill);
+  // cancel 15 => leftover=10
+  cxl.size = 15;
+  lob.OnMboUpdate(cxl);
   CHECK(lob.BestAsk()->total_quantity == 10);
 
-  // fill final 10 => removed
-  fill.size = 10;
-  lob.OnMboUpdate(fill);
+  // cancel final 10 => removed
+  cxl.size = 10;
+  lob.OnMboUpdate(cxl);
   CHECK_FALSE(lob.BestAsk().has_value());
 }
 
@@ -334,14 +335,14 @@ TEST_CASE("Extended TDS: verifying new LOB counters, queries", "[orderbook][tds]
   CHECK(lob.GetModifyCount()==1ULL);
   CHECK(lob.VolumeAtPrice(constellation::interfaces::orderbook::BookSide::Bid,1000)==17ULL);
 
-  // partial fill => order_id=1 => fill=5 => leftover=5
-  lob.OnMboUpdate(mk(1,1000,5, databento::Side::Bid, databento::Action::Trade));
-  CHECK(lob.GetTradeCount()==1ULL);
+  // partial cancel => order_id=1 => cancel 5 => leftover=5
+  lob.OnMboUpdate(mk(1,1000,5, databento::Side::Bid, databento::Action::Cancel));
+  CHECK(lob.GetCancelCount()==1ULL);
   CHECK(lob.VolumeAtPrice(constellation::interfaces::orderbook::BookSide::Bid,1000)==12ULL);
 
   // cancel => order_id=2 => remove 7 => leftover=5
   lob.OnMboUpdate(mk(2,1000,7, databento::Side::Bid, databento::Action::Cancel));
-  CHECK(lob.GetCancelCount()==1ULL);
+  CHECK(lob.GetCancelCount()==2ULL);
   CHECK(lob.VolumeAtPrice(constellation::interfaces::orderbook::BookSide::Bid,1000)==5ULL);
 
   // clear => remove all
@@ -427,6 +428,106 @@ TEST_CASE("Extended TDS: verifying MarketBook global counters", "[orderbook][tds
   CHECK(market.GetGlobalCancelCount()==1ULL);
   CHECK(market.GetGlobalClearCount()==1ULL);
   CHECK(market.GetGlobalTotalEventCount()==6ULL);
+}
+
+TEST_CASE("IsTob Add clears bid side and creates synthetic level", "[orderbook][tob]") {
+  LimitOrderBook lob(800);
+
+  // Add regular orders on bid side
+  lob.OnMboUpdate(MakeMbo(800, 1, 5000, 10, databento::Side::Bid, databento::Action::Add));
+  lob.OnMboUpdate(MakeMbo(800, 2, 4900, 5,  databento::Side::Bid, databento::Action::Add));
+  REQUIRE(lob.BestBid().has_value());
+  CHECK(lob.BestBid()->price == 5000);
+  CHECK(lob.GetBids().size() == 2);
+
+  // TOB add: clears entire bid side, replaces with one synthetic level
+  auto tob_msg = MakeMbo(800, 99, 5100, 20, databento::Side::Bid, databento::Action::Add);
+  tob_msg.flags.SetTob();
+  lob.OnMboUpdate(tob_msg);
+
+  auto bids = lob.GetBids();
+  REQUIRE(bids.size() == 1);
+  CHECK(bids[0].price == 5100);
+  CHECK(bids[0].total_quantity == 20);
+  CHECK(bids[0].order_count == 0);  // TOB orders have count=0
+}
+
+TEST_CASE("IsTob Add with kUndefPrice clears side completely", "[orderbook][tob]") {
+  LimitOrderBook lob(801);
+
+  // Add regular ask orders
+  lob.OnMboUpdate(MakeMbo(801, 1, 6000, 8, databento::Side::Ask, databento::Action::Add));
+  REQUIRE(lob.BestAsk().has_value());
+
+  // TOB add with kUndefPrice: clear ask side entirely, no replacement
+  auto tob_msg = MakeMbo(801, 99, databento::kUndefPrice, 0, databento::Side::Ask, databento::Action::Add);
+  tob_msg.flags.SetTob();
+  lob.OnMboUpdate(tob_msg);
+
+  CHECK_FALSE(lob.BestAsk().has_value());
+  CHECK(lob.GetAsks().empty());
+}
+
+TEST_CASE("IsTob order not tracked in orders map", "[orderbook][tob]") {
+  LimitOrderBook lob(802);
+
+  // TOB add on bid side
+  auto tob_msg = MakeMbo(802, 50, 7000, 15, databento::Side::Bid, databento::Action::Add);
+  tob_msg.flags.SetTob();
+  lob.OnMboUpdate(tob_msg);
+
+  auto best = lob.BestBid();
+  REQUIRE(best.has_value());
+  CHECK(best->total_quantity == 15);
+
+  // Cancel that order_id => no-op since TOB orders are not tracked
+  lob.OnMboUpdate(MakeMbo(802, 50, 7000, 15, databento::Side::Bid, databento::Action::Cancel));
+  best = lob.BestBid();
+  REQUIRE(best.has_value());
+  CHECK(best->total_quantity == 15);  // still there
+}
+
+TEST_CASE("Partial cancel reduces order size", "[orderbook][partial-cancel]") {
+  LimitOrderBook lob(803);
+
+  lob.OnMboUpdate(MakeMbo(803, 1, 1000, 10, databento::Side::Ask, databento::Action::Add));
+  CHECK(lob.BestAsk()->total_quantity == 10);
+
+  // Cancel 3 => leftover 7
+  lob.OnMboUpdate(MakeMbo(803, 1, 1000, 3, databento::Side::Ask, databento::Action::Cancel));
+  REQUIRE(lob.BestAsk().has_value());
+  CHECK(lob.BestAsk()->total_quantity == 7);
+  CHECK(lob.BestAsk()->order_count == 1);
+
+  // Cancel remaining 7 => empty
+  lob.OnMboUpdate(MakeMbo(803, 1, 1000, 7, databento::Side::Ask, databento::Action::Cancel));
+  CHECK_FALSE(lob.BestAsk().has_value());
+}
+
+TEST_CASE("Modify of unknown order treated as Add", "[orderbook][modify-as-add]") {
+  LimitOrderBook lob(804);
+
+  // Modify a non-existent order => should be treated as Add
+  lob.OnMboUpdate(MakeMbo(804, 999, 2000, 12, databento::Side::Bid, databento::Action::Modify));
+  auto best = lob.BestBid();
+  REQUIRE(best.has_value());
+  CHECK(best->price == 2000);
+  CHECK(best->total_quantity == 12);
+  CHECK(best->order_count == 1);
+}
+
+TEST_CASE("Trade action is a no-op for book state", "[orderbook][trade-noop]") {
+  LimitOrderBook lob(805);
+
+  lob.OnMboUpdate(MakeMbo(805, 1, 3000, 10, databento::Side::Ask, databento::Action::Add));
+  CHECK(lob.BestAsk()->total_quantity == 10);
+
+  // Trade does NOT reduce order size (it's a no-op)
+  lob.OnMboUpdate(MakeMbo(805, 1, 3000, 5, databento::Side::Ask, databento::Action::Trade));
+  CHECK(lob.BestAsk()->total_quantity == 10);  // unchanged
+
+  // But trade_count is still incremented
+  CHECK(lob.GetTradeCount() == 1ULL);
 }
 
 } // end namespace constellation::modules::orderbook
