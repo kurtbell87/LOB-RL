@@ -113,6 +113,18 @@ add_library(constellation_core STATIC
     src/constellation/modules/features/src/bar/SessionAgeBarFeature.cpp
     src/constellation/modules/features/src/bar/TradeArrivalRateBarFeature.cpp
     src/constellation/modules/features/src/bar/PriceImpactBarFeature.cpp
+    # Modules: features (bar - book-dependent, Phase 4)
+    src/constellation/modules/features/src/bar/BboImbalanceBarFeature.cpp
+    src/constellation/modules/features/src/bar/DepthImbalanceBarFeature.cpp
+    src/constellation/modules/features/src/bar/CancelAsymmetryBarFeature.cpp
+    src/constellation/modules/features/src/bar/SpreadMeanBarFeature.cpp
+    src/constellation/modules/features/src/bar/OrderFlowImbalanceBarFeature.cpp
+    src/constellation/modules/features/src/bar/DepthRatioBarFeature.cpp
+    src/constellation/modules/features/src/bar/WeightedMidDisplacementBarFeature.cpp
+    src/constellation/modules/features/src/bar/SpreadStdBarFeature.cpp
+    src/constellation/modules/features/src/bar/VampDisplacementBarFeature.cpp
+    src/constellation/modules/features/src/bar/AggressorImbalanceBarFeature.cpp
+    src/constellation/modules/features/src/bar/CancelTradeRatioBarFeature.cpp
     # Modules: market_data
     src/constellation/modules/market_data/src/DataBentoMboFeed.cpp
     src/constellation/modules/market_data/src/DbnFileFeed.cpp
@@ -169,6 +181,7 @@ add_executable(constellation_tests
     src/constellation/modules/features/tests/TestMicroDepthFeatureFix.cpp
     src/constellation/modules/features/tests/TestBarFeature.cpp
     src/constellation/modules/features/tests/TestTradeBarFeatures.cpp
+    src/constellation/modules/features/tests/TestBookBarFeatures.cpp
     # Market data tests
     src/constellation/modules/market_data/tests/TestMarketDataIntegration.cpp
     src/constellation/modules/market_data/tests/TestMarketDataAdvanced.cpp

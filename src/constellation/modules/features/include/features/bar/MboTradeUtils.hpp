@@ -8,6 +8,9 @@ namespace constellation {
 namespace modules {
 namespace features {
 
+/// Small epsilon for division-by-zero guards in bar feature normalization.
+inline constexpr double kBarFeatureEpsilon = 1e-10;
+
 /// Check if an MBO message is a trade (Trade or Fill action).
 inline bool is_trade(const databento::MboMsg& mbo) {
   return mbo.action == databento::Action::Trade ||
