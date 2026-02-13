@@ -7,6 +7,7 @@
 #include "interfaces/features/IBarFeature.hpp"
 #include "interfaces/orderbook/IMarketBookDataSource.hpp"
 #include "interfaces/orderbook/IMarketView.hpp"
+#include "databento/record.hpp"
 
 namespace constellation {
 namespace modules {
@@ -33,6 +34,13 @@ public:
   /// Forward an MBO event to all registered bar features.
   /// Calls OnDataUpdate(source, market) on each feature.
   void OnMboEvent(
+    const constellation::interfaces::orderbook::IMarketBookDataSource& source,
+    const constellation::interfaces::orderbook::IMarketView* market);
+
+  /// Forward an MBO event to all registered bar features.
+  /// First calls OnMboMsg(mbo) on each feature, then OnDataUpdate(source, market).
+  void OnMboEvent(
+    const databento::MboMsg& mbo,
     const constellation::interfaces::orderbook::IMarketBookDataSource& source,
     const constellation::interfaces::orderbook::IMarketView* market);
 

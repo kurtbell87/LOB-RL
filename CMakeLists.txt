@@ -100,6 +100,18 @@ add_library(constellation_core STATIC
     src/constellation/modules/features/src/derived/RollingVolatilityFeature.cpp
     src/constellation/modules/features/src/AbstractBarFeature.cpp
     src/constellation/modules/features/src/BarFeatureManager.cpp
+    # Modules: features (bar)
+    src/constellation/modules/features/src/bar/TradeFlowImbalanceBarFeature.cpp
+    src/constellation/modules/features/src/bar/BarRangeBarFeature.cpp
+    src/constellation/modules/features/src/bar/BarBodyBarFeature.cpp
+    src/constellation/modules/features/src/bar/BodyRangeRatioBarFeature.cpp
+    src/constellation/modules/features/src/bar/VwapDisplacementBarFeature.cpp
+    src/constellation/modules/features/src/bar/LogVolumeBarFeature.cpp
+    src/constellation/modules/features/src/bar/RealizedVolBarFeature.cpp
+    src/constellation/modules/features/src/bar/SessionTimeBarFeature.cpp
+    src/constellation/modules/features/src/bar/SessionAgeBarFeature.cpp
+    src/constellation/modules/features/src/bar/TradeArrivalRateBarFeature.cpp
+    src/constellation/modules/features/src/bar/PriceImpactBarFeature.cpp
     # Modules: market_data
     src/constellation/modules/market_data/src/DataBentoMboFeed.cpp
     src/constellation/modules/market_data/src/DbnFileFeed.cpp
@@ -155,6 +167,7 @@ add_executable(constellation_tests
     src/constellation/modules/features/tests/TestMultiInstrumentFeatures.cpp
     src/constellation/modules/features/tests/TestMicroDepthFeatureFix.cpp
     src/constellation/modules/features/tests/TestBarFeature.cpp
+    src/constellation/modules/features/tests/TestTradeBarFeatures.cpp
     # Market data tests
     src/constellation/modules/market_data/tests/TestMarketDataIntegration.cpp
     src/constellation/modules/market_data/tests/TestMarketDataAdvanced.cpp
@@ -174,6 +187,7 @@ add_executable(constellation_tests
 
 target_link_libraries(constellation_tests PRIVATE
     constellation_core
+    lob_core
     Catch2::Catch2WithMain
 )
 

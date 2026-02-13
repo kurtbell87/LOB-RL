@@ -548,7 +548,10 @@ PYBIND11_MODULE(lob_rl_core, m) {
         .def(py::init<>())
         .def("register_bar_feature", &cst_feat::BarFeatureManager::RegisterBarFeature,
              py::arg("feature"), py::arg("value_name"))
-        .def("on_mbo_event", &cst_feat::BarFeatureManager::OnMboEvent,
+        .def("on_mbo_event",
+             static_cast<void (cst_feat::BarFeatureManager::*)(
+                 const cst_if_ob::IMarketBookDataSource&,
+                 const cst_if_ob::IMarketView*)>(&cst_feat::BarFeatureManager::OnMboEvent),
              py::arg("source"), py::arg("market"))
         .def("notify_bar_start", &cst_feat::BarFeatureManager::NotifyBarStart,
              py::arg("bar_index"))

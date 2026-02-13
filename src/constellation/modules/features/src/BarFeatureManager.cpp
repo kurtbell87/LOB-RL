@@ -19,6 +19,16 @@ void BarFeatureManager::OnMboEvent(
   }
 }
 
+void BarFeatureManager::OnMboEvent(
+    const databento::MboMsg& mbo,
+    const constellation::interfaces::orderbook::IMarketBookDataSource& source,
+    const constellation::interfaces::orderbook::IMarketView* market) {
+  for (auto& entry : features_) {
+    entry.feature->OnMboMsg(mbo);
+    entry.feature->OnDataUpdate(source, market);
+  }
+}
+
 void BarFeatureManager::NotifyBarStart(std::uint64_t bar_index) {
   for (auto& entry : features_) {
     entry.feature->OnBarStart(bar_index);

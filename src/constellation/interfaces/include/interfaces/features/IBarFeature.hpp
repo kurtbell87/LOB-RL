@@ -4,6 +4,8 @@
 #include <string>
 #include <cstdint>
 
+namespace databento { struct MboMsg; }
+
 namespace constellation::interfaces::features {
 
 /// Extension of IFeature for bar-granularity features.
@@ -26,6 +28,10 @@ public:
   /// Get a named bar-level value. Only valid after OnBarComplete().
   /// Throws if called before bar completion or if name is unknown.
   virtual double GetBarValue(const std::string& name) const = 0;
+
+  /// Called with the raw MBO message before OnDataUpdate.
+  /// Default no-op — override in features that need trade/event data.
+  virtual void OnMboMsg(const databento::MboMsg& mbo) { (void)mbo; }
 };
 
 } // namespace constellation::interfaces::features
