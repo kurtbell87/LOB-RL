@@ -7,6 +7,7 @@
 #include "lob/precompute.h"
 #include "lob/feature_builder.h"
 #include "lob/barrier/barrier_precompute.h"
+#include "lob/barrier/streaming_normalizer.h"
 #include "synthetic_source.h"
 #include "dbn_file_source.h"
 // Constellation
@@ -542,6 +543,14 @@ PYBIND11_MODULE(lob_rl_core, m) {
     }, py::arg("instrument_id") = 0u,
        py::arg("side") = cst_if_ob::BookSide::Bid,
        py::arg("price") = 0);
+
+    // ── StreamingNormalizer ──────────────────────────────────────────────
+    py::class_<StreamingNormalizer>(m, "StreamingNormalizer")
+        .def(py::init<int, int>(), py::arg("n_features"), py::arg("window") = 2000)
+        .def("normalize", &StreamingNormalizer::normalize, py::arg("raw_bar"))
+        .def("n_features", &StreamingNormalizer::n_features)
+        .def("bars_seen", &StreamingNormalizer::bars_seen)
+        .def("reset", &StreamingNormalizer::reset);
 
     // ── Bar Feature System Bindings ──────────────────────────────────────
     py::class_<cst_feat::BarFeatureManager>(m, "BarFeatureManager")

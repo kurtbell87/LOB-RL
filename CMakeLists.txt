@@ -61,6 +61,7 @@ add_library(lob_core STATIC
     src/barrier/feature_compute.cpp
     src/barrier/barrier_label.cpp
     src/barrier/barrier_precompute.cpp
+    src/barrier/streaming_normalizer.cpp
 )
 
 target_include_directories(lob_core PUBLIC
@@ -221,6 +222,7 @@ add_executable(lob_tests
     tests/test_barrier_labels.cpp
     tests/test_barrier_precompute.cpp
     tests/test_per_bar_features.cpp
+    tests/test_streaming_normalizer.cpp
 )
 
 target_link_libraries(lob_tests PRIVATE lob_core GTest::gtest_main)
